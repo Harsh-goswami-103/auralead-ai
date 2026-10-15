@@ -1,0 +1,1513 @@
+// AuraLead AI data model (plan §5). SQLite is the source of truth; Prisma 7 with the
+// better-sqlite3 driver adapter (ADR-02). The datasource URL lives in prisma.config.ts.
+//
+// Conventions (plan §5):
+// - IDs are cuid2 strings. Money is BigInt paise (`*Paise`, ADR-07). Rates are Int basis points.
+// - Every tenant-owned model carries `workspaceId` and an index (or unique) that starts with it
+//   (E10, ADR-42; enforced by tests/unit/arch/tenant-columns.test.ts). It is nullable only on
+//   system rows (Job, JobAttempt, AuditEvent, WebhookEvent, WebhookRejection, Invite).
+// - Child -> parent references inside a tenant use composite foreign keys
+//   (workspaceId, parentId) -> parent(workspaceId, id), backed by @@unique([workspaceId, id]) on the
+//   parent, so the database itself rejects a cross-workspace reference (ADR-47).
+// - Partial unique indexes use the `partialIndexes` preview feature (`where: raw(...)`), so
+//   `prisma migrate dev` knows about them and never drops them as drift. Each one is marked
+//   `-- PARTIAL UNIQUE` in the migration SQL (ADR-47).
+// - JSON columns are never filtered on; filterable data gets real columns.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---- Enums (plan §5.1) -----------------------------------------------------------------------
+
+enum AppMode {
+  DEMO
+  LIVE
+}
+
+enum GlobalRole {
+  USER
+  EMPLOYEE
+  SUPER_ADMIN
+}
+
+enum MembershipRole {
+  OWNER
+  MEMBER
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum SalesStage {
+  NEW
+  CONTACTED
+  REPLIED
+  QUOTE_SENT
+  CONVERTED
+  LOST
+}
+
+enum LeadSource {
+  GOOGLE_SHEETS
+  META_ADS
+  GMAPS_EXTENSION
+  WHATSAPP_INBOUND
+  EMAIL_INBOUND
+  MANUAL
+}
+
+enum WebsiteStatus {
+  UNKNOWN
+  PRESENT_UNVERIFIED
+  REACHABLE
+  UNREACHABLE
+  BLOCKED
+  VERIFIED_ABSENT
+}
+
+enum SourceRecordStatus {
+  ACCEPTED
+  DUPLICATE
+  REVIEW
+  REJECTED
+  UNRETRIEVABLE
+}
+
+enum ImportBatchStatus {
+  RECEIVED
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum MergeReviewStatus {
+  OPEN
+  MERGED
+  KEPT_SEPARATE
+  DISMISSED
+}
+
+enum ContactKeyKind {
+  PHONE
+  EMAIL
+  PROVIDER
+}
+
+enum Channel {
+  WHATSAPP
+  EMAIL
+}
+
+enum ConsentPurpose {
+  MARKETING
+  SERVICE_CONVERSATION
+}
+
+enum ConsentBasis {
+  OPT_IN
+  INBOUND_MESSAGE
+  B2B_ATTESTED
+}
+
+enum ConsentSource {
+  SHEETS_FORM
+  META_FORM
+  INBOUND_MESSAGE
+  START_KEYWORD
+  MANUAL_EVIDENCE
+  EMPLOYEE_ATTESTATION
+}
+
+enum SuppressionReason {
+  STOP_BUTTON
+  STOP_KEYWORD
+  UNSUBSCRIBE
+  HARD_BOUNCE
+  COMPLAINT
+  MARKETING_STOPPED
+  MANUAL
+}
+
+enum QuoteStatus {
+  DRAFT
+  APPROVED
+  SENT
+  VIEWED
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+enum DiscountKind {
+  NONE
+  PERCENT_BPS
+  FLAT_PAISE
+}
+
+enum ApprovalKind {
+  QUOTE_VERSION
+  OUTBOUND_MESSAGE
+  PRICING_REVIEW
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  INVALIDATED
+}
+
+enum ConversationAiMode {
+  OFF
+  DRAFT
+  AUTO
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+enum MessageStatus {
+  DRAFT
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  UNKNOWN
+  NOT_SENT
+}
+
+enum DispatchState {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
+  AMBIGUOUS
+  CANCELLED
+}
+
+enum DispatchFailureClass {
+  PRE_SEND
+  RETRYABLE
+  PERMANENT
+}
+
+enum SendIntent {
+  MANUAL_SINGLE
+  BULK
+  AUTOMATED
+  CUSTOMER_REQUESTED_REPLY
+}
+
+enum PipelineStage {
+  INGESTION
+  SCORE
+  DRAFT
+  APPROVAL
+  DELIVERY
+}
+
+enum StageRunStatus {
+  PENDING
+  RUNNING
+  DONE
+  SKIPPED
+  FAILED
+}
+
+enum JournalAction {
+  STOP
+  CLEAR
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  DEAD
+  CANCELLED
+}
+
+enum JobAttemptOutcome {
+  SUCCEEDED
+  RETRYABLE
+  FATAL
+  AMBIGUOUS
+  LEASE_LOST
+  DEFERRED
+}
+
+enum IntegrationKind {
+  WHATSAPP_CLOUD
+  EMAIL_RESEND
+  EMAIL_SMTP
+  META_ADS
+  GOOGLE_SHEETS
+  AI_ANTHROPIC
+  AI_OPENAI
+}
+
+enum IntegrationStatus {
+  NOT_CONFIGURED
+  CONFIGURED_UNVERIFIED
+  VERIFYING
+  CONNECTED
+  DEGRADED
+  ERROR
+  REVOKED
+  SIMULATED
+}
+
+enum WebhookProvider {
+  META_ADS
+  WHATSAPP
+  GOOGLE_SHEETS
+  GMAPS_EXTENSION
+  RESEND
+  DEMO
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  UNROUTED
+  PENDING_CORRELATION
+  ORPHAN
+}
+
+enum CallRequestStatus {
+  OPEN
+  CONTACTED
+  DONE
+  CANCELLED
+}
+
+enum CallRequestSource {
+  QUICK_REPLY
+  MANUAL
+}
+
+enum CampaignActionState {
+  PENDING
+  SENDING
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+  SIMULATED
+}
+
+enum QuoteViewKind {
+  FETCH
+  BEACON
+}
+
+enum AuditResult {
+  SUCCESS
+  DENIED
+  FAILED
+}
+
+enum PipelineApprovalMode {
+  HUMAN
+  POLICY_AUTO
+}
+
+// Inline value sets from the §5 model tables, given UPPER_SNAKE enum names (ADR-47).
+
+/// WorkspaceSettings.taxMode (explicit; NONE means no tax line).
+enum TaxMode {
+  NONE
+  CONFIGURED
+}
+
+/// Quote.sentVia.
+enum QuoteSentVia {
+  DISPATCH
+  MANUAL_LINK
+}
+
+/// QuoteViewEvent.uaClass.
+enum UaClass {
+  BROWSER
+  LINK_PREVIEW
+  BOT
+  UNKNOWN
+}
+
+/// Message.kind.
+enum MessageKind {
+  TEXT
+  TEMPLATE
+  DOCUMENT
+  EMAIL
+  INTERACTIVE_REPLY
+}
+
+/// WhatsAppTemplate.intent.
+enum TemplateIntent {
+  FIRST_TOUCH
+  QUOTE_READY
+  FOLLOW_UP
+  CALL_ACK
+}
+
+/// AuditEvent.actorKind.
+enum ActorKind {
+  USER
+  EMPLOYEE
+  SUPER_ADMIN
+  SYSTEM
+  WORKER
+  WEBHOOK
+  PUBLIC
+}
+
+// ---- Identity, tenancy, settings (plan §5.2) -------------------------------------------------
+
+model Workspace {
+  id                    String          @id @default(cuid(2))
+  slug                  String          @unique
+  name                  String
+  mode                  AppMode
+  planLabel             String
+  timezone              String          @default("Asia/Kolkata")
+  status                WorkspaceStatus @default(ACTIVE)
+  automationPaused      Boolean         @default(false)
+  automationPauseReason String?
+  createdAt             DateTime        @default(now())
+
+  settings               WorkspaceSettings?
+  memberships            Membership[]
+  employeeAssignments    EmployeeAssignment[]
+  invites                Invite[]
+  leads                  Lead[]
+  importBatches          ImportBatch[]
+  suppressions           Suppression[]
+  scoringConfigVersions  ScoringConfigVersion[]
+  services               Service[]
+  pricingVersions        PricingVersion[]
+  approvals              Approval[]
+  integrations           Integration[]
+  extensionTokens        ExtensionToken[]
+  campaigns              Campaign[]
+  pipelineConfigVersions PipelineConfigVersion[]
+}
+
+model WorkspaceSettings {
+  workspaceId                String    @id
+  workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  autoSendEnabled            Boolean   @default(false)
+  /// M2 / ADR-14: attested B2B email for Maps leads, manual-only.
+  emailB2bAttestationEnabled Boolean   @default(false)
+  emailFallbackEnabled       Boolean   @default(false)
+  taxLabel                   String?
+  taxBps                     Int?
+  taxMode                    TaxMode   @default(NONE)
+  maxDiscountBps             Int
+  quoteValidityDays          Int       @default(15)
+  gstin                      String?
+  brandColor                 String
+  logoPath                   String?
+  termsText                  String
+  /// https only (P4).
+  bookingUrl                 String?
+  internalWaDailyCap         Int?
+  internalEmailDailyCap      Int?
+  /// Fixed INR.
+  currencyDisplay            String    @default("INR")
+  updatedAt                  DateTime  @updatedAt
+  updatedBy                  String?
+}
+
+/// Singleton (id = 1). The worker also honors STORAGE_DIR/outbound.lock and OUTBOUND_PAUSED=1 (O1).
+model SystemSetting {
+  id                  Int       @id @default(1)
+  outboundPaused      Boolean   @default(false)
+  outboundPausedAt    DateTime?
+  outboundPausedBy    String?
+  outboundPauseReason String?
+}
+
+model User {
+  id               String     @id @default(cuid(2))
+  /// Always lowercased.
+  email            String     @unique
+  name             String
+  globalRole       GlobalRole
+  status           UserStatus @default(ACTIVE)
+  passwordHash     String?
+  isDemo           Boolean    @default(false)
+  failedLoginCount Int        @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime   @default(now())
+  lastLoginAt      DateTime?
+
+  sessions            Session[]
+  memberships         Membership[]
+  employeeAssignments EmployeeAssignment[]
+}
+
+model Session {
+  id                String    @id @default(cuid(2))
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// sha256 of the 32-byte cookie token; the token itself is never stored.
+  tokenHash         String    @unique
+  activeWorkspaceId String?
+  mode              AppMode
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime
+  idleExpiresAt     DateTime
+  absoluteExpiresAt DateTime
+  ipHash            String
+  userAgent         String
+  revokedAt         DateTime?
+  reauthAt          DateTime?
+
+  @@index([userId, revokedAt])
+}
+
+model Invite {
+  id             String          @id @default(cuid(2))
+  email          String
+  tokenHash      String          @unique
+  globalRole     GlobalRole
+  /// Null for a platform-level (employee or admin) invite.
+  workspaceId    String?
+  workspace      Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  membershipRole MembershipRole?
+  createdBy      String
+  /// 72 h after creation.
+  expiresAt      DateTime
+  redeemedAt     DateTime?
+  createdAt      DateTime        @default(now())
+
+  @@index([workspaceId, createdAt])
+}
+
+model Membership {
+  id          String         @id @default(cuid(2))
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  workspaceId String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  role        MembershipRole
+  createdAt   DateTime       @default(now())
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+model EmployeeAssignment {
+  id             String    @id @default(cuid(2))
+  employeeUserId String
+  employee       User      @relation(fields: [employeeUserId], references: [id], onDelete: Restrict)
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// string[] of Capability (src/lib/domain/enums.ts).
+  capabilities   Json
+  maxDiscountBps Int?
+  active         Boolean   @default(true)
+  createdBy      String
+  createdAt      DateTime  @default(now())
+
+  @@unique([employeeUserId, workspaceId])
+  @@index([workspaceId, active])
+}
+
+/// Singleton (id = 1). Read only when DEMO + test-control flag + token (A40).
+model TestClock {
+  id       Int       @id @default(1)
+  offsetMs BigInt    @default(0)
+  frozenAt DateTime?
+}
+
+// ---- Leads and ingestion (plan §5.3) ---------------------------------------------------------
+
+model Lead {
+  id                      String                 @id @default(cuid(2))
+  workspaceId             String
+  workspace               Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  displayName             String
+  nameNormalized          String
+  category                String?
+  phoneE164               String?
+  phoneRaw                String?
+  alternatePhones         Json
+  emailNormalized         String?
+  website                 String?
+  websiteStatus           WebsiteStatus          @default(UNKNOWN)
+  address                 String?
+  city                    String?
+  /// Rating x10 (4.5 stars is 45).
+  rating                  Int?
+  reviewCount             Int?
+  salesStage              SalesStage             @default(NEW)
+  stageVersion            Int                    @default(0)
+  score                   Int?
+  scoreReasons            Json
+  unknownInputs           Json
+  scoreConfigVersionId    String?
+  scoreConfigVersion      ScoringConfigVersion?  @relation(fields: [workspaceId, scoreConfigVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Pinned at ingestion (O5).
+  pipelineConfigVersionId String?
+  pipelineConfigVersion   PipelineConfigVersion? @relation(fields: [workspaceId, pipelineConfigVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  firstSource             LeadSource
+  simulated               Boolean                @default(false)
+  mergedIntoLeadId        String?
+  mergedInto              Lead?                  @relation("LeadMerge", fields: [workspaceId, mergedIntoLeadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  mergedFrom              Lead[]                 @relation("LeadMerge")
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+
+  contactKeys        LeadContactKey[]
+  sourceRecords      LeadSourceRecord[]
+  consentRecords     ConsentRecord[]
+  quotes             Quote[]
+  conversations      Conversation[]
+  callRequests       CallRequest[]
+  pipelineExecutions PipelineExecution[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, salesStage, createdAt])
+  @@index([workspaceId, score])
+  @@index([workspaceId, nameNormalized])
+  @@index([workspaceId, phoneE164])
+  @@index([workspaceId, emailNormalized])
+  @@index([workspaceId, createdAt, id])
+}
+
+model LeadContactKey {
+  id          String         @id @default(cuid(2))
+  workspaceId String
+  leadId      String
+  lead        Lead           @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Cascade, onUpdate: Restrict)
+  kind        ContactKeyKind
+  /// E.164 phone, normalized email, or `source:providerId` (G-NORM-1).
+  value       String
+
+  @@unique([workspaceId, kind, value])
+  @@index([leadId])
+}
+
+model LeadSourceRecord {
+  id                 String             @id @default(cuid(2))
+  workspaceId        String
+  leadId             String?
+  lead               Lead?              @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  importBatchId      String?
+  importBatch        ImportBatch?       @relation(fields: [workspaceId, importBatchId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  source             LeadSource
+  /// leadgen_id, sheet event id, or extension sourceRef.
+  externalId         String
+  status             SourceRecordStatus
+  reasonCode         String?
+  rawPayloadRedacted Json
+  mappingVersion     Int?
+  /// ad, form, campaign, sheet, keyword.
+  attribution        Json
+  extractedAt        DateTime?
+  receivedAt         DateTime
+
+  mergeReviews MergeReview[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, source, externalId])
+  @@index([importBatchId])
+  @@index([leadId])
+}
+
+model ImportBatch {
+  id               String            @id @default(cuid(2))
+  workspaceId      String
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  source           LeadSource
+  /// Extension batchId or sheet sync run id.
+  externalBatchId  String
+  extensionTokenId String?
+  extensionToken   ExtensionToken?   @relation(fields: [workspaceId, extensionTokenId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  bodyHash         String
+  status           ImportBatchStatus @default(RECEIVED)
+  /// {received, accepted, duplicate, review, rejected}
+  counts           Json
+  simulated        Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  completedAt      DateTime?
+
+  sourceRecords LeadSourceRecord[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, source, externalBatchId])
+}
+
+model MergeReview {
+  id               String            @id @default(cuid(2))
+  workspaceId      String
+  sourceRecordId   String
+  sourceRecord     LeadSourceRecord  @relation(fields: [workspaceId, sourceRecordId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  candidateLeadIds Json
+  status           MergeReviewStatus @default(OPEN)
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  resolution       Json?
+  createdAt        DateTime          @default(now())
+
+  @@index([workspaceId, status, createdAt])
+}
+
+model ConsentRecord {
+  id               String         @id @default(cuid(2))
+  workspaceId      String
+  leadId           String
+  lead             Lead           @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// HMAC contact key, same derivation as Suppression.contactKey.
+  contactKey       String
+  channel          Channel
+  purpose          ConsentPurpose
+  basis            ConsentBasis
+  source           ConsentSource
+  /// {formId, responseId, questionKey, messageId, attestedBy, note}
+  evidence         Json
+  noticeTextHash   String?
+  noticeVersion    String?
+  /// Evidence time (provider or form submission time).
+  collectedAt      DateTime
+  recordedAt       DateTime
+  recordedBy       String?
+  withdrawnAt      DateTime?
+  withdrawalMethod String?
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, leadId, channel, collectedAt])
+  @@index([workspaceId, contactKey, channel])
+}
+
+/// Append-only history (E3, ADR-37). At most one active (clearedAt IS NULL) row per
+/// (workspaceId, channel, contactKey). Keyed on the contact, not the lead, so it survives lead
+/// merge and deletion; clearedByConsentId is therefore service-enforced, not a foreign key.
+model Suppression {
+  id                 String            @id @default(cuid(2))
+  workspaceId        String
+  workspace          Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  channel            Channel
+  /// HMAC-SHA256(SUPPRESSION_PEPPER, normalized contact) (C17, ADR-19).
+  contactKey         String
+  /// Nulled on lead erasure.
+  contactPlain       String?
+  reason             SuppressionReason
+  sourceEventId      String?
+  createdAt          DateTime          @default(now())
+  clearedAt          DateTime?
+  clearedByConsentId String?
+  /// SuppressionJournal (E8, ADR-38).
+  journaledAt        DateTime?
+  clearJournaledAt   DateTime?
+
+  @@unique([workspaceId, channel, contactKey], map: "Suppression_active_contact_key", where: raw("\"clearedAt\" IS NULL"))
+  @@index([workspaceId, channel, contactKey, createdAt])
+}
+
+model ScoringConfigVersion {
+  id          String    @id @default(cuid(2))
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  version     Int
+  /// Zod-validated weights.
+  weights     Json
+  active      Boolean   @default(false)
+  createdBy   String
+  createdAt   DateTime  @default(now())
+
+  leads Lead[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, version])
+  @@unique([workspaceId], map: "ScoringConfigVersion_one_active", where: raw("\"active\""))
+}
+
+model SheetMapping {
+  id                String      @id @default(cuid(2))
+  workspaceId       String
+  integrationId     String
+  integration       Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  version           Int
+  headerFingerprint String
+  fieldMap          Json
+  /// {column, truthyValues[], channel, purpose, noticeText, noticeTextHash} (P1)
+  consentMapping    Json?
+  active            Boolean     @default(false)
+
+  @@unique([integrationId, version])
+  @@index([workspaceId, integrationId])
+}
+
+model MetaFormMapping {
+  id             String      @id @default(cuid(2))
+  workspaceId    String
+  integrationId  String
+  integration    Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  formId         String
+  fieldMap       Json
+  /// (P1)
+  consentMapping Json?
+
+  @@unique([integrationId, formId])
+  @@index([workspaceId, integrationId])
+}
+
+// ---- Pricing and quotes (plan §5.4) ----------------------------------------------------------
+
+model Service {
+  id                  String    @id @default(cuid(2))
+  workspaceId         String
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  code                String
+  name                String
+  description         String
+  unitLabel           String
+  defaultTimelineDays Int?
+  maxDiscountBps      Int?
+  archivedAt          DateTime?
+
+  priceEntries PriceEntry[]
+  quoteItems   QuoteItem[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, code])
+}
+
+model PricingVersion {
+  id          String    @id @default(cuid(2))
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  version     Int
+  active      Boolean   @default(false)
+  note        String
+  createdBy   String
+  createdAt   DateTime  @default(now())
+
+  entries       PriceEntry[]
+  quoteVersions QuoteVersion[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, version])
+  @@unique([workspaceId], map: "PricingVersion_one_active", where: raw("\"active\""))
+}
+
+model PriceEntry {
+  id               String         @id @default(cuid(2))
+  workspaceId      String
+  pricingVersionId String
+  pricingVersion   PricingVersion @relation(fields: [workspaceId, pricingVersionId], references: [workspaceId, id], onDelete: Cascade, onUpdate: Restrict)
+  serviceId        String
+  service          Service        @relation(fields: [workspaceId, serviceId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  unitPricePaise   BigInt
+  minQty           Int            @default(1)
+  maxQty           Int            @default(10000)
+
+  @@unique([pricingVersionId, serviceId])
+  @@index([workspaceId])
+}
+
+model Quote {
+  id                 String        @id @default(cuid(2))
+  workspaceId        String
+  leadId             String
+  lead               Lead          @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Q-0001 per workspace.
+  number             String
+  status             QuoteStatus   @default(DRAFT)
+  /// Null only inside the creating transaction, before version 1 exists (circular reference).
+  currentVersionId   String?
+  currentVersion     QuoteVersion? @relation("QuoteCurrentVersion", fields: [workspaceId, currentVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  currentVersionNo   Int           @default(0)
+  needsPricingReview Boolean       @default(false)
+  sentVia            QuoteSentVia?
+  /// Copy of the current version's validUntil.
+  validUntil         DateTime?
+  acceptedVersionId  String?
+  acceptedVersion    QuoteVersion? @relation("QuoteAcceptedVersion", fields: [workspaceId, acceptedVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy          String
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  versions    QuoteVersion[]    @relation("QuoteVersions")
+  shares      QuoteShare[]
+  acceptances QuoteAcceptance[]
+  approvals   Approval[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, number])
+  @@index([workspaceId, status, updatedAt])
+  @@index([leadId])
+}
+
+model QuoteVersion {
+  id               String         @id @default(cuid(2))
+  workspaceId      String
+  quoteId          String
+  quote            Quote          @relation("QuoteVersions", fields: [workspaceId, quoteId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  versionNo        Int
+  pricingVersionId String
+  pricingVersion   PricingVersion @relation(fields: [workspaceId, pricingVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Service names, unit prices, rules, branding refs.
+  snapshot         Json
+  scopeText        String
+  timelineText     String
+  discountKind     DiscountKind   @default(NONE)
+  /// Basis points or paise, depending on discountKind.
+  discountValue    BigInt         @default(0)
+  taxLabel         String?
+  taxBps           Int?
+  subtotalPaise    BigInt
+  discountPaise    BigInt
+  taxablePaise     BigInt
+  taxPaise         BigInt
+  totalPaise       BigInt
+  validUntil       DateTime
+  /// Set by dispatch settle even when the version is superseded (E6, ADR-40).
+  sentAt           DateTime?
+  aiPolicyFlags    Json
+  reviewReasons    Json
+  createdBy        String
+  createdAt        DateTime       @default(now())
+
+  items            QuoteItem[]
+  currentOf        Quote[]           @relation("QuoteCurrentVersion")
+  acceptedOf       Quote[]           @relation("QuoteAcceptedVersion")
+  shares           QuoteShare[]
+  viewEvents       QuoteViewEvent[]
+  acceptances      QuoteAcceptance[]
+  artifacts        QuoteArtifact[]
+  approvals        Approval[]
+  messages         Message[]
+  dispatchAttempts DispatchAttempt[]
+
+  @@unique([workspaceId, id])
+  @@unique([quoteId, versionNo])
+}
+
+model QuoteItem {
+  id                  String       @id @default(cuid(2))
+  workspaceId         String
+  quoteVersionId      String
+  quoteVersion        QuoteVersion @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Cascade, onUpdate: Restrict)
+  serviceId           String
+  service             Service      @relation(fields: [workspaceId, serviceId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  serviceNameSnapshot String
+  unitLabel           String
+  qty                 Int
+  unitPricePaise      BigInt
+  lineTotalPaise      BigInt
+  position            Int
+
+  @@unique([quoteVersionId, position])
+  @@index([workspaceId])
+}
+
+model QuoteShare {
+  id             String       @id @default(cuid(2))
+  workspaceId    String
+  quoteId        String
+  quote          Quote        @relation(fields: [workspaceId, quoteId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  quoteVersionId String
+  quoteVersion   QuoteVersion @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// sha256 of 32 random bytes, base64url (C2).
+  tokenHash      String       @unique
+  /// <= validUntil (P16).
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  supersededAt   DateTime?
+  createdBy      String
+  createdAt      DateTime     @default(now())
+
+  viewEvents QuoteViewEvent[]
+
+  @@unique([workspaceId, id])
+  @@index([quoteVersionId])
+}
+
+model QuoteViewEvent {
+  id             String        @id @default(cuid(2))
+  workspaceId    String
+  quoteShareId   String
+  quoteShare     QuoteShare    @relation(fields: [workspaceId, quoteShareId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  quoteVersionId String
+  quoteVersion   QuoteVersion  @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  kind           QuoteViewKind
+  uaClass        UaClass
+  ipHash         String
+  createdAt      DateTime      @default(now())
+
+  @@index([quoteShareId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+model QuoteAcceptance {
+  id             String       @id @default(cuid(2))
+  workspaceId    String
+  quoteId        String
+  quote          Quote        @relation(fields: [workspaceId, quoteId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// UNIQUE: accept is idempotent per version.
+  quoteVersionId String       @unique
+  quoteVersion   QuoteVersion @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  acceptorName   String
+  ipHash         String
+  userAgent      String
+  acceptedAt     DateTime
+
+  @@index([workspaceId, acceptedAt])
+}
+
+model QuoteArtifact {
+  id             String       @id @default(cuid(2))
+  workspaceId    String
+  quoteVersionId String       @unique
+  quoteVersion   QuoteVersion @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Relative to STORAGE_DIR.
+  path           String
+  sha256         String
+  bytes          Int
+  renderedAt     DateTime
+
+  @@index([workspaceId, renderedAt])
+}
+
+model Approval {
+  id                 String         @id @default(cuid(2))
+  workspaceId        String
+  workspace          Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  kind               ApprovalKind
+  status             ApprovalStatus @default(PENDING)
+  quoteId            String?
+  quote              Quote?         @relation(fields: [workspaceId, quoteId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  quoteVersionId     String?
+  quoteVersion       QuoteVersion?  @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  messageId          String?
+  message            Message?       @relation(fields: [workspaceId, messageId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// O3: sha256 of the canonical outbound payload JSON.
+  payloadHash        String?
+  /// customer_requested, ai_price_ignored, ...
+  flags              Json
+  requestedAt        DateTime
+  decidedBy          String?
+  decidedAt          DateTime?
+  invalidatedAt      DateTime?
+  invalidationReason String?
+
+  dispatchAttempts DispatchAttempt[]
+
+  @@unique([workspaceId, id])
+  @@unique([quoteVersionId], map: "Approval_one_approved_per_quote_version", where: raw("\"kind\" = 'QUOTE_VERSION' AND \"status\" = 'APPROVED'"))
+  @@unique([messageId], map: "Approval_one_open_per_message", where: raw("\"status\" IN ('PENDING', 'APPROVED')"))
+  @@index([workspaceId, status, requestedAt])
+}
+
+// ---- Messaging (plan §5.5) -------------------------------------------------------------------
+
+model Conversation {
+  id                      String             @id @default(cuid(2))
+  workspaceId             String
+  leadId                  String
+  lead                    Lead               @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  channel                 Channel
+  contactKey              String
+  aiMode                  ConversationAiMode @default(DRAFT)
+  humanTakeover           Boolean            @default(false)
+  modeVersion             Int                @default(0)
+  /// Monotone max of valid inbound provider timestamps (C19).
+  lastInboundProviderAt   DateTime?
+  lastInboundMessageId    String?
+  unansweredOutboundCount Int                @default(0)
+  /// P5.
+  emailThreadToken        String?
+  /// Null while the conversation is open; the partial unique allows one open conversation per
+  /// lead and channel (ADR-47).
+  closedAt                DateTime?
+  createdAt               DateTime           @default(now())
+
+  messages     Message[]
+  callRequests CallRequest[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, leadId, channel], map: "Conversation_one_open_per_lead_channel", where: raw("\"closedAt\" IS NULL"))
+  @@index([workspaceId, lastInboundProviderAt])
+  @@index([workspaceId, leadId, channel])
+}
+
+model Message {
+  id                  String            @id @default(cuid(2))
+  workspaceId         String
+  conversationId      String
+  conversation        Conversation      @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  direction           MessageDirection
+  /// Also the provider namespace of providerMessageId.
+  channel             Channel
+  kind                MessageKind
+  body                String?
+  subject             String?
+  templateId          String?
+  template            WhatsAppTemplate? @relation(fields: [workspaceId, templateId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  variables           Json?
+  quoteVersionId      String?
+  quoteVersion        QuoteVersion?     @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Projection of delivery state (C10).
+  status              MessageStatus
+  statusRank          Int               @default(0)
+  providerMessageId   String?
+  providerTs          DateTime?
+  /// anthropic, openai, local-deterministic, human.
+  generatorLabel      String?
+  simulated           Boolean           @default(false)
+  replyToInboundId    String?
+  replyToInbound      Message?          @relation("MessageReply", fields: [workspaceId, replyToInboundId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  replies             Message[]         @relation("MessageReply")
+  modeVersionAtCreate Int?
+  /// Outbound only (E4, ADR-45).
+  sendIntent          SendIntent?
+  /// userId or `system:<jobType>`.
+  initiatedBy         String?
+  createdBy           String?
+  createdAt           DateTime          @default(now())
+
+  statusEvents     MessageStatusEvent[]
+  dispatchAttempts DispatchAttempt[]
+  approvals        Approval[]
+
+  @@unique([workspaceId, id])
+  /// (provider, providerMessageId) UNIQUE where not null: NULLs are distinct in SQLite and PostgreSQL.
+  @@unique([channel, providerMessageId])
+  @@index([conversationId, createdAt])
+}
+
+model MessageStatusEvent {
+  id                String   @id @default(cuid(2))
+  workspaceId       String
+  messageId         String?
+  message           Message? @relation(fields: [workspaceId, messageId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  providerMessageId String
+  /// Raw provider status string.
+  status            String
+  rank              Int
+  providerTs        DateTime
+  errorCode         String?
+  anomaly           Boolean  @default(false)
+  receivedAt        DateTime
+
+  @@unique([providerMessageId, status])
+  @@index([workspaceId, receivedAt])
+}
+
+/// The outbox (C7, ADR-05). Every outbound provider mutation goes through one of these rows.
+model DispatchAttempt {
+  id                String                @id @default(cuid(2))
+  workspaceId       String
+  messageId         String
+  message           Message               @relation(fields: [workspaceId, messageId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  quoteVersionId    String?
+  quoteVersion      QuoteVersion?         @relation(fields: [workspaceId, quoteVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvalId        String?
+  approval          Approval?             @relation(fields: [workspaceId, approvalId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  channel           Channel
+  attemptNo         Int
+  state             DispatchState         @default(QUEUED)
+  /// Copied from Message, immutable (E4, ADR-45).
+  sendIntent        SendIntent
+  initiatedBy       String
+  /// E7, ADR-41.
+  failureClass      DispatchFailureClass?
+  idempotencyKey    String                @unique
+  jobId             String
+  job               Job                   @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  providerMessageId String?
+  reasonCode        String?
+  errorRedacted     String?
+  resolvedBy        String?
+  resolvedAt        DateTime?
+  resolutionNote    String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([messageId, attemptNo])
+  /// providerMessageId UNIQUE per provider namespace (plan §4.4); NULLs are distinct.
+  @@unique([channel, providerMessageId])
+  @@index([workspaceId, state])
+  @@index([jobId])
+}
+
+model CallRequest {
+  id             String            @id @default(cuid(2))
+  workspaceId    String
+  leadId         String
+  lead           Lead              @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  conversationId String?
+  conversation   Conversation?     @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  source         CallRequestSource
+  status         CallRequestStatus @default(OPEN)
+  requestedAt    DateTime
+  handledBy      String?
+  handledAt      DateTime?
+  /// UNIQUE: a replayed quick reply creates no second request.
+  sourceEventId  String?           @unique
+
+  @@index([workspaceId, status, requestedAt])
+}
+
+model WhatsAppTemplate {
+  id              String          @id @default(cuid(2))
+  workspaceId     String
+  integrationId   String
+  integration     Integration     @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  name            String
+  language        String
+  /// Raw provider string, never an enum (12.3).
+  category        String
+  /// Raw provider string, never an enum (12.3).
+  status          String
+  components      Json
+  variableSchema  Json
+  intent          TemplateIntent?
+  variableMap     Json
+  categoryHistory Json
+  syncedAt        DateTime
+
+  messages Message[]
+
+  @@unique([workspaceId, id])
+  @@unique([integrationId, name, language])
+}
+
+// ---- Campaigns, integrations, extension (plan §5.6) ------------------------------------------
+
+model Campaign {
+  id                 String       @id @default(cuid(2))
+  workspaceId        String
+  workspace          Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  integrationId      String?
+  integration        Integration? @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  providerCampaignId String
+  name               String
+  /// Ad account currency (P6).
+  currency           String
+  /// Raw provider string.
+  configuredStatus   String
+  /// Raw provider string.
+  effectiveStatus    String
+  lastSyncedAt       DateTime?
+  simulated          Boolean      @default(false)
+
+  snapshots CampaignMetricSnapshot[]
+  actions   CampaignAction[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, providerCampaignId])
+}
+
+model CampaignMetricSnapshot {
+  id                 String   @id @default(cuid(2))
+  workspaceId        String
+  campaignId         String
+  campaign           Campaign @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  dateStart          DateTime
+  dateStop           DateTime
+  /// Ad-account currency minor units.
+  spendMinor         BigInt
+  leads              Int
+  cplMinor           BigInt?
+  attributionSetting String?
+  asOf               DateTime
+
+  @@unique([campaignId, dateStart, dateStop])
+  @@index([workspaceId, dateStart])
+}
+
+model CampaignAction {
+  id                     String              @id @default(cuid(2))
+  workspaceId            String
+  campaignId             String
+  campaign               Campaign            @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  targetStatus           String
+  state                  CampaignActionState @default(PENDING)
+  providerResultRedacted String?
+  requestedBy            String
+  idempotencyKey         String              @unique
+  createdAt              DateTime            @default(now())
+  resolvedAt             DateTime?
+
+  @@index([workspaceId, createdAt])
+}
+
+model Integration {
+  id                String            @id @default(cuid(2))
+  workspaceId       String
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  kind              IntegrationKind
+  status            IntegrationStatus @default(NOT_CONFIGURED)
+  /// Non-secret config: phoneNumberId, wabaId, businessPortfolioId, pageId, adAccountId, sheetId,
+  /// fromDomain, modelId.
+  config            Json
+  /// Lookup column for webhook routing: phone_number_id or page_id (never payload trust).
+  routingKey        String?           @unique
+  /// field -> ciphertext `v1.<kid>.<nonce>.<ct>.<tag>`, AAD `workspaceId|integrationId|field` (A33).
+  secrets           Json?
+  secretLast4       Json?
+  lastCheckedAt     DateTime?
+  lastErrorCode     String?
+  lastErrorRedacted String?
+  qualityRaw        String?
+  messagingLimitRaw String?
+  limitsCheckedAt   DateTime?
+  verifiedAt        DateTime?
+
+  sheetMappings    SheetMapping[]
+  metaFormMappings MetaFormMapping[]
+  templates        WhatsAppTemplate[]
+  campaigns        Campaign[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, kind])
+}
+
+model ExtensionToken {
+  id                 String    @id @default(cuid(2))
+  workspaceId        String
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name               String
+  /// `alx_<keyId>`.
+  prefix             String    @unique
+  /// sha256 of the secret; the secret is shown once and never stored.
+  secretHash         String
+  /// ['ingest:gmaps']
+  scopes             Json
+  allowedExtensionId String?
+  createdBy          String
+  createdAt          DateTime  @default(now())
+  lastUsedAt         DateTime?
+  expiresAt          DateTime?
+  revokedAt          DateTime?
+
+  importBatches ImportBatch[]
+
+  @@unique([workspaceId, id])
+}
+
+/// Two payloads (E1, ADR-35): a redacted inspector view, and the full parsed body encrypted with
+/// the credentials key ring (AAD = webhookEventId), purged after processing plus retention.
+/// Idempotency is scoped by the authenticated source (E2, ADR-36).
+model WebhookEvent {
+  id                 String          @id @default(cuid(2))
+  /// Null until routed.
+  workspaceId        String?
+  provider           WebhookProvider
+  integrationId      String?
+  /// Routed integrationId, else authenticated workspaceId, else `unrouted` (E2).
+  scopeKey           String
+  /// meta:{page}:{leadgen}, wa:{msgId}, wa:{wamid}:{status}, svix-id, sheets eventId, extension batchId.
+  externalKey        String
+  bodySha256         String
+  payloadRedacted    Json
+  /// AES-256-GCM ciphertext of the parsed body (E1).
+  processingPayload  String?
+  processingPurgedAt DateTime?
+  status             WebhookStatus   @default(RECEIVED)
+  attempts           Int             @default(0)
+  /// Stored per-record results for replay.
+  result             Json?
+  simulated          Boolean         @default(false)
+  receivedAt         DateTime
+  processedAt        DateTime?
+
+  @@unique([provider, scopeKey, externalKey])
+  @@index([status, receivedAt])
+  @@index([workspaceId, receivedAt])
+  @@index([processingPurgedAt, processedAt])
+}
+
+/// Written on rejection only; the body is never persisted.
+model WebhookRejection {
+  id          String          @id @default(cuid(2))
+  workspaceId String?
+  provider    WebhookProvider
+  reason      String
+  /// UTC midnight of the rejection day.
+  day         DateTime
+  count       Int             @default(0)
+
+  @@unique([provider, workspaceId, reason, day])
+  /// NULLs are distinct in a unique index, so unrouted rejections get their own key (ADR-47).
+  @@unique([provider, reason, day], map: "WebhookRejection_unrouted_day", where: raw("\"workspaceId\" IS NULL"))
+  @@index([workspaceId, day])
+}
+
+// ---- Jobs, audit, pipeline (plan §4.3, §5.7) ------------------------------------------------
+
+/// Claimed only by the single statement in src/server/db/raw/claim-job.ts.
+/// workspaceId is a plain column (no foreign key): it is null for system jobs, and every
+/// job-driven write is fenced and scoped by the job context (E5, E10).
+model Job {
+  id                String            @id @default(cuid(2))
+  /// Null only for system jobs.
+  workspaceId       String?
+  type              String
+  payload           Json
+  payloadVersion    Int               @default(1)
+  status            JobStatus         @default(QUEUED)
+  priority          Int               @default(0)
+  runAt             DateTime
+  attempts          Int               @default(0)
+  maxAttempts       Int               @default(5)
+  claimToken        String?
+  leaseUntil        DateTime?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  serialKey         String?
+  idempotencyKey    String            @unique
+  cancelRequestedAt DateTime?
+  deadReason        String?
+  lastErrorCode     String?
+  lastErrorRedacted String?
+  retrySafe         Boolean           @default(false)
+  correlationId     String
+  causationId       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  attemptLog        JobAttempt[]
+  dispatchAttempts  DispatchAttempt[]
+
+  @@index([status, runAt, priority])
+  @@index([workspaceId, status])
+  @@index([serialKey, status])
+}
+
+model JobAttempt {
+  id                 String             @id @default(cuid(2))
+  /// Copied from Job (E10).
+  workspaceId        String?
+  jobId              String
+  job                Job                @relation(fields: [jobId], references: [id])
+  attemptNo          Int
+  startedAt          DateTime
+  finishedAt         DateTime?
+  /// Null while the attempt is in flight.
+  outcome            JobAttemptOutcome?
+  errorCode          String?
+  errorRedacted      String?
+  providerHttpStatus Int?
+  providerRequestId  String?
+  durationMs         Int?
+  correlationId      String
+
+  @@unique([jobId, attemptNo])
+  @@index([workspaceId, startedAt])
+}
+
+model WorkerHeartbeat {
+  workerId     String   @id
+  pid          Int
+  hostname     String
+  version      String
+  mode         AppMode
+  startedAt    DateTime
+  lastBeatAt   DateTime
+  currentJobId String?
+}
+
+/// workspaceId is a plain nullable column: platform-level and denied cross-tenant events have none.
+model AuditEvent {
+  id             String      @id @default(cuid(2))
+  workspaceId    String?
+  actorUserId    String?
+  actorKind      ActorKind
+  /// e.g. `quote.approve`.
+  action         String
+  targetType     String
+  targetId       String
+  result         AuditResult
+  /// Redacted field names, never PII values.
+  summary        Json
+  crossWorkspace Boolean     @default(false)
+  reason         String?
+  correlationId  String
+  simulated      Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action, createdAt])
+}
+
+model PipelineConfigVersion {
+  id           String               @id @default(cuid(2))
+  workspaceId  String
+  workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  version      Int
+  /// 5 fixed stage kinds, DAG order.
+  graph        Json
+  approvalMode PipelineApprovalMode @default(HUMAN)
+  active       Boolean              @default(false)
+  createdBy    String
+  createdAt    DateTime             @default(now())
+
+  leads      Lead[]
+  executions PipelineExecution[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, version])
+  @@unique([workspaceId], map: "PipelineConfigVersion_one_active", where: raw("\"active\""))
+}
+
+model PipelineExecution {
+  id                      String                @id @default(cuid(2))
+  workspaceId             String
+  leadId                  String                @unique
+  lead                    Lead                  @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Pinned (O5).
+  pipelineConfigVersionId String
+  pipelineConfigVersion   PipelineConfigVersion @relation(fields: [workspaceId, pipelineConfigVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  currentStage            PipelineStage         @default(INGESTION)
+  updatedAt               DateTime              @updatedAt
+
+  stageRuns PipelineStageRun[]
+
+  @@unique([workspaceId, id])
+}
+
+model PipelineStageRun {
+  id          String            @id @default(cuid(2))
+  workspaceId String
+  executionId String
+  execution   PipelineExecution @relation(fields: [workspaceId, executionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  stage       PipelineStage
+  status      StageRunStatus    @default(PENDING)
+  /// e.g. scoreVersion, draft messageId, quoteId, approvalId, dispatchAttemptId.
+  outputRef   Json?
+  jobId       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  reasonCode  String?
+
+  /// E9 idempotency: a stage runs at most once per execution.
+  @@unique([executionId, stage])
+  @@index([workspaceId, status])
+}
