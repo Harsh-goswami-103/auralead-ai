@@ -28,7 +28,11 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed/index.ts",
     "db:reset": "prisma migrate deploy && tsx prisma/seed/index.ts --reset",
-    "demo:refresh": "tsx scripts/demo-refresh.ts"
+    "demo:refresh": "tsx scripts/demo-refresh.ts",
+    "pipeline:resume": "tsx scripts/pipeline-resume.ts",
+    "db:backup": "tsx scripts/db-backup.ts",
+    "db:restore": "tsx scripts/db-restore.ts",
+    "lead:erase": "tsx scripts/lead-erase.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.134.0",

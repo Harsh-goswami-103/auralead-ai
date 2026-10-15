@@ -14,6 +14,10 @@ The plan is locked: [`docs/implementation-plan.md`](docs/implementation-plan.md)
 | `npm run db:path` | Prints the resolved SQLite file (`--url` for the `file:` URL, `--json` for all paths) |
 | `npm run db:migrate` / `db:deploy` | `prisma migrate dev` / `prisma migrate deploy` (T02) |
 | `npm run db:seed` / `db:reset` / `demo:refresh` | Deterministic DEMO seed; reset wipes app tables and reseeds (refuses LIVE); refresh re-bases time fixtures without changing ids (T09) |
+| `npm run pipeline:resume` | Enqueues one `pipeline.advance` per execution halted at a stage that now has a handler (STAGE_HANDLER_MISSING, e.g. APPROVAL before T23); idempotent (T23) |
+| `npm run db:backup` | `VACUUM INTO` copy of this mode's DB into BACKUP_DIR plus a `.json` manifest (sha256, backup time, migrations) (T24) |
+| `npm run db:restore -- --latest --yes` | Stop web and worker first. Writes `outbound.lock`, restores in one transaction, marks in-flight sends AMBIGUOUS, replays the SuppressionJournal, stays paused until resumed in Platform admin > Jobs (T24) |
+| `npm run lead:erase -- --workspace <slug> --lead <id> --reason "<ref>" --yes` | Erases a lead's personal data; suppression keys kept, `contactPlain` nulled, PII-free `lead.erase` tombstone (T24) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | `eslint .` (flat config, ESLint 10 + eslint-config-next 16.4.1) |
 | `npm run test` | Vitest, all projects (unit, integration, components); runs with `TZ=America/New_York` |

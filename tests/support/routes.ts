@@ -118,6 +118,14 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   'workspaceB.quoteId': seedId('quote', `${WORKSPACE_B}:Q-0001`),
   /** T16: a well-formed quote share token that was never issued. */
   'share.unknownToken': Buffer.alloc(32, 0x51).toString('base64url'),
+  /** T23: a well-formed bulk run id that does not exist. */
+  'bulk.unknownRunId': 'bulkrunmatrixprobe0000000',
+  /** T24: well-formed job and webhook event ids that do not exist. */
+  'admin.unknownJobId': 'jobmatrixprobe00000000000',
+  'admin.unknownEventId': 'eventmatrixprobe000000000',
+  /** T22: workspace B's seeded PENDING approval of quote Q-0001 v1, and a conversation id that does not exist. */
+  'workspaceB.approvalId': seedId('approval', `${WORKSPACE_B}:Q-0001:1`),
+  'inbox.unknownConversationId': 'convmatrixprobe0000000000',
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {

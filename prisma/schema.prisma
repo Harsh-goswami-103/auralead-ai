@@ -426,6 +426,7 @@ model Workspace {
   extensionTokens        ExtensionToken[]
   campaigns              Campaign[]
   pipelineConfigVersions PipelineConfigVersion[]
+  bulkRuns               BulkRun[]
 }
 
 model WorkspaceSettings {
@@ -1578,4 +1579,58 @@ model AiDraft {
   @@unique([workspaceId, id])
   @@index([workspaceId, leadId, createdAt])
   @@index([workspaceId, status, createdAt])
+}
+
+// ---- Bulk actions (T23, ADR-61) ---------------------------------------------------------------
+
+/// BulkRun.action: what a bulk run does to each selected lead.
+enum BulkRunAction {
+  SEND_WHATSAPP_TEMPLATE
+  SEND_EMAIL
+}
+
+/// BulkRun.status: QUEUED until the `bulk.run` job starts, RUNNING while it works through the
+/// selection, COMPLETED when every row has a result.
+enum BulkRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+}
+
+/// One bulk action over a lead selection (T23, plan §11, AT13, 06-design F19). The request stores
+/// the selection and the pre-flight counts; the `bulk.run` job writes one result per row
+/// (`results`, selection order) and the three counts, so `queued + skipped + failed = selected`
+/// and the result drawer survives a reload. Per-row eligibility is the shared dispatch eligibility
+/// function with sendIntent BULK.
+model BulkRun {
+  id            String        @id @default(cuid(2))
+  workspaceId   String
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  action        BulkRunAction
+  status        BulkRunStatus @default(QUEUED)
+  /// Client idempotency key: a repeated request (double click, retry) returns the same run.
+  requestKey    String
+  /// { templateId, variables } or { subject, body }; never contact data.
+  params        Json
+  /// string[]: the selected lead ids, in selection order.
+  leadIds       Json
+  selectedCount Int
+  queuedCount   Int           @default(0)
+  skippedCount  Int           @default(0)
+  failedCount   Int           @default(0)
+  /// [{ leadId, outcome: QUEUED | SKIPPED | FAILED, reasons[], deferred, messageId?, attemptId? }].
+  results       Json
+  /// Counts from the pre-flight shown when the run was confirmed: { eligible, skipped, failed }.
+  preflight     Json
+  jobId         String?
+  /// userId of the person who confirmed the run.
+  requestedBy   String
+  correlationId String
+  createdAt     DateTime      @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, requestKey])
+  @@index([workspaceId, createdAt])
 }

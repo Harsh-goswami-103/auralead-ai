@@ -11,6 +11,8 @@ import type { PipelineStage } from '@/generated/prisma/client';
 import { ingestionStage } from './ingestion';
 import { scoreStage } from './score';
 import { draftStage } from './draft';
+import { approvalStage } from './approval';
+import { deliveryStage } from './delivery';
 import type { StageHandler } from './types';
 
 export class StageRegistry {
@@ -36,6 +38,8 @@ export const STAGE_HANDLERS: readonly StageHandler[] = [
   ingestionStage,
   scoreStage,
   draftStage,
+  approvalStage,
+  deliveryStage,
 ];
 
 export function buildStageRegistry(handlers: readonly StageHandler[] = STAGE_HANDLERS): StageRegistry {
