@@ -8,8 +8,8 @@ Plan: [`implementation-plan.md`](implementation-plan.md) (milestones §11, check
 |---|---|---|---|
 | M1 Foundation | T01-T09 | Done, exit gate green | 2026-10-16 |
 | M2 Core lead-to-quote slice | T10-T17 | Done, exit gate green | 2026-10-16 |
-| M3 Messaging | T18-T24 | Next | |
-| M4 Panels and visual | T25-T31 | Not started | |
+| M3 Messaging | T18-T24 | Done, code gate green | 2026-10-16 |
+| M4 Panels and visual | T25-T31 | Next | |
 | M5 Integrations | T32-T36 | Not started | |
 | M6 Hardening, docs, verify | T37-T39 | Not started | |
 
@@ -63,19 +63,44 @@ Exit gate, run 2026-10-16:
 
 Checklist §15: R7, R11, R12, R13, R15, R16, R17, R19, R20, AT5, AT6, AT7, P8, P16, E1 fully ticked; M2 parts of R1, R14, R18, R22, R31, R32, AT2, AT3, O5, P1, P15, E2, E9, E11, R41 ticked `[~]`.
 
+## M3 Inbox, approvals, dispatch, suppression (T18-T24)
+
+What exists:
+- Eligibility evaluator (all reasons in plan order, deferrable vs skip), 24 h window rule, consent grants and B2B attestations (D4), append-only Suppression history, SuppressionJournal producer and reconcile job (ADR-59).
+- Dispatch outbox with approve-and-send, version binding, payload-hash staleness, claimToken fencing, superseded-settle CAS, failure classes, AUTO_SEND_DISABLED check, ESLint ban on adapter calls inside `withTx` (ADR-60).
+- WhatsApp and email webhooks (DEMO simulation), synchronous Stop/unsubscribe that cancels queued sends in the same request, START re-opt-in, quick replies with stable payload ids, call requests, status rank-merge (ADR-62).
+- Conversations, human takeover checked at dispatch, automated reply guard (ADR-63).
+- Bulk actions with preflight; APPROVAL and DELIVERY pipeline stages; `npm run pipeline:resume` (ADR-61).
+- Admin job/webhook inspector, ambiguity resolution, fresh re-authentication, global outbound pause, `db:backup` / `db:restore` with journal replay, `lead:erase` (ADR-64).
+- Inbox, approval queue and quote hand-over UI including mark-sent-manually (P15) (ADR-65).
+
+Exit gate, run 2026-10-16:
+| Check | Result |
+|---|---|
+| `npm run typecheck` / `npm run lint` | exit 0 / exit 0 |
+| `npm run test` | 158 files, 1753 tests passed, 0 skipped |
+| Playwright smoke (fresh DEMO + LIVE builds) | 4/4 |
+| Playwright public, slice, inbox, approvals, quotes (w1440) | 8/8 |
+| Independent HTTP exercise (built app + worker, temp data dir, network spy + netstat) | Sheets lead with consent drafted; quote sent over WhatsApp as Simulated with zero app network connections; inbound opened the window; STOP blocked further sends (422 SUPPRESSED) and cancelled a queued send synchronously; Maps lead skipped NO_WHATSAPP_OPT_IN with 0 attempts; global pause held sends QUEUED until resume; no PII in logs |
+
+The verifier fixed one bug: when outbound was paused, a send that was also ineligible was recorded with the pause as its reason; non-deferrable reasons now come first (`src/server/services/messaging/dispatch.ts`, regression in `tests/integration/jobs/pause-honored.test.ts`).
+
+Checklist §15: 32 more rows fully ticked (R1, R6, R18, R21, R23-R25, R28, R29, R40, R45, AT9-AT12, O1-O3, O5, P3, P4, P11, P13, P15, P20, E3-E6, E8, E9, E11); M3 parts of R4, R22, R27, R31-R33, R42, AT8, AT13, P1, P2, E7 ticked `[~]`.
+
 ## Unresolved / carried forward
 
 - `npm run test:e2e` runs only the smoke project with content so far; the visual projects get specs in T30-T31.
-- ESLint rule still to add: the ban on adapter imports inside `withTx` callbacks (first adapter-calling job, T19). The `--ai` token rule landed in T14.
 - `RoleSwitcher` has no Landing or Docs entries until `/` (T30) and `/docs` (T37) exist.
 - `npm audit`: 9 high advisories, all in transitive dev tooling (eslint plugin `braces`, prisma's `deepmerge-ts`/`mysql2`); the only offered fix is a downgrade. Re-check at T38.
 - npm warns about peer ranges for nested ESLint plugins declaring `eslint ^9`; lint works and every lint fixture passes.
 - Preview-feature caveat (ADR-47): never call `findUnique`/`upsert` on the partial-unique keys of PricingVersion or Suppression; use `findFirst` with the predicate.
-- P15 mark-sent-manually route (APPROVED to SENT, sentVia MANUAL_LINK) is owed by T22 under `/api/app/quotes/**`.
-- Quote status moves in T19/T22 must go through `nextQuoteStatus` so invalid moves give 409.
-- A stage halted with STAGE_HANDLER_MISSING (APPROVAL today) resumes only via a new `pipeline.advance` job under a different key (T23).
 - `tests/unit/arch/lint-rules.test.ts` can hit its 5 s timeout under heavy parallel CPU load; passes alone and in the full gate runs.
+
+- DEMO has no WhatsApp integration or approved template yet, so quote-over-WhatsApp cannot be shown through the UI; ADR-17 says DEMO seeds approved and rejected templates. Assigned to M4 (T28 integration center).
+- Approve-and-send (`/api/app/approvals/[id]/send`) accepts an ineligible lead and leaves the skip to dispatch preflight, while the composer refuses upfront with 422. Safe, but inconsistent; fixed in the M4 follow-up.
+- The E2E harness's `prisma migrate deploy` contacts `checkpoint.prisma.io`; set `CHECKPOINT_DISABLE=1` in the harness env (M4 follow-up).
+- STOP does not set `withdrawnAt` on ConsentRecords; the active Suppression row is what blocks sends (by design, ADR-37).
 
 ## Next step
 
-M3, T18: consent and eligibility service, suppression history and SuppressionJournal producer, then T19-T24 per plan §11.
+M4: T25-T30 in parallel (metrics, leads UI, branding, employee panel, admin panel, landing), then T31 responsive, accessibility and hostile-input pass.
