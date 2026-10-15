@@ -111,6 +111,13 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   /** Well-formed (43-char base64url) but never issued. */
   'invite.unknownToken': Buffer.alloc(32, 0x5a).toString('base64url'),
   'password.wrong': 'not-the-password-123',
+  /** T13: a priced service of workspace B. */
+  'workspaceB.serviceId': seedId('service', `${WORKSPACE_B}:PT-12`),
+  /** T15: workspace B's seeded lead and DRAFT quote (prisma/seed/fixtures/quotes.ts). */
+  'workspaceB.leadId': seedId('lead', `${WORKSPACE_B}:Q-0001`),
+  'workspaceB.quoteId': seedId('quote', `${WORKSPACE_B}:Q-0001`),
+  /** T16: a well-formed quote share token that was never issued. */
+  'share.unknownToken': Buffer.alloc(32, 0x51).toString('base64url'),
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {
