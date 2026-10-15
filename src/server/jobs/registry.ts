@@ -13,6 +13,13 @@ import { webhookPurgeJob } from './handlers/webhook-purge';
 import { aiDraftJob } from './handlers/ai-draft';
 import { quoteExpireSweepJob } from './handlers/quote-expire-sweep';
 import { quoteRenderPdfJob } from './handlers/quote-render-pdf';
+import { suppressionJournalReconcileJob } from './handlers/suppression-journal-reconcile';
+import { dispatchWhatsAppJob } from './handlers/dispatch-whatsapp';
+import { dispatchEmailJob } from './handlers/dispatch-email';
+import { bulkRunJob } from './handlers/bulk-run';
+import { webhookProcessJob } from './handlers/webhook-process';
+import { statusApplyJob } from './handlers/status-apply';
+import { replyAutoJob } from './handlers/reply-auto';
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -48,6 +55,13 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   aiDraftJob,
   quoteExpireSweepJob,
   quoteRenderPdfJob,
+  suppressionJournalReconcileJob,
+  dispatchWhatsAppJob,
+  dispatchEmailJob,
+  bulkRunJob,
+  webhookProcessJob,
+  statusApplyJob,
+  replyAutoJob,
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {
