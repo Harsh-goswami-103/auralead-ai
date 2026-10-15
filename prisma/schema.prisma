@@ -382,6 +382,21 @@ enum ActorKind {
   PUBLIC
 }
 
+/// AiDraft.status (T14, ADR-55): READY drafts passed every check; NEEDS_REVIEW drafts carry flags,
+/// review reasons, policy violations or a provider failure and wait for a person.
+enum AiDraftStatus {
+  READY
+  NEEDS_REVIEW
+}
+
+/// AiDraft.trigger (T14, ADR-55): the DRAFT pipeline stage, a person's "Generate draft", or the
+/// explicit "Generate with local template" action (C13).
+enum AiDraftTrigger {
+  PIPELINE
+  MANUAL
+  LOCAL_EXPLICIT
+}
+
 // ---- Identity, tenancy, settings (plan §5.2) -------------------------------------------------
 
 model Workspace {
@@ -557,6 +572,10 @@ model Lead {
   emailNormalized         String?
   website                 String?
   websiteStatus           WebsiteStatus          @default(UNKNOWN)
+  /// Latest website check (T12, ADR-53): {schemaVersion, untrusted: true, checkedAt, url, finalUrl,
+  /// httpStatus, contentType, bytes, truncated, redirects, downgraded, reasonCode, title, text}.
+  /// `text` is stripped page text: untrusted data, never instructions. Never filtered on.
+  websiteEnrichment       Json?
   address                 String?
   city                    String?
   /// Rating x10 (4.5 stars is 45).
@@ -587,6 +606,7 @@ model Lead {
   conversations      Conversation[]
   callRequests       CallRequest[]
   pipelineExecutions PipelineExecution[]
+  aiDrafts           AiDraft[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, salesStage, createdAt])
@@ -1489,6 +1509,7 @@ model PipelineExecution {
   updatedAt               DateTime              @updatedAt
 
   stageRuns PipelineStageRun[]
+  aiDrafts  AiDraft[]
 
   @@unique([workspaceId, id])
 }
@@ -1510,4 +1531,51 @@ model PipelineStageRun {
   /// E9 idempotency: a stage runs at most once per execution.
   @@unique([executionId, stage])
   @@index([workspaceId, status])
+}
+
+// ---- AI drafts (T14, ADR-55) -------------------------------------------------------------------
+
+/// One generated draft bundle for a lead: approved-template variable values, a follow-up text, an
+/// email subject and body, and a structured quote proposal (service ids, quantities, scope,
+/// timeline; never a price). Prices in `pricingPreview` come only from the server's
+/// PricingVersion. Model output that broke the output policy is not stored; only the violation
+/// (field + rule) is. At most one draft per pipeline execution (E9).
+model AiDraft {
+  id                String             @id @default(cuid(2))
+  workspaceId       String
+  leadId            String
+  lead              Lead               @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  executionId       String?            @unique
+  execution         PipelineExecution? @relation(fields: [workspaceId, executionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  trigger           AiDraftTrigger
+  status            AiDraftStatus
+  /// anthropic, openai, local-deterministic, or none (no generator produced output).
+  generatorLabel    String
+  modelId           String?
+  /// sha256 of the canonical generation input (the local generator is keyed by it).
+  inputHash         String
+  /// string[]: values for the approved template's body variables, in order.
+  templateVariables Json
+  followUpText      String?
+  emailSubject      String?
+  emailBody         String?
+  /// { items: [{ serviceId, qty }], scopeText, timelineText } after strip-and-flag (C12).
+  proposal          Json?
+  /// Server-priced preview of the proposal (decimal-string paise), from computeQuoteTotals.
+  pricingPreview    Json?
+  aiPolicyFlags     Json
+  reviewReasons     Json
+  /// [{ field, rule }]: output-policy hits; the offending text itself is not stored.
+  policyViolations  Json
+  escalated         Boolean            @default(false)
+  errorCode         String?
+  errorRedacted     String?
+  /// userId or `system:<jobType>`.
+  requestedBy       String
+  correlationId     String
+  createdAt         DateTime           @default(now())
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, leadId, createdAt])
+  @@index([workspaceId, status, createdAt])
 }
