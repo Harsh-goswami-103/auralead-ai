@@ -17,6 +17,11 @@ const securityHeaders = [
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
 ];
 
+const publicQuoteHeaders = [
+  { key: 'Referrer-Policy', value: 'no-referrer' },
+  { key: 'X-Robots-Tag', value: 'noindex' },
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // The E2E harness (tests/e2e/support, T09) builds the LIVE variant into a second dir so the
@@ -27,7 +32,13 @@ const nextConfig: NextConfig = {
   // Native or heavy server modules are loaded with Node's require, never bundled (plan §2.3).
   serverExternalPackages: ['better-sqlite3', '@prisma/adapter-better-sqlite3', '@node-rs/argon2', 'sharp', '@react-pdf/renderer'],
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }];
+    return [
+      { source: '/:path*', headers: securityHeaders },
+      // T16 (ADR-09): the public quote page and its API never leak the share token in a Referer and
+      // are never indexed. Listed after the global rule, so these values win for the same keys.
+      { source: '/quote/:path*', headers: publicQuoteHeaders },
+      { source: '/api/quote-share/:path*', headers: publicQuoteHeaders },
+    ];
   },
 };
 
