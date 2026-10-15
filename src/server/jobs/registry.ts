@@ -4,6 +4,15 @@
  * A claimed job whose type is not registered goes DEAD with UNKNOWN_JOB_TYPE (never silently
  * dropped or retried).
  */
+import { leadEnrichJob } from './handlers/lead-enrich';
+import { leadRescoreJob } from './handlers/lead-rescore';
+import { leadScoreJob } from './handlers/lead-score';
+import { pipelineAdvanceJob } from './handlers/pipeline-advance';
+import { ingestProcessJob } from './handlers/ingest-process';
+import { webhookPurgeJob } from './handlers/webhook-purge';
+import { aiDraftJob } from './handlers/ai-draft';
+import { quoteExpireSweepJob } from './handlers/quote-expire-sweep';
+import { quoteRenderPdfJob } from './handlers/quote-render-pdf';
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -29,7 +38,17 @@ export class JobRegistry {
 }
 
 /** Production job definitions, appended by the tasks that own each handler. */
-export const JOB_DEFINITIONS: readonly JobDefinition[] = [];
+export const JOB_DEFINITIONS: readonly JobDefinition[] = [
+  pipelineAdvanceJob,
+  leadEnrichJob,
+  leadScoreJob,
+  leadRescoreJob,
+  ingestProcessJob,
+  webhookPurgeJob,
+  aiDraftJob,
+  quoteExpireSweepJob,
+  quoteRenderPdfJob,
+];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {
   const registry = new JobRegistry();
