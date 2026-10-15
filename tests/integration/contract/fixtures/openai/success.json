@@ -1,0 +1,24 @@
+{
+  "id": "chatcmpl-T14success",
+  "object": "chat.completion",
+  "created": 1792130400,
+  "model": "workspace-configured-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"templateVariables\":[\"Priya\",\"Teeth whitening (in-clinic)\"],\"followUp\":\"Hi Priya, thanks for reaching out about teeth whitening. Would you like a quotation?\",\"email\":{\"subject\":\"Your teeth whitening enquiry\",\"body\":\"Hello Priya,\\n\\nThank you for your interest. We can prepare a detailed quotation for you.\\n\\nRegards,\\nSmile Avenue Dental Clinic\"},\"proposal\":{\"items\":[{\"serviceId\":\"svc_whiten\",\"qty\":1}],\"scopeText\":\"One in-clinic whitening session.\",\"timelineText\":\"Completed in a single visit.\"}}",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1102,
+    "completion_tokens": 298,
+    "total_tokens": 1400
+  }
+}

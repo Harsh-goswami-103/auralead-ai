@@ -1,0 +1,1 @@
+{"id":"chatcmpl-T14length","object":"chat.completion","created":1792130400,"model":"workspace-configured-model","choices":[{"index":0,"message":{"role":"assistant","content":"{\"templateVariables\":[\"Priya\",\"Tee","refusal":null,"annotations":[]},"logprobs":null,"finish_reason":"length"}],"usage":{"prompt_tokens":1102,"completion_tokens":4000,"total_tokens":5102}}

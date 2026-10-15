@@ -1,0 +1,26 @@
+{
+  "id": "msg_01JqT8sKx3Lw9fPz2VbC7nYd",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "EqQBCkYIBxgCKkBzZ2lnbmF0dXJl"
+    },
+    {
+      "type": "text",
+      "text": "{\"templateVariables\":[\"Priya\",\"Teeth whitening (in-clinic)\"],\"followUp\":\"Hi Priya, thanks for reaching out about teeth whitening. Would you like a quotation?\",\"email\":{\"subject\":\"Your teeth whitening enquiry\",\"body\":\"Hello Priya,\\n\\nThank you for your interest. We can prepare a detailed quotation for you.\\n\\nRegards,\\nSmile Avenue Dental Clinic\"},\"proposal\":{\"items\":[{\"serviceId\":\"svc_whiten\",\"qty\":1}],\"scopeText\":\"One in-clinic whitening session.\",\"timelineText\":\"Completed in a single visit.\"}}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 1184,
+    "output_tokens": 312,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  }
+}

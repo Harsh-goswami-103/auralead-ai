@@ -1,0 +1,1 @@
+{"id":"msg_01RfZ2hQm8Kc4dVx6WnP3tLa","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":"refusal","stop_sequence":null,"stop_details":{"type":"refusal","category":null,"explanation":"The request was declined."},"usage":{"input_tokens":1184,"output_tokens":0}}

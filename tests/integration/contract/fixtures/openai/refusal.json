@@ -1,0 +1,1 @@
+{"id":"chatcmpl-T14refusal","object":"chat.completion","created":1792130400,"model":"workspace-configured-model","choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":"I'm sorry, I can't help with that request.","annotations":[]},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1102,"completion_tokens":11,"total_tokens":1113}}

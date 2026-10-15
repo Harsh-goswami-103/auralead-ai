@@ -1,0 +1,1 @@
+{"id":"msg_01MxT4kPq7Jd2sWn9VbH5cRe","type":"message","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"{\"templateVariables\":[\"Priya\",\"Teeth whit"}],"stop_reason":"max_tokens","stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1184,"output_tokens":16000}}
