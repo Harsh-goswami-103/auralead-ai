@@ -14,6 +14,13 @@ export const REBASE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   PricingVersion: ['createdAt'],
   ScoringConfigVersion: ['createdAt'],
   PipelineConfigVersion: ['createdAt'],
+  // T15 demo quotes (prisma/seed/fixtures/quotes.ts).
+  Lead: ['createdAt', 'updatedAt'],
+  Quote: ['createdAt', 'updatedAt', 'validUntil'],
+  QuoteVersion: ['createdAt', 'validUntil', 'sentAt'],
+  Approval: ['requestedAt', 'decidedAt', 'invalidatedAt'],
+  // T16 demo shared quote (prisma/seed/fixtures/shared-quotes.ts).
+  QuoteShare: ['createdAt', 'expiresAt', 'revokedAt', 'supersededAt'],
 };
 
 /** Primary key column per table when it is not `id`. */

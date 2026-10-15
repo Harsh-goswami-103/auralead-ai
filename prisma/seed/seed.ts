@@ -17,6 +17,9 @@ import { withTx } from '../../src/server/db/tx';
 import { PIPELINE_V1, SCORING_V1 } from './fixtures/configs';
 import { ASSIGNMENT_CREATOR, ASSIGNMENT_FIXTURES, MEMBERSHIP_FIXTURES, USER_FIXTURES } from './fixtures/identities';
 import { termsFor, WORKSPACE_FIXTURES } from './fixtures/workspaces';
+import { QUOTE_FIXTURES } from './fixtures/quotes';
+import { insertSharedQuotes } from './fixtures/shared-quotes';
+import { computeQuoteTotals as computeQuoteMoney } from '../../src/lib/money';
 import { seedId } from './ids';
 
 export type SeedOptions = { config: { mode: 'demo' | 'live' }; now: Date };
@@ -208,6 +211,10 @@ async function insertAll(tx: Tx, now: Date): Promise<SeedSummary> {
     counts.assignments++;
   }
 
+  await insertQuotes(tx, now);
+  // T16: a revised, sent and shared quote for the public quote page (fixtures/shared-quotes.ts).
+  await insertSharedQuotes(tx, now);
+
   const summary: SeedSummary = { anchorAt: now.toISOString(), ...counts };
   await tx.auditEvent.create({
     data: {
@@ -227,6 +234,132 @@ async function insertAll(tx: Tx, now: Date): Promise<SeedSummary> {
     },
   });
   return summary;
+}
+
+/** T15: demo quotes (DRAFT v1 with items, PENDING approval and creation audit), priced from price list v1. */
+async function insertQuotes(tx: Tx, now: Date): Promise<void> {
+  const ago = (days: number) => new Date(now.getTime() - days * DAY);
+  for (const q of QUOTE_FIXTURES) {
+    const ws = WORKSPACE_FIXTURES.find((w) => w.slug === q.workspace);
+    if (!ws) throw new Error(`seed fixture error: quote ${q.key} names unknown workspace ${q.workspace}`);
+    const wsId = workspaceId(ws.slug);
+    const ownerId = userId(q.ownerKey);
+    const leadId = seedId('lead', q.key);
+    const quoteId = seedId('quote', q.key);
+    const versionId = seedId('quote-version', `${q.key}:1`);
+    const pricingVersionId = seedId('pricing-version', `${ws.slug}:1`);
+    const createdAt = ago(q.createdDaysAgo);
+    const validUntil = new Date(createdAt.getTime() + ws.settings.quoteValidityDays * DAY);
+
+    const lines = q.items.map((item, position) => {
+      const svc = ws.services.find((s) => s.code === item.code);
+      if (!svc) throw new Error(`seed fixture error: quote ${q.key} names unknown service ${item.code}`);
+      return { svc, qty: item.qty, unitPricePaise: BigInt(svc.unitPriceRupees) * 100n, position };
+    });
+    const tax = ws.settings.taxMode === 'CONFIGURED' && ws.settings.taxBps !== null ? ({ mode: 'CONFIGURED', bps: ws.settings.taxBps } as const) : ({ mode: 'NONE' } as const);
+    const money = computeQuoteMoney({ lines, discount: { kind: 'NONE', value: 0n }, tax });
+    const limit = lines.reduce<number>((min, l) => (l.svc.maxDiscountBps === null ? min : Math.min(min, l.svc.maxDiscountBps)), ws.settings.maxDiscountBps);
+
+    await tx.lead.create({
+      data: {
+        id: leadId,
+        workspaceId: wsId,
+        displayName: q.lead.name,
+        nameNormalized: q.lead.name.toLowerCase(),
+        category: q.lead.category,
+        city: q.lead.city,
+        alternatePhones: [],
+        scoreReasons: [],
+        unknownInputs: [],
+        firstSource: 'MANUAL',
+        createdAt: ago(q.lead.createdDaysAgo),
+        updatedAt: ago(q.lead.createdDaysAgo),
+      },
+    });
+    await tx.quote.create({ data: { id: quoteId, workspaceId: wsId, leadId, number: q.number, status: 'DRAFT', createdBy: ownerId, createdAt, updatedAt: createdAt } });
+    await tx.quoteVersion.create({
+      data: {
+        id: versionId,
+        workspaceId: wsId,
+        quoteId,
+        versionNo: 1,
+        pricingVersionId,
+        snapshot: {
+          pricingVersionId,
+          pricingVersion: 1,
+          services: lines.map((l) => ({
+            serviceId: seedId('service', `${ws.slug}:${l.svc.code}`),
+            code: l.svc.code,
+            name: l.svc.name,
+            unitLabel: l.svc.unitLabel,
+            unitPricePaise: l.unitPricePaise.toString(),
+            minQty: l.svc.minQty ?? 1,
+            maxQty: l.svc.maxQty ?? 10000,
+            maxDiscountBps: l.svc.maxDiscountBps,
+          })),
+          rules: {
+            workspaceMaxDiscountBps: ws.settings.maxDiscountBps,
+            effectiveDiscountLimitBps: limit,
+            taxMode: tax.mode,
+            taxLabel: tax.mode === 'CONFIGURED' ? ws.settings.taxLabel : null,
+            taxBps: tax.mode === 'CONFIGURED' ? tax.bps : null,
+            quoteValidityDays: ws.settings.quoteValidityDays,
+            gstin: null,
+            sanityCapPaise: '100000000000',
+          },
+        },
+        scopeText: q.scopeText,
+        timelineText: q.timelineText,
+        discountKind: 'NONE',
+        discountValue: 0n,
+        taxLabel: tax.mode === 'CONFIGURED' ? ws.settings.taxLabel : null,
+        taxBps: tax.mode === 'CONFIGURED' ? tax.bps : null,
+        subtotalPaise: money.subtotalPaise,
+        discountPaise: money.discountPaise,
+        taxablePaise: money.taxablePaise,
+        taxPaise: money.taxPaise,
+        totalPaise: money.totalPaise,
+        validUntil,
+        aiPolicyFlags: [],
+        reviewReasons: [],
+        createdBy: ownerId,
+        createdAt,
+        items: {
+          create: lines.map((l, i) => ({
+            id: seedId('quote-item', `${q.key}:1:${l.position}`),
+            serviceId: seedId('service', `${ws.slug}:${l.svc.code}`),
+            serviceNameSnapshot: l.svc.name,
+            unitLabel: l.svc.unitLabel,
+            qty: l.qty,
+            unitPricePaise: l.unitPricePaise,
+            lineTotalPaise: money.lines[i]!.lineTotalPaise,
+            position: l.position,
+          })),
+        },
+      },
+    });
+    await tx.quote.update({ where: { id: quoteId }, data: { currentVersionId: versionId, currentVersionNo: 1, validUntil, needsPricingReview: false, updatedAt: createdAt } });
+    await tx.approval.create({
+      data: { id: seedId('approval', `${q.key}:1`), workspaceId: wsId, kind: 'QUOTE_VERSION', status: 'PENDING', quoteId, quoteVersionId: versionId, flags: [], requestedAt: createdAt },
+    });
+    await tx.auditEvent.create({
+      data: {
+        id: seedId('audit', `quote.create:${q.key}`),
+        workspaceId: wsId,
+        actorUserId: ownerId,
+        actorKind: 'USER',
+        action: 'quote.create',
+        targetType: 'Quote',
+        targetId: quoteId,
+        result: 'SUCCESS',
+        summary: { number: q.number, versionNo: 1, lines: lines.length, unpriced: 0, needsPricingReview: false, pricingVersion: 1, fromDraft: false, aiPolicyFlags: [] },
+        crossWorkspace: false,
+        correlationId: 'seed',
+        simulated: true,
+        createdAt,
+      },
+    });
+  }
 }
 
 const TX_OPTIONS = { maxWaitMs: 20_000, timeoutMs: 60_000 } as const;
