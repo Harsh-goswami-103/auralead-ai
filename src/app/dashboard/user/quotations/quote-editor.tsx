@@ -36,7 +36,16 @@ export type EditorInitial = {
 
 export type EditorMode =
   | { kind: 'create'; leadId: string; draftId: string | null }
-  | { kind: 'revise'; quoteId: string; expectedVersion: number; pricingVersionId: string; pricingVersionNo: number | null };
+  | {
+      kind: 'revise';
+      quoteId: string;
+      expectedVersion: number;
+      pricingVersionId: string;
+      pricingVersionNo: number | null;
+      /** T22: the approval queue saves through /api/app/approvals/[id]/revise with its workspace slug. */
+      endpoint?: string;
+      extraBody?: Record<string, string>;
+    };
 
 type Row = { key: number; serviceId: string; qty: string; name?: string; unitLabel?: string };
 
@@ -129,8 +138,8 @@ export function QuoteEditor(props: { catalog: QuoteEditorCatalogDto; mode: Edito
             redirectTo: `/dashboard/user/quotations/${d.quote.id}`,
           }))
         : await mutate<{ version: { versionNo: number } }>(
-            `/api/app/quotes/${mode.quoteId}/revise`,
-            { expectedVersion: mode.expectedVersion, ...(reprice ? { repriceToActive: true } : {}), ...parsed.body },
+            mode.endpoint ?? `/api/app/quotes/${mode.quoteId}/revise`,
+            { ...(mode.extraBody ?? {}), expectedVersion: mode.expectedVersion, ...(reprice ? { repriceToActive: true } : {}), ...parsed.body },
             (d) => ({ message: `Saved as version ${d.version.versionNo}. It needs approval again.` }),
           );
     if (!outcome.ok) setFailure({ message: outcome.message, reference: outcome.reference });

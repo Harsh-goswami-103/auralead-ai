@@ -15,6 +15,8 @@ import { formatINR } from '@/lib/money';
 import { bpsToPercentString } from '@/lib/schemas/pricing';
 import { getPageContext } from '@/server/auth/page-context';
 import { getQuoteDetail, getQuoteEditorCatalog, serializeCatalog, type QuoteDetail } from '@/server/services/quotes/versioning';
+import { QuoteSharePanel } from '@/components/approvals/QuoteSharePanel';
+import { loadQuoteShareEvidence } from '@/server/services/quotes/manual-send';
 import { QuoteActions } from '../quote-actions';
 import { QuoteStatusBadge } from '../quote-status';
 
@@ -29,6 +31,10 @@ const ACTION_LABELS: Record<string, string> = {
   'quote.expire': 'Expired (validity date passed)',
   'quote.share.create': 'Share link created',
   'quote.share.revoke': 'Share link revoked',
+  'quote.send': 'Sent',
+  'quote.view': 'Opened (may be automated)',
+  'quote.view.unsent': 'A link was opened before it was marked as sent',
+  'quote.accept': 'Accepted',
 };
 
 const FLAG_LABELS: Record<string, string> = {
@@ -142,6 +148,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
     throw error;
   }
   const catalog = await getQuoteEditorCatalog(page.ctx);
+  const evidence = await loadQuoteShareEvidence(page.ctx, quoteId);
   const tz = detail.workspace.timezone;
   const current = detail.versions[0]!;
   const reasons = Array.isArray(current.reviewReasons) ? current.reviewReasons : [];
@@ -208,6 +215,23 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         }}
       />
 
+      <QuoteSharePanel
+        quoteId={detail.quote.id}
+        number={detail.quote.number}
+        versionNo={detail.quote.currentVersionNo}
+        status={detail.effectiveStatus}
+        sentVia={detail.quote.sentVia}
+        timeZone={tz}
+        shares={detail.shares.map((s) => ({
+          id: s.id,
+          state: s.revokedAt ? 'REVOKED' : s.supersededAt ? 'SUPERSEDED' : page.ctx.clock.now() >= s.expiresAt ? 'EXPIRED' : 'ACTIVE',
+          expiresAt: s.expiresAt.toISOString(),
+          createdAt: s.createdAt.toISOString(),
+        }))}
+        evidence={{ ...evidence, lastOpenAt: evidence.lastOpenAt?.toISOString() ?? null }}
+        canShare={detail.permissions.canShare}
+      />
+
       <section aria-labelledby="current-heading" className="flex flex-col gap-4 rounded-lg border border-border-subtle bg-bg-1 p-4">
         <h2 id="current-heading" className="text-lg font-semibold text-fg-1">
           Version {current.versionNo}
@@ -269,7 +293,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
         <section aria-labelledby="approvals-heading" className="flex flex-col gap-2">
           <h2 id="approvals-heading" className="text-lg font-semibold text-fg-1">
-            Approvals and links
+            Approvals
           </h2>
           <ul className="flex flex-col gap-1 text-sm">
             {detail.approvals.map((a) => {
@@ -281,18 +305,6 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
               );
             })}
           </ul>
-          {detail.shares.length === 0 ? (
-            <p className="text-sm text-fg-2">No share links yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-1 text-sm">
-              {detail.shares.map((s) => (
-                <li key={s.id} className="text-fg-1">
-                  Link created {formatDateTime(s.createdAt, tz)}:{' '}
-                  {s.revokedAt ? 'revoked' : s.supersededAt ? 'replaced by a newer version' : page.ctx.clock.now() >= s.expiresAt ? 'expired' : `active until ${formatDate(s.expiresAt, tz)}`}
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
       </div>
     </div>
