@@ -4,8 +4,9 @@
  * browser supplies nothing but the session cookie.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Building2 } from 'lucide-react';
+import { ArrowRight, Building2 } from 'lucide-react';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { formatDate } from '@/lib/format/date';
 import { getPageContext } from '@/server/auth/page-context';
@@ -69,6 +70,13 @@ export default async function EmployeeHomePage() {
                   </ul>
                 )}
               </div>
+              <Link
+                href={`/dashboard/employee/${encodeURIComponent(a.slug)}/leads`}
+                className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-cyan underline-offset-4 hover:underline"
+              >
+                Open lead console
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
             </li>
           ))}
         </ul>
