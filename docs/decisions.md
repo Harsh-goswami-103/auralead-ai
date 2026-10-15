@@ -14,8 +14,8 @@ Each entry: decision, why, alternatives considered, reversibility (1 = locked in
 ### ADR-02 Prisma 7 with the better-sqlite3 driver adapter
 - **Decision:** Prisma 7.10.0 with `prisma.config.ts`, generator `provider = "prisma-client"` and explicit `output = "../src/generated/prisma"`, `PrismaBetterSqlite3` adapter, `dotenv` loaded explicitly. All raw SQL lives in `src/server/db/raw/`.
 - **Why:** Prisma 7 is the current stable line and moves the engine to JS driver adapters, which keeps the worker light. The single-statement job claim needs `$queryRaw` with `RETURNING`, which SQLite supports.
-- **Risk:** PRAGMA scope per connection, DateTime storage format seen by raw SQL, and Windows prebuilds are UNVERIFIED (critic 12.3) until the M1 spike (T02).
-- **ADR-02a (reserved):** spike fallback. If T02 fails, the first fix is another better-sqlite3 version inside the adapter range, then Prisma's built-in SQLite path if 7.10 offers one; the result is recorded here.
+- **Risk:** PRAGMA scope per connection, DateTime storage format seen by raw SQL, and Windows prebuilds were UNVERIFIED (critic 12.3) until the M1 spike (T02); now verified, see ADR-02a.
+- **ADR-02a (T02 spike result, 2026-10-15): PASSED, no fallback.** Pinned stack works unchanged on Windows 11 / Node 22.23.2 / npm 10.9.8 with no C++ compiler. Prebuilt binaries: better-sqlite3 12.11.1 via prebuild-install (SQLite 3.53.2, ABI 127); @node-rs/argon2 2.2.2 via @node-rs/argon2-win32-x64-msvc; sharp 0.35.5 via @img/sharp-win32-x64 (libvips 8.18.7). PRAGMAs confirmed on every adapter connection, including inside `$transaction`: journal_mode=wal (persisted in file), busy_timeout=5000, foreign_keys=1 (enforced). DateTime is stored as ISO-8601 text with a `+00:00` suffix (e.g. `2026-10-15T10:00:00.000+00:00`); bound Dates in raw SQL match it, so raw SQL always binds Dates and never relies on CURRENT_TIMESTAMP. Raw INTEGER columns come back as number, BIGINT/SUM/COUNT as bigint. One connection per PrismaClient; interactive transactions are serialized in-process. Two-process claim race: 200 jobs, each claimed exactly once, 0 SQLITE_BUSY. Paths with spaces work unencoded in `file:` URLs. Tests: `tests/integration/spike/*.test.ts` (15/15, 6 consecutive green runs).
 - **Alternatives:** Prisma 8.0 rc (rejected: pre-release); Drizzle or Kysely (rejected: PRD default is Prisma; raw-SQL isolation already gives portability).
 - **Reversibility:** 2.
 
@@ -264,3 +264,91 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Decision:** Message and DispatchAttempt carry `sendIntent` (MANUAL_SINGLE, BULK, AUTOMATED, CUSTOMER_REQUESTED_REPLY) and `initiatedBy`, set at creation and immutable. Eligibility reads the persisted intent. A new ordered check `AUTO_SEND_DISABLED` skips automated attempts when workspace auto-send is now off or the pinned pipeline is no longer POLICY_AUTO for attempts created by a POLICY_AUTO approval. An unapproved CUSTOMER_REQUESTED_REPLY counts as automated. Attested-B2B email requires MANUAL_SINGLE.
 - **Why:** Without persisted provenance, dispatch could not tell automated work from manual sends, so disabling auto-send would not stop work already queued.
 - **Reversibility:** 3.
+
+### ADR-46 Test teardown kills the process tree first on Windows (T02)
+- **Decision:** `tests/support/spawn.ts` `terminate()` runs `taskkill /T /F /PID <pid>` first on Windows and uses `child.kill('SIGKILL')` as the fallback (POSIX: SIGKILL). The plan text listed SIGKILL first with taskkill as the fallback.
+- **Why:** On Windows `child.kill('SIGKILL')` terminates only the direct child; once the parent is gone, `taskkill /T` can no longer find the tree, so grandchildren would be orphaned. `tests/integration/spike/teardown.test.ts` asserts that both the child and its grandchild are gone.
+- **Alternatives:** SIGKILL first plus per-test tracking of descendant pids (rejected: fragile).
+- **Reversibility:** 5.
+
+### ADR-47 Full schema: partial indexes via the Prisma preview feature, composite tenant FKs, small schema additions (T03)
+- **Decision:**
+  - **Partial unique indexes** are declared in `schema.prisma` with the `partialIndexes` preview feature (`@@unique([...], map: ..., where: raw("..."))`, Prisma 7.10.0) instead of SQL hand-written only in the migration. Prisma generates them into the migration SQL, where each one is still marked `-- PARTIAL UNIQUE`. There are eight: Suppression active row, one active PricingVersion, ScoringConfigVersion and PipelineConfigVersion per workspace, one APPROVED quote-version Approval per version, one PENDING or APPROVED Approval per message, one open Conversation per (workspace, lead, channel), and one unrouted WebhookRejection counter per (provider, reason, day).
+  - **Composite foreign keys** `(workspaceId, parentId) -> parent(workspaceId, id)` are accepted by Prisma 7.10 and SQLite for every tenant child-to-parent reference, including optional ones. The parent carries `@@unique([workspaceId, id])`. `tests/unit/arch/tenant-columns.test.ts` enforces this for every reference between tenant models.
+  - **Service-enforced, not foreign keys:**
+    - `Suppression.clearedByConsentId`, because a suppression must survive lead erasure.
+    - Every `Job.workspaceId`, `JobAttempt.workspaceId`, `AuditEvent.workspaceId`, `WebhookEvent.workspaceId` and `WebhookRejection.workspaceId`, because these are nullable system rows.
+    - `WebhookEvent.integrationId`, `PipelineStageRun.jobId`, `Session.activeWorkspaceId`, and the `createdBy`, `decidedBy` and `requestedBy` user-id columns.
+  - **Additions the §5 tables did not spell out:**
+    - `Conversation.closedAt` defines "open" for the open-conversation partial unique.
+    - `Message.channel` is the provider namespace for `(channel, providerMessageId)` UNIQUE. `DispatchAttempt` uses the same `(channel, providerMessageId)` UNIQUE.
+    - `WebhookRejection` gets an extra partial unique for null-workspace rows, because NULLs are distinct inside the plain unique.
+    - `Quote.currentVersionId` is nullable, but only inside the creating transaction: Quote and QuoteVersion reference each other, and SQLite FKs are not deferrable.
+    - `Quote.validUntil` is nullable until version 1 exists.
+    - Inline value sets became enums: TaxMode, QuoteSentVia, UaClass (BROWSER, LINK_PREVIEW, BOT, UNKNOWN), MessageKind, TemplateIntent and ActorKind.
+    - `Lead.pipelineConfigVersionId` is nullable for leads created before a pipeline exists.
+  - **One-to-one uniques stay single-column:** `QuoteAcceptance.quoteVersionId`, `QuoteArtifact.quoteVersionId` and `PipelineExecution.leadId`. Their back-relations are lists, because Prisma requires a composite unique for a 1:1 over a composite FK.
+- **Why:** If the indexes lived only in hand-written migration SQL, they would be invisible to Prisma's diff, and the next `prisma migrate dev` would emit `DROP INDEX` for them as drift. With the preview feature, `prisma migrate diff` from the migrated DB to the schema is empty (verified). The DB-level composite FKs back up `assertSameWorkspace` (E10).
+- **Caveat:** The preview feature also exposes the partial-unique fields in the generated `WhereUniqueInput`; for example, `PricingVersion` accepts `where: { workspaceId }` and `Suppression` accepts `workspaceId_channel_contactKey`. Do not use them for `findUnique` or `upsert`, because they are unique only among the rows that match the predicate. Look up active rows with `findFirst` plus the predicate, such as `active: true` or `clearedAt: null`.
+- **Alternatives:** Hand-written SQL only, as the plan text says. It was rejected because of the drift problem above. If the preview feature regresses, fall back to hand-written SQL and pass `--create-only` on every later migration so the DROP INDEX lines can be removed by hand.
+- **Reversibility:** 3.
+
+### ADR-48 Job runtime details the plan left open (T07)
+- **Decision:**
+  - **Worker bundle name.** The `build` script now runs `tsup --entry.worker worker/index.ts ...`. Before, it ran `tsup worker/index.ts`, which writes `dist/index.js`, while `start:worker` and the E2E harness run `dist/worker.js`. This is the only non-append edit to `package.json`. Verified: the bundle refuses to start on an unmigrated DB (exit 1) and starts on a migrated one.
+  - **Handler contract.** A handler returns `succeeded | deferred | retry | dead | cancelled`, and any of these may carry a `finalTx`. The runner runs `finalTx` inside the fenced settle transaction, so a domain write and the job's final state commit together. Writes made earlier in a handler go through `ctx.fencedTx`. A thrown `AppError` with `retryable` (or `DB_BUSY`) is retried; `LEASE_LOST` is a lost lease; any other thrown error is fatal (`DEAD`, `deadReason = FATAL`).
+  - **Max attempts per kind.** A job's limit is stored in `Job.maxAttempts` at enqueue time, taken from `kind` (send 5, ai 3, fetch 8, pdf 3, default 5) or set explicitly.
+  - **Attempt numbers.** `JobAttempt.attemptNo` is sequential per job and does not follow `Job.attempts`. Deferrals refund `Job.attempts` (plan §4.3), so reusing it would collide on `(jobId, attemptNo)`. A deferral is logged as `DEFERRED`, a cancel as `FATAL` with `errorCode = JOB_CANCELLED` (the enum has no CANCELLED outcome), and a reaped lease as `LEASE_LOST` (or `AMBIGUOUS` when a SENDING DispatchAttempt existed).
+  - **Reaper at max attempts.** An expired lease on the last allowed attempt goes `DEAD(MAX_ATTEMPTS)` instead of being requeued.
+  - **Background writes are transactions.** Heartbeat, lease extension, claim and reaper writes all run through `withTx`. The adapter keeps one connection per client and serializes interactive transactions, so a background write can never land inside a handler's open transaction.
+  - **Pause points.** They are file-based across processes: `AURALEAD_PAUSE_DIR` plus `AURALEAD_PAUSE_AT`, `<name>.reached.json` and `<name>.release`. In-process tests use `setPauseHandler`. All of this is a no-op unless `NODE_ENV=test`. These test-only variables are not added to `.env.example`.
+  - **Concurrency is 1.** The configurable concurrency of up to 4 for provider-bound types is not built yet. The task that first needs it (T19 or later) adds it behind `createWorker`.
+- **Why:** The plan fixes the behavior (claim, fence, reaper, backoff, heartbeat, shutdown) but not these mechanics. Each choice is covered by `tests/integration/jobs/*.test.ts`.
+- **Reversibility:** 4.
+
+### ADR-49 Design system and app shell details (T08)
+- **Decision:**
+  - **shadcn output, verified imports.** I ran `npx shadcn@4.21.5 add button input label badge card dialog alert-dialog dropdown-menu sheet separator skeleton command sonner popover tooltip` in a scratch project that had the same `components.json` (style new-york, Tailwind 4, `aliases.utils = @/components/ui/cn`). The CLI writes files and runs `npm install`, which would add unpinned packages, so it was not run in the repo. I copied the files into `src/components/ui/` and made two import fixes:
+    - Every generated file had `import { cn } from "cn"`, and the CLI also added the unpinned `cn@^0.4.0` package. I rewrote these to `@/components/ui/cn`, which is clsx 2.1.1 plus tailwind-merge 3.7.0 (both pinned).
+    - `sonner.tsx` imported `next-themes`, which is not a dependency. The panels have one dark theme, so I removed that import and fixed the theme to dark.
+    - Radix imports use the unified `radix-ui` 1.8.1 as generated (for example `import { Dialog as DialogPrimitive } from "radix-ui"`).
+    - `components.json` is committed at the repo root. Future `shadcn add` runs must use the same scratch-project method and the same two import fixes. No new packages were added.
+  - **Token naming in Tailwind.** Raw tokens stay in `src/styles/tokens.css` under the plan's names (`--accent` is cyan). In `@theme`:
+    - Utilities are `bg-bg-0..3`, `text-fg-1..3`, `cyan`, `ai`, `demo`, the status tones, and the paper set.
+    - Tailwind's `accent` color follows shadcn semantics (the bg-3 hover surface).
+    - Cyan is exposed as `primary` and `cyan`.
+    - The type scale overrides Tailwind's (`text-base` is 14/20, `text-md` 16/24) and drops `text-7xl` through `text-9xl`. Radii map to 4/6/8/12/16.
+    - The html element carries the class `dark` so shadcn's `dark:` variants apply.
+  - **Role switcher gating (P19).** `src/components/patterns/DemoChrome.tsx` is the only importer of `RoleSwitcher.tsx`. Each import is `process.env.NEXT_PUBLIC_APP_MODE === 'demo' ? dynamic(() => import('./RoleSwitcher')...) : null`.
+    - `tests/unit/arch/live-bundle.test.ts` proves the module drops out of the bundle. It bundles the gate with Vite 8/Rolldown in both modes and walks the import graph.
+    - I also checked a real `next build` with NEXT_PUBLIC_APP_MODE=live: zero client or server chunks contain the switcher.
+    - The switcher is a floating control on every route, mounted in the root layout. In DEMO the `/login` page shows only the seeded identities, via the same gate.
+    - It has no Landing or Docs links yet, because `/` (T30) and `/docs` (T37) do not exist. Those tasks add the links.
+  - **Panel chrome read model.** `src/server/services/shell/panel-chrome.ts` (`loadPanelChrome`) is a new file outside T08's listed paths. It is needed because layouts read through services, never Prisma (plan §4). It lists memberships (USER) or active assignments (EMPLOYEE) for the actor's own mode. It also returns the global outbound pause (SystemSetting or `OUTBOUND_PAUSED`) and the workspace automation pause.
+  - **Panel layouts.** With no session, a layout redirects to `/login`. A session of another role gets 404 (A6, the same answer as any route the actor cannot see).
+  - **Login page styling.** I edited `src/app/(auth)/**` (T06's files, as the T08 goal says) and added `auth-frame.tsx`. The login page reads `getConfig().mode` and is `force-dynamic`.
+  - **Patterns built now:** StatusBadge (with ModeChip), GatedAction, EmptyState, ErrorState, LoadingSkeleton, PartialNotice, ConfirmDialog, ModeBanner, RoleSwitcher, WorkspaceChip, UserMenu, CommandPalette, PanelNav, PanelShell, Providers, ProductMark, and the `postJson` CSRF helper.
+  - **Patterns deferred:** BulkResultSummary, ConsentChips and ScoreBreakdown depend on domain data. Their owning tasks build them (T26/T27, T18, T12).
+- **Why:** The plan pins the stack and the vocabulary, but not these mechanics. The generated `cn` and `next-themes` imports would have added unpinned dependencies.
+- **Reversibility:** 4.
+
+### ADR-50 Seed, route manifest and E2E harness details (T09)
+- **Decision:**
+  - **Deterministic seed ids.** Every seeded row gets an id from `prisma/seed/ids.ts` (`seedId(kind, key)`: sha256 of a stable key, shaped like a cuid2). Every timestamp derives from one anchor (`SEED_NOW`, else the current time floored to the hour). Two seeds with the same anchor have the same content hash, and `demo:refresh` can re-base times without touching ids (R43, P20).
+  - **Seed safety and reset.** `seedDemo` refuses an already-seeded DB (`AlreadySeededError`; the CLI prints it and exits 0). `resetAndSeedDemo` wipes every application table (except `_prisma_migrations` and `WorkerHeartbeat`) inside one transaction with deferred foreign keys, then seeds. Both call `assertDemoSeedTarget` before any read or write, and the reset calls it again inside its transaction. `npm run db:reset` is `prisma migrate deploy && tsx prisma/seed/index.ts --reset`, not `prisma migrate reset`: the Prisma command would drop the DB before our LIVE refusal could run. `prisma.config.ts` gets `migrations.seed` for `prisma db seed` (Prisma 7 never seeds on its own).
+  - **demo:refresh anchor.** The seed writes a `demo.seed` AuditEvent whose summary carries `anchorAt`. `demo:refresh` reads the latest anchor (highest `seq`) and shifts every column in `prisma/seed/rebase.ts` (`REBASE_COLUMNS`) by `now - anchor`. It then writes a `demo.refresh` AuditEvent with `{anchorAt, previousAnchorAt, seq}`. Audit rows are never re-based. T24 appends its window and expiry columns to `REBASE_COLUMNS`.
+  - **Seed fixtures.** There are five DEMO workspaces: a dental clinic in Gurugram and an e-commerce brand in Noida (Delhi NCR), a gym in Mumbai, and a property agency and a freelance design studio in Bengaluru. The business's city appears in its quotation terms, because Workspace has no city column. Users: the three DEMO_PERSONAS, one owner per workspace, one MEMBER, `neha` (EMPLOYEE assigned to ironpulse with `leads.read` only), `arjun` (EMPLOYEE, no assignment) and one inactive assignment. Every user is `isDemo`, has no password and has a `.test` email. Scoring v1 `weights` is `{schemaVersion: 1, weights: {...sums to 100}, notes}`; T12 owns the Zod schema and may change the shape through a new version. Pipeline v1 is `{schemaVersion: 1, stages: [{id, kind, label}] x5, edges}` with HUMAN approval.
+  - **Files outside T09's Owns list.**
+    - `src/app/api/health/route.ts`: GET returns 200 `{status, mode}` after a DB ping, or 503. The harness and `npm run verify` need it, and no task owned it.
+    - `src/app/api/test/reset/route.ts`: test control only. T06 handed it to T09 because it needs the seed. It imports `prisma/seed/seed.ts`.
+    - `src/server/services/shell/panel-home.ts`: read models for the panel home pages. Pages read through services, never Prisma (same reason as ADR-49).
+  - **Route manifest shape.** `src/server/routes.manifest.ts` holds data only. Each entry has `path`, `file`, `kind`, `owner`, `access`, `roles?`, `capability?`, `params?` (fixture refs) and `calls`. Each call has a method, an explicit status for each of the 5 matrix actors, a body or query, and `foreignRefs` (body key -> fixture key of a workspace B id, which must give 404 or 422). `crawlAs` is for the AT1 crawl. Fixture refs (`{ $fixture: 'workspaceB.slug' }`) resolve in `tests/support/routes.ts` against the seed. The matrix runs pages in-process: their layouts (except the root layout, which only holds fonts) and then the page, with `next/headers` mocked to the request headers. Next's `redirect()` and `notFound()` digests map to 307 and 404.
+  - **E2E harness and the LIVE bundle.**
+    - `next.config.ts` reads `distDir` from `AURALEAD_NEXT_DIST_DIR` (default `.next`). The harness builds LIVE into `.next-live`, so the DEMO and LIVE builds can be served side by side for the P19 "LIVE build has no switcher" check.
+    - `.next-live/` was added to `.gitignore` and the ESLint ignores. Next itself adds `.next-live/types/**/*.ts` and `.next-live/dev/types/**/*.ts` to `tsconfig.json` `include` on a LIVE build (and reformats that file).
+    - The harness reads the worker heartbeat with Node's built-in `node:sqlite` (no Prisma in the Playwright process).
+    - It keeps its state file in `os.tmpdir()/auralead-e2e-harness.json`, outside `test-results/`, which Playwright cleans.
+    - Set `E2E_SKIP_BUILD=1` to reuse existing builds.
+  - **Setup-only test sandbox.** `tests/integration/setup/setup-only-config.test.ts` points the OS data-dir variable (`LOCALAPPDATA`, or `XDG_DATA_HOME` off Windows) into its temp dir, so the default data path resolves there instead of the developer's real `%LOCALAPPDATA%\auralead`. Every app variable is removed from the child env; the only app configuration is the `.env` that `scripts/setup.ts` wrote.
+- **Why:** The plan fixes the goals (deterministic seed, reset, refresh skeleton, manifest-driven matrix, built-app harness) but not these mechanics. Each item is covered by `tests/integration/seed/*`, `tests/integration/authz/tenant-matrix.test.ts`, `tests/unit/arch/route-manifest.test.ts`, `tests/integration/setup/setup-only-config.test.ts` and `tests/e2e/smoke/shell.spec.ts`.
+- **Reversibility:** 4.
