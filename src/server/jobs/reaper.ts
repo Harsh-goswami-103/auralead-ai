@@ -10,6 +10,7 @@
  */
 import type { PrismaClient } from '@/generated/prisma/client';
 import { withTx } from '@/server/db/tx';
+import { projectUnsentMany } from '@/server/services/messaging/delivery-state';
 import { DEFAULT_BACKOFF, retryDelayMs, type BackoffPolicy } from './backoff';
 import type { ReapAction } from './types';
 
@@ -38,6 +39,9 @@ export async function reapExpiredLeases(db: PrismaClient, options: ReapOptions):
 
       let result: ReapAction;
       if (sending > 0) {
+        // T19: the Message projection reads "Delivery unknown" (UNKNOWN) unless a status already ranked it.
+        const inFlight = await tx.dispatchAttempt.findMany({ where: { jobId: id, state: 'SENDING' }, select: { messageId: true } });
+        await projectUnsentMany(tx, inFlight.map((a) => a.messageId), 'UNKNOWN');
         await tx.dispatchAttempt.updateMany({
           where: { jobId: id, state: 'SENDING' },
           data: { state: 'AMBIGUOUS', reasonCode: LEASE_EXPIRED, updatedAt: now },

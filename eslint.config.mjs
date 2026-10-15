@@ -82,6 +82,83 @@ const SERVICE_IMPORTS = [
   { regex: String.raw`^(\.\./)+services(/|$)`, message: 'Adapters never import services.' },
 ];
 
+// ---- auralead/no-adapter-in-tx (plan §3, T19) ------------------------------------------------
+// Inside a transaction callback (withTx, fencedTx, $transaction, the suppression tx helpers) no
+// symbol imported from an `adapters/` module may be used and no network call may be made: a
+// provider call there would hold the SQLite write lock across the network and break the outbox
+// order (plan §4.4). Type-only imports are fine.
+const TX_CALLEES = new Set(['withTx', 'fencedTx', '$transaction', 'runSuppressionTx', 'withSuppressionTx', 'scopedFencedTx']);
+const NETWORK_MODULES = /^(?:undici|node:https?|https?|node:net|net|node:tls|tls|node:dgram|dgram)$/;
+const NETWORK_GLOBALS = new Set(['fetch']);
+const NETWORK_IMPORTS = new Set(['safeFetch']);
+
+function calleeName(callee) {
+  if (callee.type === 'Identifier') return callee.name;
+  if (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier') return callee.property.name;
+  return null;
+}
+
+function visit(node, fn) {
+  if (!node || typeof node.type !== 'string') return;
+  fn(node);
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') continue;
+    const value = node[key];
+    if (Array.isArray(value)) for (const child of value) visit(child, fn);
+    else if (value && typeof value.type === 'string') visit(value, fn);
+  }
+}
+
+const noAdapterInTx = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      adapter: "'{{name}}' comes from an adapter module: provider calls never run inside a transaction callback (plan §3, §4.4).",
+      network: "'{{name}}' is a network call: never inside a transaction callback (plan §3, §4.4).",
+    },
+  },
+  create(context) {
+    const adapterNames = new Set();
+    const networkNames = new Set();
+    return {
+      ImportDeclaration(node) {
+        if (node.importKind === 'type') return;
+        const source = String(node.source.value);
+        const isAdapter = /(?:^|\/)adapters\//.test(source);
+        const isNetwork = NETWORK_MODULES.test(source);
+        for (const spec of node.specifiers) {
+          if (spec.importKind === 'type') continue;
+          if (isAdapter) adapterNames.add(spec.local.name);
+          if (isNetwork || NETWORK_IMPORTS.has(spec.local.name)) networkNames.add(spec.local.name);
+        }
+      },
+      CallExpression(node) {
+        if (!TX_CALLEES.has(calleeName(node.callee))) return;
+        for (const arg of node.arguments) {
+          if (arg.type !== 'ArrowFunctionExpression' && arg.type !== 'FunctionExpression') continue;
+          visit(arg.body, (inner) => {
+            if (inner.type === 'Identifier' && adapterNames.has(inner.name)) {
+              const parent = inner.parent;
+              const isKey = parent && parent.type === 'Property' && parent.key === inner && !parent.computed;
+              const isMember = parent && parent.type === 'MemberExpression' && parent.property === inner && !parent.computed;
+              if (!isKey && !isMember) context.report({ node: inner, messageId: 'adapter', data: { name: inner.name } });
+            }
+            if (inner.type === 'CallExpression' && inner.callee.type === 'Identifier') {
+              const name = inner.callee.name;
+              if (networkNames.has(name) || (NETWORK_GLOBALS.has(name) && !adapterNames.has(name))) {
+                context.report({ node: inner, messageId: 'network', data: { name } });
+              }
+            }
+          });
+        }
+      },
+    };
+  },
+};
+
+const AURALEAD_PLUGIN = { rules: { 'no-adapter-in-tx': noAdapterInTx } };
+
 const SERVER_CORE = ['src/server/{services,adapters,jobs,security,pdf}/**/*.{ts,tsx}'];
 const UI = ['src/app/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}'];
 const VISUAL = ['src/components/visual/**/*.{ts,tsx}'];
@@ -116,6 +193,13 @@ export default defineConfig([
     files: ['src/**/*.{ts,tsx}', 'worker/**/*.ts', 'scripts/**/*.ts', 'prisma/**/*.ts'],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: { '@typescript-eslint/no-floating-promises': 'error' },
+  },
+
+  // Server and worker: no adapter symbols or network calls inside transaction callbacks (T19).
+  {
+    files: ['src/server/**/*.{ts,tsx}', 'worker/**/*.ts'],
+    plugins: { auralead: AURALEAD_PLUGIN },
+    rules: { 'auralead/no-adapter-in-tx': 'error' },
   },
 
   // Server and worker: injected clock only.
