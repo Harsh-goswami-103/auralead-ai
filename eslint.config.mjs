@@ -44,6 +44,16 @@ const GLOW = [
   },
 ];
 
+// The violet --ai token (Tailwind color 'ai') is reserved for AI provenance and AI mode (plan §3, §10):
+// only AI components (src/components/ai/**) may use it. No '/' inside the regex (esquery syntax), so
+// opacity suffixes (bg-ai/20) are matched by the trailing lookahead instead.
+const AI_TOKEN_RE = String.raw`/(?:^|[\s:!])(?:text|bg|border|border-[trblxyse]|ring|ring-offset|outline|fill|stroke|from|via|to|decoration|shadow|accent|caret|divide|placeholder)-ai(?![\w-])|--(?:color-)?ai(?![\w-])/`;
+const AI_TOKEN_MESSAGE = 'The --ai color token is reserved for AI provenance and AI mode: use it only in src/components/ai/** (plan §3, §10).';
+const AI_TOKEN = [
+  { selector: `Literal[value=${AI_TOKEN_RE}]`, message: AI_TOKEN_MESSAGE },
+  { selector: `TemplateElement[value.raw=${AI_TOKEN_RE}]`, message: AI_TOKEN_MESSAGE },
+];
+
 const COMING_SOON_RE = '/coming\\s+soon/i';
 const COMING_SOON = [
   { selector: `Literal[value=${COMING_SOON_RE}]`, message: '"Coming soon" copy is banned (plan §12): build it or omit it.' },
@@ -75,6 +85,7 @@ const SERVICE_IMPORTS = [
 const SERVER_CORE = ['src/server/{services,adapters,jobs,security,pdf}/**/*.{ts,tsx}'];
 const UI = ['src/app/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}'];
 const VISUAL = ['src/components/visual/**/*.{ts,tsx}'];
+const AI_UI = ['src/components/ai/**/*.{ts,tsx}'];
 
 export default defineConfig([
   ...nextVitals,
@@ -113,15 +124,20 @@ export default defineConfig([
     rules: { 'no-restricted-syntax': ['error', ...CLOCK, ...NO_DANGEROUS_HTML] },
   },
 
-  // UI: no empty handlers, no raw HTML, no glow outside visual, no TODO / coming soon.
+  // UI: no empty handlers, no raw HTML, no glow outside visual, no --ai outside AI components,
+  // no TODO / coming soon.
   {
     files: UI,
-    ignores: VISUAL,
-    rules: { 'no-restricted-syntax': ['error', ...EMPTY_HANDLER, ...NO_DANGEROUS_HTML, ...GLOW, ...COMING_SOON] },
+    ignores: [...VISUAL, ...AI_UI],
+    rules: { 'no-restricted-syntax': ['error', ...EMPTY_HANDLER, ...NO_DANGEROUS_HTML, ...GLOW, ...AI_TOKEN, ...COMING_SOON] },
   },
   {
     files: VISUAL,
-    rules: { 'no-restricted-syntax': ['error', ...EMPTY_HANDLER, ...NO_DANGEROUS_HTML, ...COMING_SOON] },
+    rules: { 'no-restricted-syntax': ['error', ...EMPTY_HANDLER, ...NO_DANGEROUS_HTML, ...AI_TOKEN, ...COMING_SOON] },
+  },
+  {
+    files: AI_UI,
+    rules: { 'no-restricted-syntax': ['error', ...EMPTY_HANDLER, ...NO_DANGEROUS_HTML, ...GLOW, ...COMING_SOON] },
   },
   {
     files: UI,
