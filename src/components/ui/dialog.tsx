@@ -1,11 +1,24 @@
 "use client"
 
+/**
+ * Dialog (shadcn new-york, restyled for "Aurora", design spec §5): blurred bg-0 overlay; bg-1
+ * content with a strong border and a 2px panel hairline on the top edge, capped to the viewport and
+ * scrolling inside. Enter 320ms zoom/fade on the emphasized curve, exit 150ms (tw-animate, so Radix
+ * still unmounts on close without a Motion exit). The close button is 36px with a 44px hit area
+ * below lg. Headers stay left-aligned at every width so they line up with the form below.
+ */
 import * as React from "react"
 import { cn } from "@/components/ui/cn"
 import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import {
+  modalMotion,
+  modalSurface,
+  overlayBackdrop,
+  overlayCloseButton,
+} from "@/components/ui/overlay"
 
 function Dialog({
   ...props
@@ -38,10 +51,7 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-        className
-      )}
+      className={cn(overlayBackdrop, className)}
       {...props}
     />
   )
@@ -61,17 +71,17 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          modalSurface,
+          modalMotion,
+          "fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain rounded-xl p-6 data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          showCloseButton && "[&>[data-slot=dialog-header]]:pr-8",
           className
         )}
         {...props}
       >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
-          >
+          <DialogPrimitive.Close data-slot="dialog-close" className={overlayCloseButton}>
             <XIcon />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -85,7 +95,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      className={cn("flex flex-col gap-2 text-left", className)}
       {...props}
     />
   )
@@ -125,7 +135,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-none font-semibold", className)}
+      className={cn("font-display text-lg leading-tight font-semibold text-fg-1", className)}
       {...props}
     />
   )
@@ -138,7 +148,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-fg-2", className)}
       {...props}
     />
   )
