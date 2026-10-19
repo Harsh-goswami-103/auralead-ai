@@ -31,14 +31,38 @@ type Common = {
   icon?: ReactNode;
   pendingLabel?: string;
   className?: string;
+  /**
+   * Render the reason elsewhere (under a segmented control, say) with `<GateReason id={reasonId}>`.
+   * The control then points at that id and renders no reason of its own.
+   */
+  reasonId?: string;
 } & VariantProps<typeof buttonVariants>;
 
 export type GatedActionProps =
   | (Common & { onAction: () => void | Promise<void>; href?: undefined })
   | (Common & { href: string; onAction?: undefined });
 
+/** The visible reason line of a gated control (plan §12): what blocks it, and the fix link when one exists. */
+export function GateReason(props: { id: string; gate: Gate; className?: string }) {
+  const { gate } = props;
+  return (
+    <span id={props.id} className={cn('max-w-prose text-xs text-fg-2', props.className)}>
+      {gate.reason}
+      {gate.fix ? (
+        <>
+          {' '}
+          <Link href={gate.fix.href} className="font-medium text-cyan underline-offset-4 hover:underline">
+            {gate.fix.label}
+          </Link>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
 export function GatedAction(props: GatedActionProps) {
-  const reasonId = useId();
+  const ownReasonId = useId();
+  const reasonId = props.reasonId ?? ownReasonId;
   const [pending, setPending] = useState(false);
   const running = useRef(false);
   const { gate, label, icon, variant, size, className } = props;
@@ -61,20 +85,11 @@ export function GatedAction(props: GatedActionProps) {
           {label}
         </button>
       );
+    if (props.reasonId) return control;
     return (
       <span className="inline-flex flex-col items-start gap-1">
         {control}
-        <span id={reasonId} className="max-w-prose text-xs text-fg-2">
-          {gate.reason}
-          {gate.fix ? (
-            <>
-              {' '}
-              <Link href={gate.fix.href} className="font-medium text-cyan underline-offset-4 hover:underline">
-                {gate.fix.label}
-              </Link>
-            </>
-          ) : null}
-        </span>
+        <GateReason id={reasonId} gate={gate} />
       </span>
     );
   }
