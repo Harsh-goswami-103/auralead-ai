@@ -1,23 +1,35 @@
+/**
+ * Button (shadcn new-york, restyled for "Aurora", design spec §5). The primary fill is the action
+ * gradient with ink text (white fails on every bright fill), a one-shot hover sheen and a CSS press
+ * scale. Focus is the global 2px solid aura outline with a 2px offset; no ring hides it. There are
+ * no dark: variants: html is always dark, so they would beat a caller's overrides. Below lg every
+ * size gets an invisible hit area of at least 44px. Glow is not here (lint rule): wrap the one
+ * primary CTA per view in visual/GlowFrame.
+ */
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/components/ui/cn"
 import { Slot } from "radix-ui"
+import { cn } from "@/components/ui/cn"
+
+/** Invisible hit area of at least 44x44px below lg (spec §0.5). The element must be positioned. */
+const touchTarget =
+  "max-lg:before:absolute max-lg:before:top-1/2 max-lg:before:left-1/2 max-lg:before:size-full max-lg:before:min-h-11 max-lg:before:min-w-11 max-lg:before:-translate-x-1/2 max-lg:before:-translate-y-1/2"
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  `relative inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,scale,filter] duration-fast ease-enter motion-safe:active:scale-[.97] motion-safe:active:duration-instant disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-danger [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 ${touchTarget}`,
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default:
+          "bg-action text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.25)] hover:brightness-110 motion-safe:hover:animate-sheen motion-safe:focus-visible:animate-sheen",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-danger text-cyan-fg shadow-[inset_0_1px_0_rgb(255_255_255/0.2)] hover:brightness-110",
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border border-border-strong bg-bg-1 text-fg-1 hover:bg-bg-3",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "border border-border-strong bg-bg-2 text-fg-1 hover:border-panel/45 hover:bg-bg-3",
+        ghost: "hover:bg-bg-3 hover:text-fg-1",
+        link: "text-cyan underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
