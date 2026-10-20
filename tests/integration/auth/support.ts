@@ -23,6 +23,9 @@ const secret = (seed: string) => `${seed}-${'s'.repeat(40)}`;
 export function testEnv(mode: 'demo' | 'live', extra: Record<string, string> = {}): Record<string, string> {
   return {
     APP_MODE: mode,
+    // Pinned too: a developer's generated .env carries NEXT_PUBLIC_APP_MODE=demo, which a child
+    // process would otherwise inherit (real environment variables win over .env).
+    NEXT_PUBLIC_APP_MODE: mode,
     APP_ORIGIN: ORIGIN,
     AURALEAD_DATA_DIR: path.join(os.tmpdir(), 'auralead-auth-test-data'),
     SESSION_SECRET: secret('session'),

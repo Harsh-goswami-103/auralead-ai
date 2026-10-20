@@ -49,6 +49,7 @@ export function baseEnv(): Env {
     env[k] = v;
   }
   env.PRISMA_HIDE_UPDATE_MESSAGE = '1';
+  env.CHECKPOINT_DISABLE = '1';
   env.NEXT_TELEMETRY_DISABLED = '1';
   return env;
 }
