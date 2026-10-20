@@ -20,6 +20,7 @@ import { bulkRunJob } from './handlers/bulk-run';
 import { webhookProcessJob } from './handlers/webhook-process';
 import { statusApplyJob } from './handlers/status-apply';
 import { replyAutoJob } from './handlers/reply-auto';
+import { leadExportJob, leadExportPurgeJob } from './handlers/lead-export';
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -62,6 +63,8 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   webhookProcessJob,
   statusApplyJob,
   replyAutoJob,
+  leadExportJob,
+  leadExportPurgeJob,
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {
