@@ -3,8 +3,8 @@
  * route renders with the mode from getConfig(). Checks the page contract from 06-design §11.7 and
  * F11/F12: one h1, the header / nav / main / footer landmarks, mode-aware CTAs to /login, the
  * how-it-works anchor, the hero poster (no canvas on the server), the ROI label, every section the
- * nav links to, and none of the banned patterns (no /docs links, testimonials, "trusted by", logos
- * or empty placeholders).
+ * nav links to, the documentation link in the nav and the footer (T37: /docs exists now), and none
+ * of the banned patterns (testimonials, "trusted by", logos or empty placeholders).
  */
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -68,6 +68,15 @@ describe('landing page', () => {
     }
   });
 
+  it('links the documentation from the nav and the footer', () => {
+    for (const html of [demo, live]) {
+      const nav = html.slice(html.indexOf('data-landing-nav'), html.indexOf('</header>', html.indexOf('data-landing-nav')));
+      const footer = html.slice(html.indexOf('data-landing-footer'), html.indexOf('</footer>'));
+      expect(nav).toMatch(/<a[^>]*href="\/docs"[^>]*>(?:(?!<\/a>).)*Docs(?:(?!<\/a>).)*<\/a>/);
+      expect(footer).toMatch(/<a[^>]*href="\/docs"[^>]*>(?:(?!<\/a>).)*Documentation(?:(?!<\/a>).)*<\/a>/);
+    }
+  });
+
   it('server-renders the hero poster and no canvas', () => {
     expect(demo).toContain('data-aura="hero"');
     expect(demo).toContain('data-visual-state="poster"');
@@ -105,7 +114,6 @@ describe('landing page', () => {
       const disclaimer = 'this page shows no testimonials, customer logos or invented numbers.';
       expect(text(html).toLowerCase()).toContain(disclaimer);
       const t = text(html).toLowerCase().replace(disclaimer, '');
-      expect(html).not.toMatch(/href="\/docs/);
       for (const banned of ['testimonial', 'trusted by', 'coming soon', 'todo', 'lorem']) expect(t).not.toContain(banned);
       expect(html).not.toMatch(/<img[^>]+logo/i);
       expect(html).not.toMatch(/NaN|Infinity/);
