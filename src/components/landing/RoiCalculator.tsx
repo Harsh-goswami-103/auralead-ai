@@ -20,6 +20,8 @@ import {
   ROI_KEYS,
   estimateRoi,
   formatAmount,
+  formatDeals,
+  formatInput,
   formatWholeRupees,
   parseInput,
   resetInputs,
@@ -96,7 +98,7 @@ export function RoiCalculator() {
                 </div>
                 <p id={`${id}-hint`} className="text-xs text-fg-2">
                   {f.hint}
-                  {clamped ? <span className="text-fg-1"> Using {formatAmount(used)}.</span> : null}
+                  {clamped ? <span className="text-fg-1"> Using {formatInput(used)}.</span> : null}
                 </p>
               </div>
             );
@@ -119,7 +121,7 @@ export function RoiCalculator() {
             {formatWholeRupees(estimate.extraRevenuePaise)}
           </output>
           <p className="text-sm text-fg-2">
-            {formatAmount(estimate.extraDeals)} more deals a month at {formatWholeRupees(BigInt(values.dealValueInr) * 100n)} each.
+            {formatDeals(estimate.extraDealsE8)} more deals a month at {formatWholeRupees(BigInt(values.dealValueInr) * 100n)} each.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">

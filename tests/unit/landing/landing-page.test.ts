@@ -44,6 +44,17 @@ describe('landing page', () => {
     expect(text(live)).not.toContain('Open live demo');
   });
 
+  it('starts with a skip link to main, before the banner and the nav', () => {
+    for (const html of [demo, live]) {
+      const firstFocusable = html.match(/<(a|button|input)\b[^>]*>/)?.[0] ?? '';
+      expect(firstFocusable).toContain('href="#main"');
+      expect(text(html.slice(html.indexOf(firstFocusable), html.indexOf('</a>')))).toContain('Skip to content');
+      expect(html.indexOf(firstFocusable)).toBeLessThan(html.indexOf('data-landing-nav'));
+      expect(html).toContain('<main id="main"');
+    }
+    expect(demo.indexOf('href="#main"')).toBeLessThan(demo.indexOf('data-mode-banner'));
+  });
+
   it('shows the DEMO banner only in DEMO', () => {
     expect(demo).toContain('data-mode-banner="demo"');
     expect(live).not.toContain('data-mode-banner');

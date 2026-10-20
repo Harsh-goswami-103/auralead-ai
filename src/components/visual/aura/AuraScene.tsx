@@ -12,7 +12,7 @@
  */
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Float, QuadraticBezierLine, ScreenQuad, Sparkles, type QuadraticBezierLineRef } from '@react-three/drei';
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import * as THREE from 'three';
 import { mulberry32 } from '../prng';
 import {
@@ -468,6 +468,19 @@ export function AuraCanvas({ preset, tier, active, onReady, onFallback }: AuraCa
   const loop = config.fpsCap === null ? 'always' : 'demand';
   /* Low-tier floor: below 10 fps (half the cap for a capped preset) the scene no longer reads as motion. */
   const lowFloor = config.fpsCap === null ? 10 : config.fpsCap / 2;
+  /*
+   * R3F forces a context loss on its own renderer after the canvas unmounts (the budget turned
+   * WebGL off, the shell re-keyed): that is teardown, not a failure, so only a loss while this
+   * canvas is mounted gives up on WebGL. Set in the effect body so StrictMode's replay leaves it
+   * true; a layout-effect cleanup runs in the unmount commit, before R3F's deferred teardown.
+   */
+  const mountedRef = useRef(false);
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   return (
     <Canvas
       aria-hidden
@@ -482,6 +495,7 @@ export function AuraCanvas({ preset, tier, active, onReady, onFallback }: AuraCa
         gl.domElement.addEventListener(
           'webglcontextlost',
           (event) => {
+            if (!mountedRef.current) return;
             event.preventDefault();
             onFallback();
           },
