@@ -1,7 +1,7 @@
 /**
- * Landing footer: product mark and wordmark, the one-line description, in-page links and the
- * primary CTA again, under the same aurora hairline that closes the nav. No /docs link (the route
- * does not exist yet) and no social or legal stubs. Server-safe.
+ * Landing footer: product mark and wordmark, the one-line description, in-page links, the
+ * documentation link (/docs, T37) and the primary CTA again, under the same aurora hairline that
+ * closes the nav. No social or legal stubs. Server-safe.
  */
 import Link from 'next/link';
 import { ProductMark } from '@/components/patterns/ProductMark';
@@ -31,6 +31,11 @@ export function LandingFooter({ mode }: { mode: LandingMode }) {
                 </a>
               </li>
             ))}
+            <li>
+              <Link href="/docs" className="inline-flex min-h-11 items-center rounded-md text-sm text-fg-2 hover:text-fg-1 lg:min-h-8">
+                Documentation
+              </Link>
+            </li>
           </ul>
           <PrimaryCta mode={mode} size="default" className="w-full sm:w-auto" />
         </nav>
