@@ -7,16 +7,19 @@
  * SIMULATED WhatsApp integration when absent (no routing key, the same shape the inbox simulator
  * creates) and every demo template that is absent, approved and rejected ones alike. It never
  * overwrites a stored template ("if absent"), contacts nothing, and is audited as simulated.
- * In LIVE it needs a CONNECTED (or DEGRADED) WhatsApp integration and runs the live sync that T32
- * registers in `live-adapters.ts`; anything else is a 422 that names what is missing.
+ * In LIVE it needs a CONNECTED (or DEGRADED) WhatsApp integration and runs the live sync
+ * registered in `live-adapters.ts` (T32, template-sync.ts); anything else is a 422 that names what
+ * is missing.
  * Needs `integrations.manage`.
  */
 import type { Prisma } from '@/generated/prisma/client';
+import { templateShape } from '@/lib/domain/whatsapp-templates';
 import { DomainRuleError, NotFoundError } from '@/lib/errors';
 import type { AppCtx } from '@/server/auth/context';
 import { requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { withTx } from '@/server/db/tx';
 import { recordAudit } from '@/server/services/audit/record';
+import { suggestQuickReplyIntent } from './template-sync';
 import type { LiveTemplateSync, TemplateSyncResult } from './types';
 
 export type DemoTemplate = {
@@ -85,6 +88,16 @@ export const DEMO_WHATSAPP_TEMPLATES: readonly DemoTemplate[] = [
 
 const SYNCABLE_LIVE = new Set(['CONNECTED', 'DEGRADED']);
 
+/** The demo template's mapping in the T32 shape: body sources, and quick-reply intents proposed from the button texts. */
+function demoMapping(t: DemoTemplate): Prisma.InputJsonValue {
+  const buttons: Record<string, string> = {};
+  for (const q of templateShape(t.components).quickReplies) {
+    const intent = suggestQuickReplyIntent(q.text);
+    if (intent) buttons[String(q.index)] = intent;
+  }
+  return { body: Object.fromEntries(t.variables.map((v) => [v.name, v.source])), buttons };
+}
+
 type Tx = Prisma.TransactionClient;
 
 export async function syncWhatsAppTemplates(ctx: AppCtx, deps: { liveSync: LiveTemplateSync | null }): Promise<TemplateSyncResult> {
@@ -139,7 +152,7 @@ export async function syncWhatsAppTemplates(ctx: AppCtx, deps: { liveSync: LiveT
           components: t.components,
           variableSchema: t.variables.map((v) => ({ name: v.name, description: v.description })),
           intent: t.intent,
-          variableMap: Object.fromEntries(t.variables.map((v) => [v.name, v.source])),
+          variableMap: demoMapping(t),
           categoryHistory: [{ category: t.category, at: now.toISOString() }],
           syncedAt: now,
         },

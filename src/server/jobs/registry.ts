@@ -21,6 +21,9 @@ import { webhookProcessJob } from './handlers/webhook-process';
 import { statusApplyJob } from './handlers/status-apply';
 import { replyAutoJob } from './handlers/reply-auto';
 import { leadExportJob, leadExportPurgeJob } from './handlers/lead-export';
+import { integrationHealthJob } from './handlers/integration-health';
+import { waQualityCheckJob } from './handlers/wa-quality-check';
+import { templateSyncJob } from './handlers/template-sync';
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -65,6 +68,9 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   replyAutoJob,
   leadExportJob,
   leadExportPurgeJob,
+  integrationHealthJob,
+  waQualityCheckJob,
+  templateSyncJob,
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {

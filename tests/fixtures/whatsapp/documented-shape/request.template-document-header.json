@@ -1,0 +1,73 @@
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "919812345678",
+  "biz_opaque_callback_data": "att_contract_0001",
+  "type": "template",
+  "template": {
+    "name": "quote_ready_doc",
+    "language": {
+      "code": "en"
+    },
+    "components": [
+      {
+        "type": "header",
+        "parameters": [
+          {
+            "type": "document",
+            "document": {
+              "id": "1037543291543636",
+              "filename": "Q-0007-v2.pdf"
+            }
+          }
+        ]
+      },
+      {
+        "type": "body",
+        "parameters": [
+          {
+            "type": "text",
+            "text": "Priya"
+          },
+          {
+            "type": "text",
+            "text": "Q-0007"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "sub_type": "quick_reply",
+        "index": "0",
+        "parameters": [
+          {
+            "type": "payload",
+            "payload": "AL_QR_QUOTE_V1"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "sub_type": "quick_reply",
+        "index": "1",
+        "parameters": [
+          {
+            "type": "payload",
+            "payload": "AL_QR_CALL_V1"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "sub_type": "quick_reply",
+        "index": "2",
+        "parameters": [
+          {
+            "type": "payload",
+            "payload": "AL_QR_STOP_V1"
+          }
+        ]
+      }
+    ]
+  }
+}

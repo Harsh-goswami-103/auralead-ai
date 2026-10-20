@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#132015) Template is Paused",
+    "type": "OAuthException",
+    "code": 132015,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Template is paused due to low quality so it cannot be sent in a template message."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

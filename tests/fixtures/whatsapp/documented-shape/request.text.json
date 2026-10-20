@@ -1,0 +1,11 @@
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "919812345678",
+  "biz_opaque_callback_data": "att_contract_0002",
+  "type": "text",
+  "text": {
+    "preview_url": false,
+    "body": "Thanks, we will call you at 4 pm."
+  }
+}

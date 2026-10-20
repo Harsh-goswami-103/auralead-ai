@@ -44,7 +44,7 @@ describe('Integration center (DEMO)', () => {
     const center = await getIntegrationCenter(await employeeCtx(h));
     const wa = center.cards.find((c) => c.kind === 'WHATSAPP_CLOUD')!;
     expect(wa.internalDailyCap).toBe(250);
-    expect(wa.quality).toEqual({ qualityRaw: null, messagingLimitRaw: null, checkedAt: null });
+    expect(wa.quality).toEqual({ qualityRaw: null, messagingLimitRaw: null, checkedAt: null, pausesAutomation: false });
     const resend = center.cards.find((c) => c.kind === 'EMAIL_RESEND')!;
     expect(resend.internalDailyCap).toBe(100);
     expect(resend.quality).toBeNull();
@@ -59,7 +59,7 @@ describe('Integration center (DEMO)', () => {
     expect(sheets).toMatchObject({ status: 'SIMULATED', stored: true });
     expect(sheets.config).toEqual([{ key: 'sheetId', label: 'Spreadsheet ID', value: 'demo-sheet-smile-avenue-dental' }]);
     const wa = center.cards.find((c) => c.kind === 'WHATSAPP_CLOUD')!;
-    expect(wa.quality).toEqual({ qualityRaw: 'GREEN', messagingLimitRaw: 'TIER_1K', checkedAt: new Date(NOW_ISO) });
+    expect(wa.quality).toEqual({ qualityRaw: 'GREEN', messagingLimitRaw: 'TIER_1K', checkedAt: new Date(NOW_ISO), pausesAutomation: false });
   });
 
   it('a workspace where the assignment lacks integrations.manage reads the center but cannot manage', async () => {
