@@ -153,7 +153,24 @@ export function toPayloadGraph(graph: EditorGraph) {
   return { schemaVersion: 1, stages: graph.stages.map((s) => ({ id: s.id, kind: s.kind, label: s.label })), edges: graph.edges.map((e) => ({ from: e.from, to: e.to })) };
 }
 
+const graphKey = (g: EditorGraph) => JSON.stringify({ s: [...g.stages].map((s) => `${s.id}:${s.kind}`).sort(), e: g.edges.map(edgeKey).sort() });
+
 export function sameGraph(a: EditorGraph, b: EditorGraph): boolean {
-  const key = (g: EditorGraph) => JSON.stringify({ s: [...g.stages].map((s) => `${s.id}:${s.kind}`).sort(), e: g.edges.map(edgeKey).sort() });
-  return key(a) === key(b);
+  return graphKey(a) === graphKey(b);
+}
+
+/**
+ * The identity of a draft (stages, connections and approval mode, order ignored): a validation
+ * verdict is shown only for the draft whose key it was computed for (ADR-84).
+ */
+export function draftKey(graph: EditorGraph, approvalMode: PipelineApprovalMode): string {
+  return `${approvalMode}|${graphKey(graph)}`;
+}
+
+/** The stage to select once `id` is removed: the one before it in run order, else the one after. */
+export function stageAfterRemoval(graph: EditorGraph, id: string): string | null {
+  const ordered = orderedStages(graph);
+  const at = ordered.findIndex((s) => s.id === id);
+  if (at === -1) return ordered[0]?.id ?? null;
+  return ordered[at - 1]?.id ?? ordered[at + 1]?.id ?? null;
 }

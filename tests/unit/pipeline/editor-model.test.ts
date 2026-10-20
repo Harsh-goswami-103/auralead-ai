@@ -10,6 +10,7 @@ import {
   connect,
   defaultGraph,
   disconnect,
+  draftKey,
   edgeIssues,
   edgeKey,
   issueText,
@@ -17,6 +18,7 @@ import {
   orderedStages,
   removeStage,
   sameGraph,
+  stageAfterRemoval,
   toPayloadGraph,
 } from '@/components/pipeline/pipeline-model';
 
@@ -75,6 +77,22 @@ describe('pipeline editor model', () => {
       expect(sentence).not.toMatch(/[A-Z]{2,}_[A-Z]/);
       expect(sentence).not.toMatch(/\b(INGESTION|SCORE|DRAFT|APPROVAL|DELIVERY)\b/);
     }
+  });
+
+  it('names the stage to select after a removal: the one before it in run order, else the one after (ADR-84)', () => {
+    const g = defaultGraph();
+    expect(stageAfterRemoval(g, 'draft')).toBe('score');
+    expect(stageAfterRemoval(g, 'score')).toBe('ingestion');
+    expect(stageAfterRemoval(g, 'ingestion')).toBe('score');
+    expect(stageAfterRemoval({ stages: [g.stages[0]!], edges: [] }, 'ingestion')).toBeNull();
+  });
+
+  it('keys a draft by its stages, connections and approval mode, ignoring order (ADR-84)', () => {
+    const g = defaultGraph();
+    const reordered = { stages: [...g.stages].reverse(), edges: [...g.edges].reverse() };
+    expect(draftKey(reordered, 'HUMAN')).toBe(draftKey(g, 'HUMAN'));
+    expect(draftKey(g, 'POLICY_AUTO')).not.toBe(draftKey(g, 'HUMAN'));
+    expect(draftKey(removeStage(g, 'score'), 'HUMAN')).not.toBe(draftKey(g, 'HUMAN'));
   });
 
   it('builds the body the routes take', () => {
