@@ -80,10 +80,16 @@ export async function redeemPasswordReset(db: PrismaClient, input: RedeemPasswor
   const passwordHash = await hasher.hash(input.password);
 
   return withTx(db, async (tx) => {
-    const claimed = await tx.passwordReset.updateMany({ where: { id: row.id, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now } });
+    // The hash above took real time. Claim with the time of the claim, not the time the request
+    // started: a token superseded meanwhile (its expiry was set to the newer issue time) must lose.
+    const claimedAt = deps.clock.now();
+    const claimed = await tx.passwordReset.updateMany({ where: { id: row.id, usedAt: null, expiresAt: { gt: claimedAt } }, data: { usedAt: claimedAt } });
     if (claimed.count !== 1) throw new NotFoundError();
+    // Same for the user: one disabled (or turned into a demo user) during the hash keeps their credentials.
+    const current = await tx.user.findUnique({ where: { id: user.id }, select: { status: true, isDemo: true } });
+    if (!current || current.status !== 'ACTIVE' || (deps.mode === 'live' && current.isDemo)) throw new NotFoundError();
     await tx.user.update({ where: { id: user.id }, data: { passwordHash, failedLoginCount: 0, lockedUntil: null } });
-    await revokeUserSessions(tx, user.id, now);
+    await revokeUserSessions(tx, user.id, claimedAt);
     await recordAudit(
       tx,
       { kind: 'user', actor: { userId: user.id, role: user.globalRole, isDemo: user.isDemo }, workspaceId: null, correlationId: deps.correlationId, clock: deps.clock },

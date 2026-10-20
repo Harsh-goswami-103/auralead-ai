@@ -31,7 +31,7 @@ export class BootError extends Error {
   }
 }
 
-export type BootCheckConfig = Pick<AppConfig, 'mode' | 'testControl' | 'secrets' | 'paths' | 'appOrigin' | 'authCookieInsecureDev'>;
+export type BootCheckConfig = Pick<AppConfig, 'mode' | 'testControl' | 'secrets' | 'paths' | 'appOrigin' | 'authCookieInsecureDev' | 'trustedProxyHops'>;
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -54,6 +54,12 @@ export function checkBoot(config: BootCheckConfig): { warnings: string[] } {
     const secureContext = origin.protocol === 'https:' || LOOPBACK_HOSTS.has(origin.hostname);
     if (!secureContext && !config.authCookieInsecureDev) {
       issues.push('APP_ORIGIN: LIVE must be served over https (the session cookie is Secure); for a plain-HTTP development host set AUTH_COOKIE_INSECURE_DEV=1');
+    }
+    // `next start` does not terminate TLS, so an HTTPS origin means a reverse proxy sits in front. With 0 trusted
+    // hops the client address is unknown for every request, so login, reset and invite limits become ONE bucket
+    // shared by everybody: a few bad requests a minute would lock all users out.
+    if (origin.protocol === 'https:' && config.trustedProxyHops === 0) {
+      issues.push('TRUSTED_PROXY_HOPS: set it to the number of reverse proxies in front of the app (usually 1); at 0 every client shares one rate-limit bucket');
     }
     if (config.authCookieInsecureDev) {
       warnings.push('AUTH_COOKIE_INSECURE_DEV=1 in LIVE: the session cookie is not Secure and has no __Host- prefix; use only on a trusted development network');

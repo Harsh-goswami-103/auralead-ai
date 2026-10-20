@@ -16,6 +16,10 @@ const inter = Inter({ subsets: ['latin', 'latin-ext'], display: 'swap', variable
 const manrope = Manrope({ subsets: ['latin', 'latin-ext'], display: 'swap', weight: ['600', '700', '800'], variable: '--font-manrope' });
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin', 'latin-ext'], display: 'swap', variable: '--font-jetbrains-mono' });
 
+// The nonce CSP (src/proxy.ts, ADR-69) needs a per-request render of every HTML page, including the
+// not-found page an unknown URL gets: a prerendered page cannot carry the nonce and its scripts would be blocked.
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: { default: 'AuraLead AI', template: '%s | AuraLead AI' },
   description: 'Lead capture, scoring, versioned quotes and consent-aware messaging for Indian service businesses.',

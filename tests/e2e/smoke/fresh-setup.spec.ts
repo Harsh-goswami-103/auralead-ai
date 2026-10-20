@@ -12,17 +12,19 @@
  * is not part of the default projects because it installs and builds a second copy.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parse } from 'dotenv';
 import getPort from 'get-port';
 import { expect, test } from '@playwright/test';
-import { killPidTree, REPO_ROOT } from '../../support/spawn';
+import { resolveNpmCli } from '../../../scripts/npm-cli.mjs';
+import { ROUTES } from '../../../src/server/routes.manifest';
+import { killPidTree, POSIX_DETACH, REPO_ROOT } from '../../support/spawn';
 import { baseEnv, hasFreshHeartbeat } from '../support/start-app';
 
-const NPM_CLI = process.env.npm_execpath && process.env.npm_execpath.endsWith('.js') ? process.env.npm_execpath : path.join(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+const NPM_CLI = resolveNpmCli();
 
 type Env = Record<string, string>;
 
@@ -33,8 +35,10 @@ function copyWorkingTree(target: string): number {
     .filter(Boolean);
   let copied = 0;
   for (const rel of listed) {
+    if (rel === '.claude' || rel.startsWith('.claude/')) continue; // agent worktrees and tool state
     const from = path.join(REPO_ROOT, rel);
-    if (!existsSync(from)) continue; // deleted in the working tree, not yet committed
+    // Deleted in the working tree (not yet committed), or a nested repository / worktree listed as a directory.
+    if (!existsSync(from) || !statSync(from).isFile()) continue;
     const to = path.join(target, rel);
     mkdirSync(path.dirname(to), { recursive: true });
     copyFileSync(from, to);
@@ -45,7 +49,7 @@ function copyWorkingTree(target: string): number {
 
 function run(cwd: string, args: string[], env: Env, label: string, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: POSIX_DETACH });
     let output = '';
     child.stdout.on('data', (c: Buffer) => (output += c.toString('utf8')));
     child.stderr.on('data', (c: Buffer) => (output += c.toString('utf8')));
@@ -89,9 +93,9 @@ test('a clean copy comes up from npm ci and npm run setup alone', async ({ brows
     const port = await getPort();
     const origin = `http://localhost:${port}`;
     const appEnv: Env = { ...env, APP_ORIGIN: origin };
-    const web = spawn(process.execPath, [path.join(copy, 'node_modules', 'next', 'dist', 'bin', 'next'), 'start', '-p', String(port)], { cwd: copy, env: appEnv as NodeJS.ProcessEnv, stdio: 'ignore', windowsHide: true });
+    const web = spawn(process.execPath, [path.join(copy, 'node_modules', 'next', 'dist', 'bin', 'next'), 'start', '-p', String(port)], { cwd: copy, env: appEnv as NodeJS.ProcessEnv, stdio: 'ignore', windowsHide: true, detached: POSIX_DETACH });
     const startedAt = new Date();
-    const worker = spawn(process.execPath, [path.join(copy, 'dist', 'worker.js')], { cwd: copy, env: appEnv as NodeJS.ProcessEnv, stdio: 'ignore', windowsHide: true });
+    const worker = spawn(process.execPath, [path.join(copy, 'dist', 'worker.js')], { cwd: copy, env: appEnv as NodeJS.ProcessEnv, stdio: 'ignore', windowsHide: true, detached: POSIX_DETACH });
     pids.push(web.pid!, worker.pid!);
 
     const healthDeadline = performance.now() + 120_000;
@@ -111,34 +115,62 @@ test('a clean copy comes up from npm ci and npm run setup alone', async ({ brows
     }
     expect(beat, 'worker heartbeat within 10 s').toBe(true);
 
-    // Every page reachable from each persona's navigation.
+    // AT1: every manifest page that needs no fixture (as its persona), the DEMO sign-in, /docs, and every
+    // page reachable from each persona's navigation. All answer 200 with no console or page error.
     const context = await browser.newContext({ baseURL: origin });
     const problems: string[] = [];
     const visited: string[] = [];
-    for (const persona of [/^Workspace owner/, /^Employee/, /^Super admin/]) {
+    const personas = [
+      { crawl: 'user', button: /^Workspace owner/ },
+      { crawl: 'employee', button: /^Employee/ },
+      { crawl: 'admin', button: /^Super admin/ },
+    ] as const;
+    const manifestPages = (who: string) =>
+      ROUTES.filter((r) => r.kind === 'page' && r.params === undefined && !r.path.includes('[') && r.crawlAs?.includes(who as never)).map((r) => r.path);
+    expect(manifestPages('anonymous').length, 'manifest has anonymous pages to crawl').toBeGreaterThan(2);
+
+    const anon = await context.newPage();
+    anon.on('console', (m) => {
+      if (m.type() === 'error') problems.push(`${anon.url()} console: ${m.text()}`);
+    });
+    anon.on('pageerror', (e) => problems.push(`${anon.url()} pageerror: ${e.message}`));
+    for (const href of [...new Set([...manifestPages('anonymous'), '/docs'])]) {
+      const res = await anon.goto(href, { waitUntil: 'networkidle' });
+      expect(res?.status(), href).toBe(200);
+      visited.push(href);
+    }
+    const docLinks = await anon.locator('a[href^="/docs/"]').evaluateAll((as) => [...new Set(as.map((a) => (a as HTMLAnchorElement).getAttribute('href')!))]);
+    for (const href of docLinks) {
+      const res = await anon.goto(href, { waitUntil: 'networkidle' });
+      expect(res?.status(), href).toBe(200);
+      visited.push(href);
+    }
+    await anon.close();
+
+    for (const persona of personas) {
       const page = await context.newPage();
       page.on('console', (m) => {
         if (m.type() === 'error') problems.push(`${page.url()} console: ${m.text()}`);
       });
       page.on('pageerror', (e) => problems.push(`${page.url()} pageerror: ${e.message}`));
       await page.goto('/login');
-      await page.getByRole('button', { name: persona }).first().click();
+      await page.getByRole('button', { name: persona.button }).first().click();
       await page.waitForURL('**/dashboard/**');
       const home = new URL(page.url()).pathname;
       const links = await page.locator('a[href^="/dashboard/"]').evaluateAll((as) => [...new Set(as.map((a) => (a as HTMLAnchorElement).getAttribute('href')!))]);
-      for (const href of [home, ...links.filter((h) => !h.includes('?') && h !== home)]) {
+      const personaVisited = new Set<string>();
+      for (const href of [home, ...manifestPages(persona.crawl), ...links.filter((h) => !h.includes('?') && h !== home)]) {
+        if (personaVisited.has(href)) continue;
         const res = await page.goto(href, { waitUntil: 'networkidle' });
-        expect(res?.status(), href).toBe(200);
+        expect(res?.status(), `${persona.crawl}: ${href}`).toBe(200);
+        personaVisited.add(href);
         visited.push(href);
       }
+      expect(personaVisited.size, `${persona.crawl} pages visited`).toBeGreaterThanOrEqual(3);
       await page.close();
     }
-    expect(new Set(visited).size).toBeGreaterThanOrEqual(8);
+    expect(new Set(visited).size).toBeGreaterThanOrEqual(15);
     expect(problems).toEqual([]);
-    for (const pathname of ['/', '/login']) {
-      const res = await context.request.get(pathname);
-      expect(res.status(), pathname).toBe(200);
-    }
     await context.close();
   } finally {
     for (const pid of pids) await killPidTree(pid).catch(() => undefined);

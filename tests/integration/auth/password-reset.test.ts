@@ -5,11 +5,11 @@
  * hashed, last one hour, supersede earlier unused tokens, and redeem exactly once. Redeeming sets
  * the password, clears the lockout, revokes every session and signs nobody in.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { authenticate } from '@/server/auth/login';
-import { verifyPassword } from '@/server/auth/password';
-import { createPasswordReset, PASSWORD_RESET_TTL_MS } from '@/server/auth/password-reset';
+import { argon2Hasher, verifyPassword, type PasswordHasher } from '@/server/auth/password';
+import { createPasswordReset, PASSWORD_RESET_TTL_MS, redeemPasswordReset } from '@/server/auth/password-reset';
 import { createSession } from '@/server/auth/session';
 import { hashToken } from '@/server/security/tokens';
 import { POST as resetPOST } from '@/app/api/app/auth/reset/route';
@@ -131,6 +131,15 @@ describe('POST /api/app/auth/reset', () => {
     expect((await db.user.findUniqueOrThrow({ where: { id: disabled.id } })).status).toBe('DISABLED');
   });
 
+  it('checks the token before the password policy: an unknown token with a weak password is the same 404', async () => {
+    useRuntime(db, testConfig('live'));
+    const unknown = await redeem({ token: 'A'.repeat(43), password: 'short' });
+    const expired = await issue(ids.memberId, new Date(t0.getTime() - PASSWORD_RESET_TTL_MS - 1));
+    const stale = await redeem({ token: expired.token, password: 'short' });
+    expect([unknown.status, stale.status]).toEqual([404, 404]);
+    expect(((await unknown.json()) as { code: string }).code).toBe('NOT_FOUND');
+  });
+
   it('rejects a cross-origin POST and is rate limited per IP', async () => {
     useRuntime(db, testConfig('live'));
     const foreign = await resetPOST(makeRequest('/api/app/auth/reset', { body: { token: 'A'.repeat(43), password: NEW_PASSWORD }, origin: 'https://evil.example' }), noParams);
@@ -141,5 +150,75 @@ describe('POST /api/app/auth/reset', () => {
       if (res.status === 429) limited += 1;
     }
     expect(limited).toBeGreaterThan(0);
+  });
+});
+
+describe('state that changes while the password is being hashed', () => {
+  /** Real time passes while argon2 runs: the test moves this clock forward in the middle of a redemption. */
+  let current = t0;
+  const clock = { now: () => current };
+  beforeEach(() => {
+    current = t0;
+  });
+  /** A hasher that waits for `release()` before hashing, so a test can act in the middle of a redemption. */
+  function gatedHasher() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const hasher: PasswordHasher = {
+      ...argon2Hasher,
+      hash: async (password) => {
+        entered();
+        await gate;
+        return argon2Hasher.hash(password);
+      },
+    };
+    return { hasher, started, release };
+  }
+  const deps = (hasher: PasswordHasher) => ({ mode: 'live' as const, clock, correlationId: 'gated', hasher });
+
+  it('a token superseded during the hash can no longer be redeemed', async () => {
+    const user = await db.user.create({ data: { email: 'supersede@example.test', name: 'S', globalRole: 'USER', passwordHash: 'x' } });
+    const first = await issue(user.id);
+    const gated = gatedHasher();
+    const pending = redeemPasswordReset(db, { token: first.token, password: NEW_PASSWORD }, deps(gated.hasher));
+    const settled = pending.then(() => 'redeemed', (e: { status?: number }) => `rejected ${e.status}`);
+    await gated.started;
+    const supersededAt = new Date(t0.getTime() + 10);
+    const second = await issue(user.id, supersededAt); // supersedes `first` while its redemption is hashing
+    current = new Date(t0.getTime() + 25); // the hash finishes after the new token was issued
+    gated.release();
+    expect(await settled).toBe('rejected 404');
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).passwordHash).toBe('x');
+    current = new Date(t0.getTime() + 30);
+    await expect(redeemPasswordReset(db, { token: second.token, password: NEW_PASSWORD }, deps(argon2Hasher))).resolves.toMatchObject({ userId: user.id });
+  });
+
+  it('a user disabled during the hash keeps their old credentials and the token is not consumed', async () => {
+    const user = await db.user.create({ data: { email: 'disabled-mid@example.test', name: 'D', globalRole: 'USER', passwordHash: 'x', failedLoginCount: 3 } });
+    const issued = await issue(user.id);
+    const gated = gatedHasher();
+    const settled = redeemPasswordReset(db, { token: issued.token, password: NEW_PASSWORD }, deps(gated.hasher)).then(() => 'redeemed', (e: { status?: number }) => `rejected ${e.status}`);
+    await gated.started;
+    await db.user.update({ where: { id: user.id }, data: { status: 'DISABLED' } });
+    gated.release();
+    expect(await settled).toBe('rejected 404');
+    const after = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after).toMatchObject({ passwordHash: 'x', failedLoginCount: 3, status: 'DISABLED' });
+    expect(await db.passwordReset.count({ where: { userId: user.id, usedAt: null } })).toBe(1);
+    expect(await db.auditEvent.count({ where: { action: 'password.reset', targetId: user.id } })).toBe(0);
+  });
+});
+
+describe('rate limiting is keyed by client address', () => {
+  it('one address exhausting its hourly allowance does not block another (behind a trusted proxy)', async () => {
+    useRuntime(db, testConfig('live', { TRUSTED_PROXY_HOPS: '1' }));
+    const from = (ip: string) => resetPOST(makeRequest('/api/app/auth/reset', { body: { token: 'A'.repeat(43), password: NEW_PASSWORD }, headers: { 'x-forwarded-for': ip } }), noParams);
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i += 1) statuses.push((await from('203.0.113.7')).status);
+    expect(statuses.slice(0, 10).every((x) => x === 404)).toBe(true);
+    expect(statuses.slice(10)).toEqual([429, 429]);
+    expect((await from('198.51.100.9')).status).toBe(404);
   });
 });
