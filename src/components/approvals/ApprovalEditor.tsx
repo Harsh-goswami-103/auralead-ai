@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight, PencilLine, X } from 'lucide-react';
-import { IconChip } from '@/components/client/IconChip';
+import { IconChip } from '@/components/patterns/IconChip';
 import { GatedAction } from '@/components/patterns/GatedAction';
 import { Button } from '@/components/ui/button';
 import { duration, ease, exitTransition } from '@/components/motion/presets';

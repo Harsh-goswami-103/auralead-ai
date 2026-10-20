@@ -12,7 +12,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowLeft, FileText, Sparkles, Tags, UserRound, Users } from 'lucide-react';
-import { ChipTitle } from '@/components/client/IconChip';
+import { ChipTitle } from '@/components/patterns/IconChip';
 import { generatorLabel } from '@/components/client/labels';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import type { Gate } from '@/components/patterns/GatedAction';

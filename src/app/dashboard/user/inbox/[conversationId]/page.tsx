@@ -19,7 +19,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, FilePlus2, FileText, UserRound } from 'lucide-react';
 import { ApprovalActions, type ActionChannel } from '@/components/approvals/ApprovalActions';
-import { IconChip } from '@/components/client/IconChip';
+import { IconChip } from '@/components/patterns/IconChip';
 import { InitialsAvatar } from '@/components/client/InitialsAvatar';
 import { AutoRefresh } from '@/components/inbox/AutoRefresh';
 import { Composer } from '@/components/inbox/Composer';

@@ -15,7 +15,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, Bot, CircleCheck, CircleHelp, Cog, Contact, Download, FileText, Gauge, Globe, Loader2, Mail, MapPin, MessageCircle, PenLine, Phone, Sparkles, Star, Tag, TriangleAlert, Users, Wand2, Workflow, type LucideIcon } from 'lucide-react';
-import { ChipTitle } from '@/components/client/IconChip';
+import { ChipTitle } from '@/components/patterns/IconChip';
 import { PipelineRail } from '@/components/leads/PipelineRail';
 import { ScoreMeter } from '@/components/leads/ScoreMeter';
 import { ScoreRing } from '@/components/leads/ScoreRing';

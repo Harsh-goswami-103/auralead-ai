@@ -2,8 +2,11 @@
  * T08 panel chrome: the data behind the top bar (WorkspaceChip, user menu, mode and pause
  * banners) comes from the server context only. A USER sees their memberships, an EMPLOYEE only
  * their active assignments, a SUPER_ADMIN no workspace; workspaces of the other mode never
- * appear; the global outbound pause comes from SystemSetting or the env kill switch.
+ * appear; the global outbound pause comes from SystemSetting, the env kill switch or outbound.lock.
  */
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { FixedClock } from '@/lib/clock';
@@ -19,6 +22,8 @@ let testDb: TestDb;
 let db: PrismaClient;
 let ids: Identity;
 const clock = new FixedClock(NOW);
+const lockDir = mkdtempSync(path.join(tmpdir(), 'auralead-chrome-lock-'));
+const outboundLockFile = path.join(lockDir, 'outbound.lock');
 
 beforeAll(async () => {
   testDb = await createTestDb({ label: 'panel-chrome' });
@@ -39,13 +44,14 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await testDb?.destroy();
+  rmSync(lockDir, { recursive: true, force: true });
 });
 
 async function chromeFor(userId: string, role: 'USER' | 'EMPLOYEE' | 'SUPER_ADMIN', active: string | null = null, envOutboundPaused = false) {
   const { token } = await createSession(db, { userId, globalRole: role, mode: 'LIVE', activeWorkspaceId: active, ipHash: 'x', userAgent: 'vitest', now: clock.now() });
   const loaded = (await loadSession(db, token, { now: clock.now(), mode: 'LIVE' }))!;
   const ctx = await buildUserContext(loaded, { prisma: db, mode: 'live', clock }, { correlationId: 'req_panel_chrome_01' });
-  return loadPanelChrome(ctx, loaded, { envOutboundPaused });
+  return loadPanelChrome(ctx, loaded, { envOutboundPaused, outboundLockFile });
 }
 
 describe('loadPanelChrome', () => {
@@ -97,5 +103,17 @@ describe('loadPanelChrome', () => {
     expect(chrome.automationPaused).toBe(true);
     await db.systemSetting.update({ where: { id: 1 }, data: { outboundPaused: false } });
     await db.workspace.update({ where: { id: ids.workspaceAId }, data: { automationPaused: false, automationPauseReason: null } });
+  });
+
+  it('outbound pause from an outbound.lock file alone (a restore or an operator), like dispatch preflight', async () => {
+    expect((await chromeFor(ids.ownerId, 'USER')).outboundPaused).toBe(false);
+    writeFileSync(outboundLockFile, JSON.stringify({ writtenBy: 'db:restore', at: NOW, reason: 'restore' }));
+    try {
+      expect((await chromeFor(ids.ownerId, 'USER')).outboundPaused).toBe(true);
+      expect((await chromeFor(ids.adminId, 'SUPER_ADMIN')).outboundPaused).toBe(true);
+    } finally {
+      rmSync(outboundLockFile, { force: true });
+    }
+    expect((await chromeFor(ids.ownerId, 'USER')).outboundPaused).toBe(false);
   });
 });

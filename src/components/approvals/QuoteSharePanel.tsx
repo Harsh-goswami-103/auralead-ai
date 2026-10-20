@@ -20,7 +20,7 @@ import { useEffect, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Check, CircleAlert, CircleCheck, Clock, Copy, Eye, History, Link2, Send, Unlink, type LucideIcon } from 'lucide-react';
-import { IconChip } from '@/components/client/IconChip';
+import { IconChip } from '@/components/patterns/IconChip';
 import { ConfirmDialog } from '@/components/patterns/ConfirmDialog';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { useCsrfToken } from '@/components/patterns/csrf';
@@ -222,7 +222,7 @@ export function QuoteSharePanel(props: QuoteSharePanelProps) {
               }}
             />
           ) : (
-            <GatedAction label="Mark as sent manually" variant="outline" gate={NO_SHARE} onAction={() => setNotice(null)} />
+            <GatedAction label="Mark as sent manually" variant="outline" gate={NO_SHARE} />
           )
         ) : null}
       </div>
@@ -315,7 +315,7 @@ export function QuoteSharePanel(props: QuoteSharePanelProps) {
                       }}
                     />
                   ) : (
-                    <GatedAction label="Revoke" size="sm" variant="ghost" gate={NO_SHARE} onAction={() => setNotice(null)} />
+                    <GatedAction label="Revoke" size="sm" variant="ghost" gate={NO_SHARE} />
                   )
                 ) : null}
               </li>

@@ -48,7 +48,7 @@ export default async function EmployeeApprovalsPage() {
   const page = await getPageContext();
   if (!page) redirect('/login');
   if (page.session.user.globalRole !== 'EMPLOYEE') notFound();
-  const chrome = await loadPanelChrome(page.ctx, page.session, { envOutboundPaused: getRuntime().config.outboundPaused });
+  const chrome = await loadPanelChrome(page.ctx, page.session, { envOutboundPaused: getRuntime().config.outboundPaused, outboundLockFile: getRuntime().config.paths.outboundLockFile });
   const sections: Section[] = await Promise.all(chrome.switchable.map((ws) => loadSection(ws)));
   const now = page.ctx.clock.now();
   const waiting = sections.reduce((n, s) => n + (s.queue?.pending.length ?? 0), 0);

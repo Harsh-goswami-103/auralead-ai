@@ -168,7 +168,7 @@ export default async function JobInspectorPage(props: { params: Promise<{ jobId:
                     successMessage="Retry queued."
                   />
                 ) : (
-                  <GatedAction label="Retry" variant="outline" gate={{ category: 'eligibility', reason: actions.retry.reason }} href={`/dashboard/admin/jobs/${job.id}`} className="max-w-xs" />
+                  <GatedAction label="Retry" variant="outline" gate={{ category: 'eligibility', reason: actions.retry.reason }} className="max-w-xs" />
                 )
               ) : null}
             </div>

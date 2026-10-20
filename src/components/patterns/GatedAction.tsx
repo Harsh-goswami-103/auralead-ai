@@ -47,7 +47,9 @@ type Common = {
 
 export type GatedActionProps =
   | (Common & { onAction: () => void | Promise<void>; href?: undefined })
-  | (Common & { href: string; onAction?: undefined });
+  | (Common & { href: string; onAction?: undefined })
+  /** Always gated in this render (a server page, or a permission the viewer lacks): nothing to run. */
+  | (Omit<Common, 'gate'> & { gate: Gate; onAction?: undefined; href?: undefined });
 
 const CATEGORY_ICONS: Readonly<Record<GateCategory, LucideIcon>> = {
   configuration: Settings2,
@@ -88,10 +90,11 @@ export function GatedAction(props: GatedActionProps) {
   const reasonId = props.reasonId ?? ownReasonId;
   const [pending, setPending] = useState(false);
   const running = useRef(false);
-  const { gate, label, icon, variant, size, className } = props;
+  const { label, icon, variant, size, className } = props;
   const classes = cn(buttonVariants({ variant, size }), className);
 
-  if (gate !== null) {
+  if (props.gate !== null) {
+    const gate = props.gate;
     const gatedClasses = cn(buttonVariants({ variant: 'outline', size }), GATED_CLASSES, className);
     const gatedIcon = <Lock aria-hidden="true" />;
     const blockActivation = (event: MouseEvent<HTMLElement>) => {
@@ -128,8 +131,10 @@ export function GatedAction(props: GatedActionProps) {
     );
   }
 
+  // Only the always-gated form omits both onAction and href, and it returned above.
   const onAction = props.onAction;
-  async function run() {
+  if (onAction === undefined) return null;
+  const run = async () => {
     if (running.current) return;
     running.current = true;
     setPending(true);
@@ -139,7 +144,7 @@ export function GatedAction(props: GatedActionProps) {
       running.current = false;
       setPending(false);
     }
-  }
+  };
 
   return (
     <button type="button" aria-busy={pending || undefined} onClick={() => void run()} className={classes}>

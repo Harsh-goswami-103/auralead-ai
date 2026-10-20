@@ -1,5 +1,5 @@
 /**
- * Brand hues for decorative client-panel accents (design spec §1, §6): the aurora family only
+ * Brand hues for decorative accents in every panel (design spec §1, §6): the aurora family only
  * (aura, volt-hi, zest, ice), never a status hue and never the AI violet. Used for icon chips in
  * section titles, KPI tiles and the pipeline stepper so each kind of fact keeps one hue everywhere.
  * `tile` re-tints a StatTile (tone 'panel') by overriding --panel-hue locally; text stays text-1.

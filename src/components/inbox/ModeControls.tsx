@@ -116,7 +116,7 @@ export function ModeControls(props: ModeControlsProps) {
               onConfirm={() => post('resume', {}, 'AI resumed on this conversation.')}
             />
           ) : (
-            <GatedAction label="Resume AI" size="sm" variant="outline" gate={NO_MODE} onAction={() => setFailure(null)} />
+            <GatedAction label="Resume AI" size="sm" variant="outline" gate={NO_MODE} />
           )}
         </div>
       ) : null}
@@ -152,7 +152,6 @@ export function ModeControls(props: ModeControlsProps) {
                   variant="ghost"
                   gate={gate}
                   reasonId={reasonIdFor(gate)}
-                  onAction={() => setFailure(null)}
                   className="h-8 rounded-full border-transparent bg-transparent px-3 hover:bg-transparent [&_svg]:size-3.5"
                 />
               );
@@ -193,7 +192,7 @@ export function ModeControls(props: ModeControlsProps) {
             />
           ) : (
             <span className="@min-[30rem]:ml-auto">
-              <GatedAction label="Take over" size="sm" variant="outline" gate={NO_MODE} onAction={() => setFailure(null)} />
+              <GatedAction label="Take over" size="sm" variant="outline" gate={NO_MODE} />
             </span>
           )
         ) : null}

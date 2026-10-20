@@ -15,7 +15,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { Activity, CheckCircle2, ClipboardCheck, Clock3, HelpCircle, Inbox, Users, XCircle } from 'lucide-react';
-import { ChipTitle } from '@/components/client/IconChip';
+import { ChipTitle } from '@/components/patterns/IconChip';
 import { ScoreMeter } from '@/components/leads/ScoreMeter';
 import { StageChip } from '@/components/leads/StageChip';
 import { ToneChip } from '@/components/leads/ToneChip';

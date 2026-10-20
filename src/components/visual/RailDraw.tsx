@@ -11,7 +11,7 @@
 import { motion } from 'motion/react';
 import { duration } from '@/components/motion/presets';
 import { cn } from '@/components/ui/cn';
-import { usePrefersReducedMotion } from '@/components/visual/use-prefers-reduced-motion';
+import { usePrefersReducedMotion } from './use-prefers-reduced-motion';
 
 export function RailDraw(props: { className?: string; delay?: number; seconds?: number; inView?: boolean }) {
   const reduced = usePrefersReducedMotion();

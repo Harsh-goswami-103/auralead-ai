@@ -137,12 +137,7 @@ export default async function AdminHomePage() {
             className={cn('flex-1', home.outboundPaused && 'border-danger/45 [--grad-hairline:linear-gradient(var(--danger),var(--danger))]')}
             accent
           >
-            {home.outboundPaused ? null : (
-              // Clip the streak's box: the mask hides it visually, but its layout box would widen the page at 390px.
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
-                <BorderBeam duration={10} />
-              </span>
-            )}
+            {home.outboundPaused ? null : <BorderBeam duration={10} />}
             {home.outboundPaused ? (
               <p className="text-sm text-fg-1">{outbound ? `Held by ${pauseSources(outbound).join(', ')}. Nothing new passes preflight.` : 'Paused globally. Nothing new passes preflight.'}</p>
             ) : null}

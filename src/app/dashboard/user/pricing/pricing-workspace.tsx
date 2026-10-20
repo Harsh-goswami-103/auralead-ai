@@ -18,9 +18,9 @@ import { useCallback, useEffect, useRef, useState, type ComponentProps, type CSS
 import { motion } from 'motion/react';
 import { Archive, BadgePercent, CalendarClock, CircleCheck, History, Pencil, Plus, Receipt, Tags, Timer, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { Tabs } from 'radix-ui';
-import { IconChip } from '@/components/client/IconChip';
+import { IconChip } from '@/components/patterns/IconChip';
 import { ScrollRegion } from '@/components/client/ScrollRegion';
-import type { BrandHue } from '@/components/client/hues';
+import type { BrandHue } from '@/components/patterns/hues';
 import { days } from '@/components/client/labels';
 import { spring } from '@/components/motion/presets';
 import { ConfirmDialog } from '@/components/patterns/ConfirmDialog';

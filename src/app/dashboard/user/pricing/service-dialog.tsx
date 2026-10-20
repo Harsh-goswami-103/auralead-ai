@@ -9,7 +9,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Pencil, Plus } from 'lucide-react';
-import { IconChip } from '@/components/client/IconChip';
+import { IconChip } from '@/components/patterns/IconChip';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { paiseToRupeeString, parseRupeesToPaise } from '@/lib/money';
