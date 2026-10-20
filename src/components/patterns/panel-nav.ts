@@ -3,7 +3,7 @@
  * so no nav item ever leads to a placeholder. Each task that lands a panel page appends its item
  * (with `primary: true` for the at most four sections in the mobile bottom tab bar).
  */
-import { Building2, ClipboardCheck, FileText, Gauge, Inbox, LayoutDashboard, ListChecks, Tags, Webhook, type LucideIcon } from 'lucide-react';
+import { Building2, ClipboardCheck, FileText, Gauge, Inbox, LayoutDashboard, ListChecks, Tags, Users, Webhook, type LucideIcon } from 'lucide-react';
 
 export type PanelKey = 'user' | 'employee' | 'admin';
 
@@ -26,7 +26,9 @@ export const PANELS: Readonly<Record<PanelKey, PanelDefinition>> = {
     home: '/dashboard/user',
     items: [
       { href: '/dashboard/user', label: 'Command center', icon: LayoutDashboard, primary: true, match: 'exact' },
-      { href: '/dashboard/user/pricing', label: 'Pricing', icon: Tags, primary: true, match: 'prefix' },
+      // T26: Leads takes Pricing's bottom-tab slot on phones (Pricing stays in the sidebar and "More").
+      { href: '/dashboard/user/leads', label: 'Leads', icon: Users, primary: true, match: 'prefix' },
+      { href: '/dashboard/user/pricing', label: 'Pricing', icon: Tags, match: 'prefix' },
       { href: '/dashboard/user/quotations', label: 'Quotations', icon: FileText, primary: true, match: 'prefix' },
       { href: '/dashboard/user/inbox', label: 'Inbox', icon: Inbox, primary: true, match: 'prefix' },
     ],

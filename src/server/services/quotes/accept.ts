@@ -93,7 +93,8 @@ export async function acceptSharedQuote(
     if (cas.count !== 1) throw new ConflictError({ userMessage: 'This quotation changed while you were accepting it. Reload and try again.' });
     const stage = await tx.lead.updateMany({
       where: { id: quote.leadId, workspaceId: share.workspaceId, salesStage: { in: [...CONVERTIBLE_STAGES] } },
-      data: { salesStage: 'CONVERTED', updatedAt: now } as Prisma.LeadUncheckedUpdateManyInput,
+      // stageVersion moves with every promotion, so a board opened before the acceptance gets 409 (T26).
+      data: { salesStage: 'CONVERTED', stageVersion: { increment: 1 }, updatedAt: now } as Prisma.LeadUncheckedUpdateManyInput,
     });
     await recordAudit(
       tx,

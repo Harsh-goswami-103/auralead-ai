@@ -1,7 +1,9 @@
 /**
  * Employee lead console (T11: source simulations and what they produced; T17: the lead list links
  * to each lead's detail page, where drafts, quotes, approval and the PDF live, and shows the
- * score). The `[ws]` slug is resolved against the employee's
+ * score; T26: the full Leads area: search on the normalized columns, filters, sort, keyset pages
+ * of 50 with a capped count, the Kanban board with its "Move to stage" menu and drag, and the CSV
+ * export, plus the Scoring tab). The `[ws]` slug is resolved against the employee's
  * active assignments (404 otherwise); data is read through the tenant-scoped context. Simulations
  * post to /api/demo/simulate/[source] and are gated by mode (DEMO only) and permission
  * (leads.write), both decided on the server.
@@ -15,9 +17,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { Activity, CheckCircle2, ClipboardCheck, Clock3, HelpCircle, Inbox, Users, XCircle } from 'lucide-react';
+import { LeadsTabs } from '@/components/leads/LeadsTabs';
+import { LeadsWorkspace } from '@/components/leads/LeadsWorkspace';
 import { ChipTitle } from '@/components/patterns/IconChip';
-import { ScoreMeter } from '@/components/leads/ScoreMeter';
-import { StageChip } from '@/components/leads/StageChip';
 import { ToneChip } from '@/components/leads/ToneChip';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { PageHeader } from '@/components/patterns/PageHeader';
@@ -30,8 +32,10 @@ import { cn } from '@/components/ui/cn';
 import { Reveal, Stagger, StaggerItem } from '@/components/visual/Reveal';
 import { NotFoundError } from '@/lib/errors';
 import { formatDateTime } from '@/lib/format/date';
+import { parseLeadPageParams } from '@/lib/schemas/leads';
 import { getPageContext } from '@/server/auth/page-context';
 import { loadLeadConsole, type ConsoleEvent } from '@/server/services/webhooks/console';
+import { loadLeadsArea } from '../../../user/leads/leads-data';
 import { SimulationPanel } from './simulation-panel';
 
 export const metadata: Metadata = { title: 'Lead console' };
@@ -83,8 +87,15 @@ function EventCounts({ event }: { event: ConsoleEvent }) {
   );
 }
 
-export default async function EmployeeLeadConsolePage({ params }: { params: Promise<{ ws: string }> }) {
+export default async function EmployeeLeadConsolePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ ws: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { ws } = await params;
+  const query = parseLeadPageParams((await searchParams) ?? {});
   let page;
   try {
     page = await getPageContext({ workspaceSlug: ws });
@@ -97,6 +108,18 @@ export default async function EmployeeLeadConsolePage({ params }: { params: Prom
   const data = await loadLeadConsole(page.ctx);
   const tz = data.workspace.timezone;
   const pending = data.events.some((e) => e.status === 'RECEIVED');
+  const base = `/dashboard/employee/${data.workspace.slug}/leads`;
+  const area = data.canReadLeads
+    ? await loadLeadsArea(page.ctx, query, {
+        basePath: base,
+        rowHref: (row) => `${base}/${encodeURIComponent(row.id)}`,
+        workspaceSlug: data.workspace.slug,
+        gates: {
+          move: 'Your assignment does not include leads.write, which moving leads needs. A super admin can grant it from the people page.',
+          export: 'Your assignment does not include leads.export. A super admin can grant it from the people page.',
+        },
+      })
+    : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,8 +134,9 @@ export default async function EmployeeLeadConsolePage({ params }: { params: Prom
           </Link>
         }
       />
+      <LeadsTabs current="leads" leadsHref={base} scoringHref={`${base}/scoring`} />
 
-      {!data.canReadLeads ? (
+      {!data.canReadLeads || area?.workspace == null ? (
         <EmptyState
           icon={<Users aria-hidden="true" className="size-5" />}
           title="Leads are not part of your assignment"
@@ -160,63 +184,19 @@ export default async function EmployeeLeadConsolePage({ params }: { params: Prom
             )}
           </SectionCard>
 
-          <SectionCard title={<ChipTitle icon={<Users aria-hidden="true" />}>Latest leads</ChipTitle>} meta={data.leads.length > 0 ? 'Newest first. Open a lead for its score, pipeline, drafts and quotations.' : undefined}>
-            {data.leads.length === 0 ? (
-              <EmptyState
-                headingLevel="h3"
-                icon={<Users aria-hidden="true" className="size-5" />}
-                title="No leads yet"
-                description="Connect a source or, in DEMO, run a simulation above. Each new lead shows its source and sales stage."
-              />
-            ) : (
-              <div className="relative -mx-4 overflow-x-auto sm:-mx-5">
-                <table className="w-full min-w-[46rem] text-left text-sm">
-                  <thead className="border-y border-border-subtle bg-bg-2/40 text-xs text-fg-2">
-                    <tr>
-                      <th scope="col" className="py-2 pr-3 pl-4 font-medium sm:pl-5">Lead</th>
-                      <th scope="col" className="px-3 py-2 font-medium">Source</th>
-                      <th scope="col" className="px-3 py-2 font-medium">Score</th>
-                      <th scope="col" className="px-3 py-2 font-medium">Stage</th>
-                      <th scope="col" className="px-3 py-2 font-medium">City</th>
-                      <th scope="col" className="py-2 pr-4 pl-3 font-medium sm:pr-5">Added</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-subtle">
-                    {data.leads.map((l) => (
-                      <tr key={l.id} className="transition-colors duration-fast hover:bg-bg-2/60">
-                        <td className="min-w-[11rem] py-2.5 pr-3 pl-4 text-fg-1 sm:pl-5">
-                          <span className="flex flex-wrap items-center gap-2">
-                            <Link href={`/dashboard/employee/${data.workspace.slug}/leads/${l.id}`} className="inline-flex items-center font-medium text-cyan underline-offset-4 hover:underline max-lg:min-h-11">
-                              {l.displayName}
-                            </Link>
-                            {l.simulated ? <ModeChip simulated /> : null}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <SourceChip source={l.firstSource} />
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {l.score === null ? (
-                            <span className="text-fg-2">Not scored</span>
-                          ) : (
-                            <span className="flex items-center gap-2.5">
-                              <span className="tabular w-[4.25rem] text-fg-1">{`${l.score} / 100`}</span>
-                              <ScoreMeter value={l.score} animate={false} />
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <StageChip stage={l.salesStage} />
-                        </td>
-                        <td className="px-3 py-2.5 text-fg-2">{l.city ?? 'Unknown'}</td>
-                        <td className="tabular py-2.5 pr-4 pl-3 whitespace-nowrap text-fg-2 sm:pr-5">{formatDateTime(l.createdAt, tz)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </SectionCard>
+          <LeadsWorkspace
+            {...area.workspace}
+            emptyWorkspace={
+              area.access.empty ? (
+                <EmptyState
+                  headingLevel="h3"
+                  icon={<Users aria-hidden="true" className="size-5" />}
+                  title="No leads yet"
+                  description="Connect a source or, in DEMO, run a simulation above. Each new lead shows its source and sales stage."
+                />
+              ) : null
+            }
+          />
         </>
       )}
     </div>

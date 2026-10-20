@@ -15,6 +15,10 @@
  *  - Jobs (payloads hold ids only); the person's QUEUED or RUNNING jobs are cancelled.
  *  - Bulk run results and import batch counts (ids and codes only).
  *
+ * Ended on purpose (T26, ADR-70): every READY CSV export of the workspace may hold the person's
+ * row, so each is marked EXPIRED (`LEAD_ERASED`) in the same transaction and its file is deleted
+ * after the commit, like the PDFs.
+ *
  * Refused (409 ERASE_SEND_IN_FLIGHT) while a send to the person is SENDING: its settle would
  * write to rows that no longer exist. Retry once it settles.
  * Everything runs in one transaction with deferred foreign keys, so a referencing row this code
@@ -50,6 +54,8 @@ export type EraseLeadResult = {
   jobsCancelled: number;
   webhookEventsPurged: number;
   filesDeleted: number;
+  /** READY lead CSV exports of the workspace ended because they may hold the person's row. */
+  exportsExpired: number;
 };
 
 const MAX_MERGE_DEPTH = 50;
@@ -162,6 +168,12 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
 
       const artifacts = await tx.quoteArtifact.findMany({ where: { workspaceId, quoteVersionId: { in: versionIds } }, select: { path: true } });
 
+      // CSV exports written before now may hold this person's row: end them (files go after commit).
+      const exports = await tx.leadExport.findMany({ where: { workspaceId, status: 'READY' }, select: { id: true, path: true } });
+      if (exports.length > 0) {
+        await tx.leadExport.updateMany({ where: { workspaceId, id: { in: exports.map((e) => e.id) }, status: 'READY' }, data: { status: 'EXPIRED', purgedAt: now, errorCode: 'LEAD_ERASED' } });
+      }
+
       // Deletes: foreign keys are checked at commit, when every referencing row is gone too.
       await tx.$executeRawUnsafe('PRAGMA defer_foreign_keys = ON');
       const counts: Record<string, number> = {};
@@ -199,15 +211,24 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
           targetId: input.leadId,
           reason,
           workspaceId,
-          summary: { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length },
+          summary: { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length, exportsExpired: exports.length },
         },
       );
-      return { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length, artifacts: artifacts.map((a) => a.path) };
+      return {
+        leadIds,
+        counts,
+        suppressionsKept,
+        jobsCancelled,
+        webhookEventsPurged: touched.length,
+        exportsExpired: exports.length,
+        artifacts: artifacts.map((a) => a.path),
+        exportFiles: exports.map((e) => e.path).filter((p): p is string => p !== null),
+      };
     },
     { timeoutMs: 120_000 },
   );
 
-  const { artifacts, ...rest } = outcome;
+  const { artifacts, exportFiles, ...rest } = outcome;
   let filesDeleted = 0;
   const root = path.resolve(input.storageDir);
   for (const rel of artifacts) {
@@ -215,6 +236,11 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
     if (!full.startsWith(root + path.sep)) continue;
     await rm(full, { force: true, maxRetries: 3, retryDelay: 100 });
     filesDeleted += 1;
+  }
+  for (const rel of exportFiles) {
+    const full = path.resolve(root, rel);
+    if (!full.startsWith(root + path.sep)) continue;
+    await rm(full, { force: true, maxRetries: 3, retryDelay: 100 });
   }
   return { ...rest, filesDeleted };
 }

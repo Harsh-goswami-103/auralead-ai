@@ -126,6 +126,8 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   /** T22: workspace B's seeded PENDING approval of quote Q-0001 v1, and a conversation id that does not exist. */
   'workspaceB.approvalId': seedId('approval', `${WORKSPACE_B}:Q-0001:1`),
   'inbox.unknownConversationId': 'convmatrixprobe0000000000',
+  /** T26: a well-formed lead export id that does not exist. */
+  'leads.unknownExportId': 'exportmatrixprobe00000000',
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {

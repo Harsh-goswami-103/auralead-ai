@@ -427,6 +427,7 @@ model Workspace {
   campaigns              Campaign[]
   pipelineConfigVersions PipelineConfigVersion[]
   bulkRuns               BulkRun[]
+  leadExports            LeadExport[]
 }
 
 model WorkspaceSettings {
@@ -1633,4 +1634,53 @@ model BulkRun {
   @@unique([workspaceId, id])
   @@unique([workspaceId, requestKey])
   @@index([workspaceId, createdAt])
+}
+
+// ---- Lead CSV exports (T26, ADR-70) ------------------------------------------------------------
+
+/// LeadExport.status: QUEUED until the `leads.export` job wrote the file, READY while it can be
+/// downloaded, FAILED when the job gave up, EXPIRED once `leads.exportPurge` deleted the file.
+enum LeadExportStatus {
+  QUEUED
+  READY
+  FAILED
+  EXPIRED
+}
+
+/// One CSV export of a workspace's leads (T26, plan §11 M4, ADR-70). The request stores the list
+/// filters it was made with; the `leads.export` job writes the file to
+/// `STORAGE_DIR/exports/<workspaceId>/<id>.csv` (sha256 and size kept here) and schedules
+/// `leads.exportPurge` at `expiresAt` (24 h after the file was written), which deletes it. Only
+/// the person who requested an export can download it, and every download is audited.
+model LeadExport {
+  id               String           @id @default(cuid(2))
+  workspaceId      String
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// Client idempotency key: a repeated request (double click, retry) returns the same export.
+  requestKey       String
+  status           LeadExportStatus @default(QUEUED)
+  /// The list query the export ran with: { q?, stage?, source?, score?, sort }. Never filtered on.
+  filters          Json
+  /// userId of the person who asked for the export.
+  requestedBy      String
+  correlationId    String
+  jobId            String?
+  rowCount         Int?
+  /// More rows matched than the export cap; the file holds the first ones in list order.
+  truncated        Boolean          @default(false)
+  /// Relative to STORAGE_DIR.
+  path             String?
+  sha256           String?
+  bytes            Int?
+  errorCode        String?
+  createdAt        DateTime         @default(now())
+  completedAt      DateTime?
+  expiresAt        DateTime?
+  purgedAt         DateTime?
+  downloadCount    Int              @default(0)
+  lastDownloadedAt DateTime?
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, requestKey])
+  @@index([workspaceId, requestedBy, createdAt])
 }

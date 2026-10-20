@@ -6,6 +6,9 @@
  * PDF. The `[ws]` slug is resolved against the employee's active assignments; a lead of another
  * workspace is 404. While the worker still has work for this lead the page re-reads itself.
  *
+ * T26 completes it with the lead's stage control ("Move to stage", compare-and-set on the version
+ * shown), consent per channel (matched by the contact HMAC, as eligibility) and the source records.
+ *
  * Look (design spec §6): PageHeader with the source and stage chips and the score meter; the score
  * as a ring gauge with a bar per reason; the pipeline as a stepper rail with plain-language reasons;
  * the draft as message previews; quotations as cards. Status is icon + label everywhere, money is
@@ -14,7 +17,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowLeft, Bot, CircleCheck, CircleHelp, Cog, Contact, Download, FileText, Gauge, Globe, Loader2, Mail, MapPin, MessageCircle, PenLine, Phone, Sparkles, Star, Tag, TriangleAlert, Users, Wand2, Workflow, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Bot, CircleCheck, CircleHelp, Cog, Contact, Download, FileText, Gauge, Globe, Inbox, Loader2, Mail, MapPin, MessageCircle, PenLine, Phone, ShieldCheck, Sparkles, Star, Tag, TriangleAlert, Users, Wand2, Waypoints, Workflow, type LucideIcon } from 'lucide-react';
+import { ConsentChips } from '@/components/leads/ConsentChips';
+import { SourceRecords } from '@/components/leads/SourceRecords';
+import { StageMoveMenu } from '@/components/leads/StageMoveMenu';
+import { GatedAction } from '@/components/patterns/GatedAction';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { PipelineRail } from '@/components/leads/PipelineRail';
 import { ScoreMeter } from '@/components/leads/ScoreMeter';
@@ -37,6 +44,8 @@ import { formatINR } from '@/lib/money';
 import { generatorInfo, leadQuotePdfHref, type GeneratorKind } from '@/lib/schemas/lead-console';
 import { SCORE_CAPTION } from '@/lib/schemas/scoring';
 import { getPageContext } from '@/server/auth/page-context';
+import { getRuntime } from '@/server/boot';
+import { leadProfileDeps, loadLeadProfile, type LeadProfileDto } from '@/server/services/leads/profile';
 import { loadLeadDetail, type DraftView, type LeadDetail, type LeadQuoteView } from '@/server/services/leads/console';
 import { QuoteStatusBadge } from '../../../../user/quotations/quote-status';
 import { AutoRefresh, DraftActions, QuoteApproveAction } from './lead-actions';
@@ -221,8 +230,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
   if (page.session.user.globalRole !== 'EMPLOYEE') notFound();
 
   let detail: LeadDetail;
+  let profile: LeadProfileDto;
   try {
-    detail = await loadLeadDetail(page.ctx, leadId);
+    [detail, profile] = await Promise.all([loadLeadDetail(page.ctx, leadId), loadLeadProfile(page.ctx, leadId, leadProfileDeps(getRuntime().config))]);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     if (error instanceof PermissionDeniedError) {
@@ -371,6 +381,28 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
           </SectionCard>
         </StaggerItem>
       </Stagger>
+
+      <Reveal delay={0.1} className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <SectionCard title={<ChipTitle icon={<Waypoints aria-hidden="true" />} hue="zest">Stage and consent</ChipTitle>} className="flex-1">
+          <div className="flex flex-col gap-3">
+            {profile.lead.merged ? (
+              <p className="text-sm text-fg-2">This lead was merged into another lead; its stage is kept there.</p>
+            ) : profile.permissions.canMoveStage ? (
+              <StageMoveMenu lead={profile.lead} workspaceSlug={workspace.slug} className="self-start" />
+            ) : (
+              <GatedAction label="Move to stage" size="sm" gate={{ category: 'permission', reason: 'Your assignment does not include leads.write, which moving leads needs. A super admin can grant it from the people page.' }} />
+            )}
+            <h3 className="mt-2 flex items-center gap-1.5 text-xs font-medium text-fg-2">
+              <ShieldCheck aria-hidden="true" className="size-3.5" />
+              Consent by channel
+            </h3>
+            <ConsentChips consent={profile.consent} timeZone={tz} />
+          </div>
+        </SectionCard>
+        <SectionCard title={<ChipTitle icon={<Inbox aria-hidden="true" />}>Source</ChipTitle>} className="flex-1">
+          <SourceRecords records={profile.sources} timeZone={tz} />
+        </SectionCard>
+      </Reveal>
 
       <Reveal delay={0.14}>
         <SectionCard title={<ChipTitle icon={<Workflow aria-hidden="true" />} hue="zest">Pipeline</ChipTitle>} meta="The steps this lead went through in its pinned pipeline.">
