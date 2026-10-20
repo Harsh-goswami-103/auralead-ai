@@ -1131,4 +1131,25 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { quoteId: fixture('workspaceB.quoteId') },
     calls: [{ method: 'POST', body: { expectedVersion: 1, via: 'MARK_SENT' }, expect: signedIn(404), note: "mark workspace B's quote as sent manually (P15)" }],
   },
+
+  // ---- Documentation (T37) ---------------------------------------------------------------------
+  {
+    path: '/docs',
+    file: 'src/app/(public)/docs/page.tsx',
+    kind: 'page',
+    owner: 'T37',
+    access: 'public',
+    calls: [{ method: 'GET', expect: all(200), note: 'public docs index; no session read' }],
+    crawlAs: ['anonymous'],
+  },
+  {
+    path: '/docs/[slug]',
+    file: 'src/app/(public)/docs/[slug]/page.tsx',
+    kind: 'page',
+    owner: 'T37',
+    access: 'public',
+    params: { slug: 'getting-started' },
+    calls: [{ method: 'GET', expect: all(200), note: 'public docs page; an unknown slug is 404 (tests/unit/docs/docs-render.test.ts)' }],
+    crawlAs: ['anonymous'],
+  },
 ];

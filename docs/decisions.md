@@ -824,3 +824,34 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Alternatives:** a static CSP in `next.config.ts` with `unsafe-inline` scripts (rejected: defeats the purpose); hashes for Next's inline bootstrap (rejected: they change per build and per page).
 - **Covered by:** `tests/unit/security/security-headers.test.ts`, the browser check recorded in `docs/progress.md` (built LIVE app, no CSP violations, login and hydration working).
 - **Reversibility:** 4.
+
+### ADR-90 In-app documentation: typed content, two public routes, no Markdown library (T37, first pass)
+- **Decision:**
+  - Pages are TypeScript data in `content/docs/pages/*.ts` (model and inline parser in `content/docs/format.ts`, order in `content/docs/index.ts`), imported through a new `@content/*` path alias in `tsconfig.json` (Next and vite-tsconfig-paths both follow it). A page has a slug, title, summary, `appliesTo` (DEMO and/or LIVE), a `checked` date and sections with stable ids; blocks are paragraph, list, ordered list, code (language and caption), callout (note, warning, limit), table and subheading. Inline text knows three marks only: `code`, **bold** and [label](href). No dependency was added and nothing is rendered as raw HTML.
+  - Two routes instead of the plan's `(public)/docs/[[...slug]]`: `/docs` (index) and `/docs/[slug]` (a page; unknown slug 404). One segment is all the content needs, and a nested path is a plain 404 instead of a slug-array edge case. Both are public, read no session, and are `force-dynamic` because the mode picks the banner and labels and the nonce CSP needs a per-request render (ADR-69). Manifest entries owned by T37.
+  - Rendering lives in `src/app/(public)/docs/_components/` (private folder, so not a route): the shell (skip link first, DEMO banner, glass top bar reusing the landing wordmark and mode-aware CTA, sticky page list from 1024 px, footer), the article (PageHeader with the one h1, "Applies to" tags as icon plus text with `--demo` only on the DEMO tag, the checked date, "On this page", sections as SectionCards whose ids are the anchors, previous / next links), and the blocks. Tables and code blocks scroll inside a focusable labelled ScrollRegion; code blocks reuse the existing `CopyButton` island. No panel signature is set, so the default aurora hue applies. Below 1024 px the page list is reached through the top bar's Docs link and the previous / next links instead of a duplicated menu.
+- **Why:** The task forbids new dependencies and the content must be checkable by a test (ADR-91); typed data makes ids, links and code spans enumerable.
+- **Alternatives:** MDX or a Markdown parser (rejected: new dependency, raw HTML surface); `[[...slug]]` (rejected: no nested pages exist).
+- **Covered by:** `tests/unit/docs/docs-render.test.ts`, `tests/components/docs/doc-blocks.test.tsx`, `tests/e2e/docs/docs.spec.ts`, the route manifest and tenant matrix.
+- **Reversibility:** 5.
+
+### ADR-91 The documentation honesty test
+- **Decision:** `tests/unit/docs/content.test.ts` fails when a docs page, `README.md` or `docs/{architecture,deployment,runbooks}.md` names something the repository does not have: an `npm run` script missing from `package.json`, an env key missing from `.env.example`, a repo path that does not exist, an app path that is not in the route manifest, an UPPER_CASE code or dotted name (job type, audit action, capability, file name) that does not occur in `src/`, `worker/`, `scripts/` or `prisma/`, or (in-app pages) a quoted message that does not occur verbatim in the code. Links must resolve (pages and anchors) and pass `safeHref`. Facts are compared with the constants they describe: the eligibility reason table with `REASON_ORDER` / `REASON_LABELS` / `DEFERRABLE_REASONS`, the Stop/Start keyword lists, the rate-limit table, and the numbers on the security, troubleshooting and data pages (argon2 parameters, password length, lockout, session limits, re-auth window, invite and reset lifetimes, worker staleness, webhook retention). It also rejects placeholder words.
+- **Why:** Docs drift silently; this turns the most common drift (renamed scripts, env keys, codes, numbers) into a failing test, so the docs can only describe what is built.
+- **Covered by:** the test itself, including a self-check that its checker rejects invented names.
+- **Reversibility:** 5.
+
+### ADR-92 `safeHref` exists now, in `src/server/security/safe-href.ts`
+- **Decision:** Plan §9 names `safeHref()` (http, https, mailto, tel) but no task had built it. It is added at the plan's path as a pure function: absolute http, https, mailto and tel URLs, same-origin paths (not `//` or `/\`) and in-page fragments pass; any other scheme in any letter case, relative paths and values with whitespace or control characters return null. The docs renderer uses it for every link and renders a refused link as plain text.
+- **Covered by:** `tests/unit/security/safe-href.test.ts`, `tests/components/docs/doc-blocks.test.tsx`.
+- **Reversibility:** 5.
+
+### ADR-93 Where the docs are linked from
+- **Decision:** The landing footer always links "Documentation" to `/docs`; the landing top bar has a "Docs" link from 1024 px (below that the bar has room only for the wordmark and the CTA). The account menu (UserMenu) gains a "Documentation" item before Sign out, so every panel reaches the docs. The DEMO role switcher is unchanged: it lists identities, and a page link there would not be a natural place. `tests/unit/landing/landing-page.test.ts` used to forbid `/docs` links because the route did not exist; it now requires them in the nav and the footer.
+- **Covered by:** `tests/unit/landing/landing-page.test.ts`, `tests/components/docs/user-menu-docs.test.tsx`, `tests/e2e/docs/docs.spec.ts`.
+- **Reversibility:** 5.
+
+### ADR-94 Scope of the first documentation pass
+- **Decision:** This pass documents only what exists at its base commit. Left for the second pass, after the M4/M5 work lands: the integration pages (WhatsApp templates and webhooks, Sheets and Apps Script, Meta forms, the extension and its telemetry disclosure, AI and email configuration), workspace creation and inviting owners and employees from the admin panel (no admin People or Workspaces page exists yet, so `/docs/going-live` stops at the first administrator's sign-in), credential key rotation (`creds:rotate` is not built, so `docs/deployment.md` does not describe rotation), and `scripts/gen-pg-schema.ts` with its `prisma validate` test (the PostgreSQL section of `docs/deployment.md` states that nothing of it is built). Statements that parallel work may change (lead sources available, capabilities checked by screens) are worded as "in this release" and carry the page's `checked` date.
+- **Why:** The task forbids describing anything not built; the honesty test (ADR-91) enforces it for names, this ADR records the deliberate omissions.
+- **Reversibility:** 5.
