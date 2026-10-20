@@ -5,6 +5,7 @@
  * (₹21,240.00 for the AT5 fixture), the quote number, the version and the short content hash.
  * Inter is embedded (it has U+20B9). One tax line, "Quotation, not a tax invoice", the DEMO
  * watermark only in demo, and a 60-line quote paginates with the total on its last page only.
+ * Long terms and scope continue onto further pages with every clause printed (ADR-77).
  * The share and authenticated PDF routes serve the stored file, or 503 + Retry-After and enqueue
  * a render when it is missing.
  */
@@ -189,6 +190,55 @@ describe('PDF layout', () => {
       expect(p).toContain(`Page ${i + 1} of ${pages.length}`);
     });
     expect(pages.join(' ')).toContain('Branch service visit 60');
+  });
+
+  // ADR-77: the terms (up to 4000 characters, Branding page) and the scope (up to 4000) may run past
+  // one page; react-pdf drops whatever does not fit in a `wrap={false}` block, so every clause must
+  // still be in the extracted text, with the totals kept together and the footer and DEMO
+  // watermark on every page.
+  const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const withText = (lines: number, texts: { termsText?: string; scopeText?: string }): RenderSource => {
+    const base = source(lines);
+    return { ...base, version: { ...base.version, ...(texts.scopeText ? { scopeText: texts.scopeText } : {}) }, document: { ...base.document, ...(texts.termsText ? { termsText: texts.termsText } : {}) } };
+  };
+  const filler = 'The customer pays fifty percent in advance and the balance on completion; visits outside working hours are billed separately as agreed in writing.';
+  // [label, clauses, separator]: long clauses as paragraphs (a blank line between them), then lists.
+  const termSets: Array<[string, string[], string]> = [
+    ['25 long clauses', Array.from({ length: 25 }, (_, i) => `Clause ${i + 1}: ${filler.slice(0, 134)} (end ${i + 1}).`), '\n\n'],
+    ['60 short lines', Array.from({ length: 60 }, (_, i) => `Term ${i + 1}: payment within seven days of invoice.`), '\n'],
+    ['100 lines', Array.from({ length: 100 }, (_, i) => `Line ${i + 1} of the terms text.`), '\n'],
+  ];
+
+  it.each(termSets)('prints every one of %s of terms across pages, totals kept together', async (_label, clauses, separator) => {
+    const termsText = clauses.join(separator);
+    expect(termsText.length).toBeLessThanOrEqual(4000);
+    const model = buildQuoteRenderModel(withText(3, { termsText }), { mode: 'demo' });
+    const pages = await pdfPages(await renderQuotePdf(model));
+    const text = squash(pages.join(' '));
+    const missing = clauses.filter((c) => !text.includes(squash(c)));
+    expect(missing, `missing ${missing.length} of ${clauses.length}`).toEqual([]);
+    // The totals block is one unit: Subtotal and Total on the same page, once.
+    const totalPage = pages.findIndex((p) => p.includes(model.totals.total));
+    expect(totalPage).toBeGreaterThanOrEqual(0);
+    expect(pages[totalPage]).toContain('Subtotal');
+    expect(pages.filter((p) => p.includes(model.totals.total))).toHaveLength(1);
+    pages.forEach((p, i) => {
+      expect(p).toContain('DEMO: not a valid offer');
+      expect(p).toContain(model.shortHash);
+      expect(p).toContain('Quotation, not a tax invoice');
+      expect(p).toContain(`Page ${i + 1} of ${pages.length}`);
+    });
+  });
+
+  it('prints every line of a scope longer than one page', async () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `Scope item ${i + 1}: clean, polish and check.`);
+    const scopeText = lines.join('\n');
+    expect(scopeText.length).toBeLessThanOrEqual(4000);
+    const pages = await pdfPages(await renderQuotePdf(buildQuoteRenderModel(withText(3, { scopeText }), { mode: 'demo' })));
+    expect(pages.length).toBeGreaterThan(1);
+    const text = squash(pages.join(' '));
+    expect(lines.filter((l) => !text.includes(squash(l)))).toEqual([]);
+    expect(text).toContain('Branch service visit 3');
   });
 
   it('the watermark is printed only in demo', async () => {
