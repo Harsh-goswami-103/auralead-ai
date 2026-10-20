@@ -1,0 +1,629 @@
+/*
+ * Visual effects layer (design spec §2-§3): the keyframes, --animate-* tokens and component classes
+ * behind src/components/visual/**. globals.css imports it after tokens.css; nothing outside the
+ * visual components uses these classes. The theme files own what they already define: tokens.css
+ * registers --chroma-angle, globals.css owns animate-sheen (button) and animate-shimmer (skeleton).
+ * Rules it follows:
+ *   - loops animate transform, opacity or a registered custom property only (compositor-friendly);
+ *   - every loop carries data-visual-motion (or .ambient): globals.css stops it under reduced
+ *     motion and freezes it inside [data-paused='true'] (set by useInViewPause / PauseOffscreen);
+ *     the reduced-motion block below then places each effect at a designed resting frame;
+ *   - colors come from tokens (panel hue, aura, volt, zest, flare, ice); never blue next to pink,
+ *     never status hues, never the AI violet.
+ * Keyframes live at the top level so they are always emitted; @theme exposes the same animations
+ * as Tailwind utilities (animate-aurora-a, animate-chroma-spin, animate-marquee, ...).
+ */
+
+@theme {
+  --animate-aurora-a: visual-aurora-a 24s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  --animate-aurora-b: visual-aurora-b 30s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  --animate-aurora-c: visual-aurora-c 36s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  --animate-chroma-spin: visual-chroma-spin 8s linear infinite;
+  --animate-border-beam: visual-border-beam 8s linear infinite;
+  --animate-beam-dash: visual-beam-dash 4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-meteor: visual-meteor 6s linear infinite;
+  --animate-sparkle: visual-sparkle 3s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-marquee: visual-marquee 40s linear infinite;
+  --animate-marquee-vertical: visual-marquee-vertical 40s linear infinite;
+  --animate-orbit: visual-orbit 30s linear infinite;
+  --animate-text-shimmer: visual-text-shimmer 1.6s linear infinite;
+  --animate-reveal-rise: visual-reveal-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  --animate-reveal-focus: visual-reveal-focus 480ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  --animate-reveal-fade: visual-reveal-fade 480ms cubic-bezier(0.2, 0, 0, 1) backwards;
+  --animate-page-enter: visual-page-enter 240ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+
+/* ---- Keyframes ------------------------------------------------------------------------------ */
+@keyframes visual-aurora-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(9%, 14%, 0) scale(1.1); }
+}
+@keyframes visual-aurora-b {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to { transform: translate3d(-11%, 9%, 0) scale(0.92); }
+}
+@keyframes visual-aurora-c {
+  from { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  to { transform: translate3d(7%, -8%, 0) rotate(16deg) scale(1.12); }
+}
+@keyframes visual-chroma-spin {
+  to { --chroma-angle: 360deg; }
+}
+@keyframes visual-border-beam {
+  to { offset-distance: 100%; }
+}
+/* The dash is 22 of a 100-unit path: it enters before the start and leaves past the end. */
+@keyframes visual-beam-dash {
+  from { stroke-dashoffset: 22; }
+  to { stroke-dashoffset: -100; }
+}
+@keyframes visual-meteor {
+  0% { opacity: 0; transform: rotate(var(--meteor-angle)) translateX(0); }
+  10%, 70% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--meteor-angle)) translateX(var(--meteor-travel)); }
+}
+@keyframes visual-sparkle {
+  0% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1) rotate(90deg); }
+  100% { opacity: 0; transform: scale(0.3) rotate(180deg); }
+}
+@keyframes visual-marquee {
+  to { transform: translateX(calc(-100% - var(--marquee-gap))); }
+}
+@keyframes visual-marquee-vertical {
+  to { transform: translateY(calc(-100% - var(--marquee-gap))); }
+}
+@keyframes visual-orbit {
+  from {
+    transform: rotate(var(--orbit-angle)) translateY(calc(var(--orbit-radius) * -1)) rotate(calc(var(--orbit-angle) * -1));
+  }
+  to {
+    transform: rotate(calc(var(--orbit-angle) + 360deg)) translateY(calc(var(--orbit-radius) * -1))
+      rotate(calc(var(--orbit-angle) * -1 - 360deg));
+  }
+}
+@keyframes visual-text-shimmer {
+  from { background-position: 100% 0, 0 0; }
+  to { background-position: 0% 0, 0 0; }
+}
+/* Entrances only declare the start: the end is the element's own resting style. */
+@keyframes visual-reveal-rise {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes visual-reveal-focus {
+  from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
+}
+@keyframes visual-reveal-fade {
+  from { opacity: 0; }
+}
+@keyframes visual-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+@layer components {
+  /* ---- AuroraBackdrop: drifting blobs + static grain, absolutely placed behind content -------- */
+  .visual-aurora {
+    position: absolute;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: -10;
+  }
+  .visual-aurora::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--grain);
+    opacity: 0.05;
+    mix-blend-mode: soft-light;
+  }
+  .visual-aurora[data-grain='off']::after {
+    content: none;
+  }
+  .visual-aurora__blob {
+    position: absolute;
+    border-radius: 9999px;
+    background: radial-gradient(
+      closest-side,
+      var(--blob),
+      color-mix(in oklab, var(--blob) 62%, transparent) 42%,
+      color-mix(in oklab, var(--blob) 20%, transparent) 72%,
+      transparent
+    );
+    will-change: transform;
+  }
+  .visual-aurora__blob--a { animation: visual-aurora-a 24s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; }
+  .visual-aurora__blob--b { animation: visual-aurora-b 30s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; }
+  .visual-aurora__blob--c { animation: visual-aurora-c 36s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; }
+  .visual-aurora__blob--e { animation: visual-aurora-c 42s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate-reverse; }
+  .visual-aurora__blob--static { animation: none; will-change: auto; }
+
+  /* header: page header band. Blob alpha stays <= 16% because text sits on it. */
+  .visual-aurora--header {
+    inset: -48px 0 -72px 0;
+    mask-image:
+      linear-gradient(to bottom, transparent, #000 30%, #000 55%, transparent),
+      linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+    mask-composite: intersect;
+  }
+  .visual-aurora--header .visual-aurora__blob--a {
+    --blob: color-mix(in oklab, var(--panel-hue) 16%, transparent);
+    width: min(900px, 80%);
+    height: 100%;
+    left: -14%;
+    top: 0;
+  }
+  .visual-aurora--header .visual-aurora__blob--b {
+    --blob: color-mix(in oklab, var(--panel-hue-2) 11%, transparent);
+    width: min(620px, 55%);
+    height: 90%;
+    right: -8%;
+    top: 4%;
+  }
+
+  /* hero / auth: decorative edges up to 28%, the centre (where text sits) stays at or under 16%.
+     Flare is a small spark kept diagonally away from volt and away from aura. */
+  .visual-aurora--hero,
+  .visual-aurora--auth {
+    inset: 0;
+  }
+  .visual-aurora--hero {
+    mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  }
+  .visual-aurora--hero .visual-aurora__blob--a,
+  .visual-aurora--auth .visual-aurora__blob--a {
+    --blob: color-mix(in oklab, var(--aura) 26%, transparent);
+    width: 72%;
+    height: 95%;
+    right: -22%;
+    top: -38%;
+  }
+  .visual-aurora--hero .visual-aurora__blob--b,
+  .visual-aurora--auth .visual-aurora__blob--b {
+    --blob: color-mix(in oklab, var(--zest) 24%, transparent);
+    width: 70%;
+    height: 75%;
+    left: -22%;
+    bottom: -34%;
+  }
+  .visual-aurora--hero .visual-aurora__blob--c,
+  .visual-aurora--auth .visual-aurora__blob--c {
+    --blob: color-mix(in oklab, var(--volt) 26%, transparent);
+    width: 58%;
+    height: 80%;
+    right: -14%;
+    bottom: -44%;
+  }
+  .visual-aurora--hero .visual-aurora__blob--d,
+  .visual-aurora--auth .visual-aurora__blob--d {
+    --blob: color-mix(in oklab, var(--flare) 20%, transparent);
+    width: 36%;
+    height: 50%;
+    left: -12%;
+    top: -22%;
+    animation: visual-aurora-b 28s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate-reverse;
+  }
+  /* A wide, faint aura wash that ties the corner blobs together behind the text (<= 8%). */
+  .visual-aurora--hero .visual-aurora__blob--e,
+  .visual-aurora--auth .visual-aurora__blob--e {
+    --blob: color-mix(in oklab, var(--aura) 8%, transparent);
+    width: 90%;
+    height: 70%;
+    left: 5%;
+    top: 15%;
+  }
+
+  /* empty / card: one quiet, static wash (the header aurora is the page's ambient loop). */
+  .visual-aurora--empty {
+    inset: 0;
+    border-radius: inherit;
+    mask-image: radial-gradient(ellipse at 50% 0%, #000 20%, transparent 75%);
+  }
+  .visual-aurora--empty .visual-aurora__blob--a {
+    --blob: color-mix(in oklab, var(--panel-hue) 14%, transparent);
+    width: 70%;
+    height: 90%;
+    left: 6%;
+    top: -40%;
+  }
+  .visual-aurora--empty .visual-aurora__blob--b {
+    --blob: color-mix(in oklab, var(--panel-hue-2) 9%, transparent);
+    width: 50%;
+    height: 70%;
+    right: 2%;
+    top: -26%;
+  }
+  .visual-aurora--card {
+    inset: 0;
+    border-radius: inherit;
+  }
+  .visual-aurora--card .visual-aurora__blob--a {
+    --blob: color-mix(in oklab, var(--panel-hue) 10%, transparent);
+    width: 75%;
+    height: 120%;
+    right: -30%;
+    top: -60%;
+  }
+
+  /* ---- GridPattern / DotPattern -------------------------------------------------------------- */
+  .visual-grid {
+    background-image:
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: var(--grid-size) var(--grid-size);
+    background-position: -1px -1px;
+  }
+  .visual-dots {
+    background-image: radial-gradient(circle at 1px 1px, var(--dot-color) 1px, transparent 0);
+    background-size: var(--dot-gap) var(--dot-gap);
+  }
+  .visual-fade-radial {
+    mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%);
+  }
+  .visual-fade-bottom {
+    mask-image: linear-gradient(to bottom, #000 15%, transparent 90%);
+  }
+  .visual-fade-top {
+    mask-image: linear-gradient(to top, #000 15%, transparent 90%);
+  }
+
+  /* ---- ChromaBorder: conic comet ring (1px) + a blurred copy of the ring as a halo -------------- */
+  .visual-chroma {
+    position: relative;
+    isolation: isolate;
+  }
+  .visual-chroma::before,
+  .visual-chroma__halo::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(
+      in oklab from var(--chroma-angle),
+      transparent 0 62%,
+      var(--panel-hue) 80%,
+      var(--ice) 88%,
+      var(--flare) 95%,
+      transparent
+    );
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation: visual-chroma-spin 8s linear infinite;
+  }
+  .visual-chroma::before {
+    z-index: 1;
+  }
+  /* The blur sits on the wrapper so it softens the already-masked ring on both sides of the edge. */
+  .visual-chroma__halo {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: -1;
+    filter: blur(12px);
+    opacity: 0.9;
+  }
+  .visual-chroma__halo::before {
+    padding: 4px;
+  }
+  .visual-chroma[data-motion='static']::before,
+  .visual-chroma[data-motion='static'] .visual-chroma__halo::before {
+    animation: none;
+    --chroma-angle: 210deg;
+  }
+
+  /* ---- BorderBeam: a short light travelling the border band (offset-path rect) -------------- */
+  .visual-beam {
+    position: absolute;
+    inset: 0;
+    /* The light's square box rides the border path; clip it so it can never widen a page. */
+    overflow: hidden;
+    pointer-events: none;
+    border-radius: inherit;
+    border: var(--beam-width) solid transparent;
+    mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box;
+    mask-composite: exclude;
+  }
+  .visual-beam__light {
+    position: absolute;
+    aspect-ratio: 1;
+    width: var(--beam-size);
+    offset-path: rect(0 auto auto 0 round var(--beam-size));
+    background: linear-gradient(to left, var(--beam-from), var(--beam-to), transparent);
+    animation: visual-border-beam var(--beam-duration) linear infinite;
+    animation-delay: var(--beam-delay);
+  }
+  .visual-beam__light[data-motion='static'] {
+    animation: none;
+    offset-distance: 16%;
+  }
+
+  /* ---- SpotlightCard: pointer-follow wash + brightened border under the pointer ---------------- */
+  .visual-spotlight {
+    position: relative;
+    isolation: isolate;
+    --spot-x: 50%;
+    --spot-y: 0%;
+  }
+  .visual-spotlight::before,
+  .visual-spotlight::after {
+    content: '';
+    position: absolute;
+    pointer-events: none;
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .visual-spotlight::before {
+    inset: 0;
+    background: radial-gradient(
+      340px circle at var(--spot-x) var(--spot-y),
+      color-mix(in oklab, var(--panel-hue) 12%, transparent),
+      transparent 70%
+    );
+  }
+  .visual-spotlight::after {
+    inset: -1px;
+    padding: 1px;
+    background: radial-gradient(
+      240px circle at var(--spot-x) var(--spot-y),
+      color-mix(in oklab, var(--panel-hue) 60%, transparent),
+      transparent 70%
+    );
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+  .visual-spotlight[data-spot='on']::before,
+  .visual-spotlight[data-spot='on']::after {
+    opacity: 1;
+  }
+
+  /* ---- TiltCard: pointer tilt + glare (fine pointers only; set from the pointer handler) ------- */
+  .visual-tilt {
+    position: relative;
+    isolation: isolate;
+    transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+    transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
+    --glare-x: 50%;
+    --glare-y: 50%;
+  }
+  .visual-tilt::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: radial-gradient(
+      420px circle at var(--glare-x) var(--glare-y),
+      color-mix(in oklab, var(--ice) 12%, transparent),
+      transparent 60%
+    );
+    opacity: 0;
+    transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .visual-tilt[data-tilt='on'] {
+    transition-duration: 90ms;
+  }
+  .visual-tilt[data-tilt='on']::after {
+    opacity: 1;
+  }
+
+  /* ---- Reveal / Stagger: CSS entrances that start at first paint, before hydration ------------- */
+  .visual-reveal {
+    animation-duration: 480ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    animation-fill-mode: backwards;
+    animation-delay: var(--reveal-delay, 0ms);
+  }
+  .visual-reveal[data-reveal='rise'] { animation-name: visual-reveal-rise; }
+  .visual-reveal[data-reveal='focus'] { animation-name: visual-reveal-focus; }
+  .visual-reveal[data-reveal='fade'] { animation-name: visual-reveal-fade; animation-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+  /* Waiting for the viewport (inView): hold the first frame until the observer releases it. */
+  .visual-reveal[data-reveal-wait] { animation-play-state: paused; }
+  .visual-stagger > .visual-reveal {
+    animation-delay: calc(var(--stagger-delay, 0ms) + var(--stagger-index, 0) * var(--stagger-step, 45ms));
+  }
+  .visual-stagger > .visual-reveal:nth-child(2) { --stagger-index: 1; }
+  .visual-stagger > .visual-reveal:nth-child(3) { --stagger-index: 2; }
+  .visual-stagger > .visual-reveal:nth-child(4) { --stagger-index: 3; }
+  .visual-stagger > .visual-reveal:nth-child(5) { --stagger-index: 4; }
+  .visual-stagger > .visual-reveal:nth-child(6) { --stagger-index: 5; }
+  .visual-stagger > .visual-reveal:nth-child(7) { --stagger-index: 6; }
+  .visual-stagger > .visual-reveal:nth-child(8) { --stagger-index: 7; }
+  /* Only the first eight children animate, so a long grid settles in under half a second. */
+  .visual-stagger > .visual-reveal:nth-child(n + 9) { animation: none; }
+
+  /* ---- AnimatedBeam: base path, resting gradient path, travelling dash ------------------------- */
+  .visual-beam-path--base {
+    stroke: var(--border-strong);
+  }
+  .visual-beam-path--rest {
+    opacity: 0.32;
+  }
+  .visual-beam-path--idle {
+    stroke: var(--border-strong);
+    stroke-dasharray: 4 6;
+  }
+  .visual-beam-path--dash {
+    stroke-dasharray: 22 78;
+    stroke-dashoffset: 22;
+    animation: visual-beam-dash var(--beam-duration, 4s) cubic-bezier(0.45, 0, 0.55, 1) var(--beam-delay, 0s) infinite;
+  }
+  .visual-beam-path--glow {
+    filter: blur(4px);
+    opacity: 0.8;
+  }
+  .visual-beam-path--dash[data-reverse] {
+    animation-direction: reverse;
+  }
+
+  /* ---- Meteors (landing/auth only): head + tail, deterministic lanes ------------------------- */
+  .visual-meteor {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 9999px;
+    background: var(--meteor-color);
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.06),
+      0 0 8px 1px color-mix(in oklab, var(--meteor-color) 70%, transparent);
+    transform: rotate(var(--meteor-angle));
+    opacity: 0.55;
+    animation: visual-meteor var(--meteor-duration) linear var(--meteor-delay) infinite backwards;
+  }
+  .visual-meteor::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    width: var(--meteor-tail, 64px);
+    height: 1px;
+    transform: translateY(-50%);
+    background: linear-gradient(to left, var(--meteor-color), transparent);
+  }
+
+  /* ---- Sparkles (landing/auth only): four-point twinkles ------------------------------------- */
+  .visual-sparkle {
+    position: absolute;
+    width: var(--sparkle-size);
+    height: var(--sparkle-size);
+    background: var(--sparkle-color);
+    clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+    opacity: var(--sparkle-rest, 0.6);
+    transform: scale(0.8);
+    animation: visual-sparkle var(--sparkle-duration) cubic-bezier(0.45, 0, 0.55, 1) var(--sparkle-delay) infinite backwards;
+  }
+
+  /* ---- Marquee: two identical tracks; the copy is inert and hidden from assistive tech -------- */
+  .visual-marquee {
+    display: flex;
+    overflow: hidden;
+    gap: var(--marquee-gap);
+    mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  }
+  .visual-marquee[data-vertical] {
+    flex-direction: column;
+    mask-image: linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent);
+  }
+  .visual-marquee__track {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-around;
+    gap: var(--marquee-gap);
+    min-width: 100%;
+    animation: visual-marquee var(--marquee-duration) linear infinite;
+  }
+  .visual-marquee[data-vertical] .visual-marquee__track {
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    animation-name: visual-marquee-vertical;
+  }
+  .visual-marquee[data-reverse] .visual-marquee__track {
+    animation-direction: reverse;
+  }
+  /* Paused by hover, keyboard focus inside, or the pause button (MarqueePauseButton). */
+  .visual-marquee[data-pause-on-hover]:hover .visual-marquee__track,
+  .visual-marquee:focus-within .visual-marquee__track,
+  .visual-marquee[data-user-paused] .visual-marquee__track {
+    animation-play-state: paused;
+  }
+
+  /* ---- OrbitRing: items on a circle, counter-rotated so they stay upright --------------------- */
+  .visual-orbit__item {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--orbit-icon);
+    height: var(--orbit-icon);
+    margin: calc(var(--orbit-icon) / -2) 0 0 calc(var(--orbit-icon) / -2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: rotate(var(--orbit-angle)) translateY(calc(var(--orbit-radius) * -1)) rotate(calc(var(--orbit-angle) * -1));
+    animation: visual-orbit var(--orbit-duration) linear infinite;
+  }
+  .visual-orbit[data-reverse] .visual-orbit__item {
+    animation-direction: reverse;
+  }
+
+  /* ---- ShimmerText: a light band sweeping over text-2 (in-progress states only) --------------- */
+  .visual-shimmer-text {
+    display: inline-block;
+    color: var(--text-2);
+  }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .visual-shimmer-text {
+      background-image:
+        linear-gradient(90deg, transparent 38%, var(--ice) 50%, transparent 62%),
+        linear-gradient(var(--text-2), var(--text-2));
+      background-size: 250% 100%, auto;
+      background-repeat: no-repeat;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: visual-text-shimmer 1.6s linear infinite;
+    }
+  }
+  @media (forced-colors: active) {
+    .visual-shimmer-text {
+      background: none;
+      -webkit-text-fill-color: currentColor;
+    }
+  }
+}
+
+/* ---- Reduced motion: designed resting frames (globals.css already removes the animations) ---- */
+@media (prefers-reduced-motion: reduce) {
+  .visual-reveal {
+    animation: none !important;
+  }
+  .visual-aurora__blob {
+    will-change: auto;
+  }
+  .visual-chroma::before,
+  .visual-chroma__halo::before {
+    --chroma-angle: 210deg;
+  }
+  .visual-beam__light {
+    offset-distance: 16%;
+  }
+  .visual-beam-path--dash,
+  .visual-beam-path--glow {
+    display: none;
+  }
+  .visual-beam-path--rest {
+    opacity: 0.7;
+  }
+  /* Meteors rest as a faint starfield; sparkles rest mid-twinkle. */
+  .visual-meteor::before {
+    content: none;
+  }
+  .visual-marquee {
+    mask-image: none;
+  }
+  .visual-marquee__track {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    justify-content: center;
+    min-width: 0;
+  }
+  .visual-marquee [data-marquee-copy] {
+    display: none;
+  }
+  .visual-shimmer-text {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+  .visual-tilt {
+    transform: none;
+  }
+}
+
+/* Without scripting nothing would release an inView reveal, so it shows immediately. */
+@media (scripting: none) {
+  .visual-reveal[data-reveal-wait] {
+    animation: none;
+  }
+}

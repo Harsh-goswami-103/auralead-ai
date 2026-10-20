@@ -16,7 +16,7 @@ export default async function AdminPanelLayout({ children }: { children: ReactNo
   const page = await getPageContext();
   if (!page) redirect('/login');
   if (page.session.user.globalRole !== 'SUPER_ADMIN') notFound();
-  const chrome = await loadPanelChrome(page.ctx, page.session, { envOutboundPaused: getRuntime().config.outboundPaused });
+  const chrome = await loadPanelChrome(page.ctx, page.session, { envOutboundPaused: getRuntime().config.outboundPaused, outboundLockFile: getRuntime().config.paths.outboundLockFile });
   return (
     <PanelShell panel="admin" chrome={chrome} csrfToken={page.csrfToken}>
       {children}

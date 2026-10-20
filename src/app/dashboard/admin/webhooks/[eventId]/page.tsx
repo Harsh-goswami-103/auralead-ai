@@ -2,26 +2,42 @@
  * Webhook event detail (T24, R33): routing, status, attempts, the redacted inspector payload and
  * stored result, whether the encrypted processing payload is still held (it is never decrypted
  * here), and links to the jobs that processed the event.
+ *
+ * Look (design spec §6): the provider by name (never the raw enum) in the h1 with its provider,
+ * status and Simulated chips, the delivery's fields (ids mono with copy buttons, dates in the UI
+ * font), the payload and result in bordered JsonView wells (they used to sit on the page color
+ * with no edge; side by side on wide screens the shorter well fills its card like blank editor
+ * lines), and the processing jobs as a timeline rail with status chips.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { ArrowLeft, Building2, CircleDashed, FileCheck2, Inbox, Lock, Package, Trash2, Workflow } from 'lucide-react';
+import { WEBHOOK_STATUS_VOCABULARY, jobStatusEntry, providerStyle } from '@/components/admin/admin-vocabulary';
+import { DetailField } from '@/components/admin/DetailField';
+import { InlineEmpty } from '@/components/admin/InlineEmpty';
+import { JsonView } from '@/components/admin/JsonView';
+import { ProviderChip } from '@/components/admin/ProviderChip';
+import { SectionTitle } from '@/components/admin/SectionTitle';
+import { StatusChip } from '@/components/admin/StatusChip';
+import { Timeline } from '@/components/admin/Timeline';
+import { PageHeader } from '@/components/patterns/PageHeader';
+import { SectionCard } from '@/components/patterns/SectionCard';
+import { ModeChip } from '@/components/patterns/StatusBadge';
+import { touchTarget } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
+import type { JobStatus } from '@/lib/domain/enums';
 import { NotFoundError } from '@/lib/errors';
 import { formatDateTime } from '@/lib/format/date';
 import { getPageContext } from '@/server/auth/page-context';
 import { getWebhookEventDetail, type WebhookDetail } from '@/server/services/admin/webhook-inspector';
+import { JOB_STATUSES } from '@/server/services/jobs-admin/inspector';
 
 export const metadata: Metadata = { title: 'Webhook event' };
 export const dynamic = 'force-dynamic';
 
-function Field(props: { label: string; value: string | null }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-xs text-fg-2">{props.label}</dt>
-      <dd className="break-all font-mono text-sm text-fg-1">{props.value ?? '-'}</dd>
-    </div>
-  );
-}
+/** Long identifiers take the full row on phones (two short facts share a row there). */
+const WIDE = 'col-span-2 sm:col-span-1';
 
 export default async function WebhookEventPage(props: { params: Promise<{ eventId: string }> }) {
   const page = await getPageContext();
@@ -34,65 +50,121 @@ export default async function WebhookEventPage(props: { params: Promise<{ eventI
     if (error instanceof NotFoundError) notFound();
     throw error;
   }
+  const status = WEBHOOK_STATUS_VOCABULARY[e.status];
+
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <Link href="/dashboard/admin/webhooks" className="text-sm text-cyan underline-offset-4 hover:underline">
-          Webhooks
-        </Link>
-        <h1 className="font-display text-2xl font-semibold text-fg-1">
-          {e.provider} · {e.status}
-        </h1>
-        <p className="text-fg-2">
-          {e.workspace?.name ?? 'Unrouted'}
-          {e.simulated ? ' · Simulated' : ''} · received {formatDateTime(e.receivedAt)}
-        </p>
-      </header>
+      <Link href="/dashboard/admin/webhooks" className={cn('relative inline-flex w-fit items-center gap-1.5 text-sm text-cyan underline-offset-4 hover:underline', touchTarget)}>
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        Webhooks
+      </Link>
+      <PageHeader
+        className="-mt-3"
+        eyebrow="Webhook event"
+        title={`${providerStyle(e.provider).label} delivery`}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <ProviderChip provider={e.provider} />
+            <StatusChip entry={status} state={e.status} />
+            {e.simulated ? <ModeChip simulated /> : null}
+            <span className="inline-flex items-center gap-1.5 text-sm text-fg-2">
+              <Building2 aria-hidden="true" className="size-4" />
+              {e.workspace?.name ?? 'Unrouted'}
+            </span>
+          </span>
+        }
+        meta={`Received ${formatDateTime(e.receivedAt)}`}
+      />
 
-      <dl className="grid gap-3 rounded-xl border border-border-subtle bg-bg-1 p-5 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Event id" value={e.id} />
-        <Field label="External key" value={e.externalKey} />
-        <Field label="Scope key" value={e.scopeKey} />
-        <Field label="Body sha256" value={e.bodySha256} />
-        <Field label="Attempts" value={String(e.attempts)} />
-        <Field label="Processed" value={e.processedAt ? formatDateTime(e.processedAt) : null} />
-        <Field label="Processing payload" value={e.payloadHeld ? 'held, encrypted (not shown)' : `purged${e.processingPurgedAt ? ` ${formatDateTime(e.processingPurgedAt)}` : ''}`} />
-      </dl>
+      <SectionCard
+        title={
+          <SectionTitle icon={<Inbox />}>
+            Delivery
+          </SectionTitle>
+        }
+        accent
+      >
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-4 sm:gap-x-6 lg:grid-cols-3">
+          <DetailField label="Event id" value={e.id} mono copy={e.id} className={WIDE} />
+          <DetailField label="External key" value={e.externalKey} mono copy={e.externalKey} className={WIDE} />
+          <DetailField label="Scope key" value={e.scopeKey} mono className={WIDE} />
+          <DetailField label="Body sha256" value={e.bodySha256} mono copy={e.bodySha256} className={WIDE} />
+          <DetailField label="Received" value={formatDateTime(e.receivedAt)} />
+          <DetailField label="Processed" value={e.processedAt ? formatDateTime(e.processedAt) : null} />
+          <DetailField label="Attempts" value={String(e.attempts)} />
+          <DetailField
+            label="Processing payload"
+            value={
+              e.payloadHeld ? (
+                <span className="inline-flex items-start gap-1.5">
+                  <Lock aria-hidden="true" className="mt-[3px] size-3.5 shrink-0 text-fg-2" />
+                  Held, encrypted (not shown)
+                </span>
+              ) : (
+                <span className="inline-flex items-start gap-1.5">
+                  <Trash2 aria-hidden="true" className="mt-[3px] size-3.5 shrink-0 text-fg-2" />
+                  {`Purged${e.processingPurgedAt ? ` ${formatDateTime(e.processingPurgedAt)}` : ''}`}
+                </span>
+              )
+            }
+          />
+        </dl>
+      </SectionCard>
 
-      <section aria-labelledby="payload-heading" className="flex flex-col gap-2">
-        <h2 id="payload-heading" className="font-display text-lg font-semibold text-fg-1">
-          Redacted payload
-        </h2>
-        <pre className="overflow-x-auto rounded-md bg-bg-0 p-3 font-mono text-xs text-fg-1">{JSON.stringify(e.payloadRedacted, null, 2)}</pre>
-      </section>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+        <SectionCard
+          title={
+            <SectionTitle icon={<Package />} hue="ice">
+              Redacted payload
+            </SectionTitle>
+          }
+          meta="What the inspector may show; secrets and contact details are replaced."
+        >
+          <JsonView value={e.payloadRedacted} label="payload.redacted.json" redacted className="xl:flex-1" />
+        </SectionCard>
+        <SectionCard
+          title={
+            <SectionTitle icon={<FileCheck2 />} hue="ice">
+              Result
+            </SectionTitle>
+          }
+          meta="What processing produced, as stored."
+        >
+          {e.result === null ? <InlineEmpty icon={<CircleDashed />}>Not processed yet.</InlineEmpty> : <JsonView value={e.result} label="result.json" className="xl:flex-1" />}
+        </SectionCard>
+      </div>
 
-      <section aria-labelledby="result-heading" className="flex flex-col gap-2">
-        <h2 id="result-heading" className="font-display text-lg font-semibold text-fg-1">
-          Result
-        </h2>
-        <pre className="overflow-x-auto rounded-md bg-bg-0 p-3 font-mono text-xs text-fg-1">{e.result === null ? 'Not processed yet.' : JSON.stringify(e.result, null, 2)}</pre>
-      </section>
-
-      <section aria-labelledby="jobs-heading" className="flex flex-col gap-2">
-        <h2 id="jobs-heading" className="font-display text-lg font-semibold text-fg-1">
-          Processing jobs
-        </h2>
+      <SectionCard
+        title={
+          <SectionTitle icon={<Workflow />} hue="volt">
+            Processing jobs
+          </SectionTitle>
+        }
+        meta={e.jobs.length > 0 ? 'Open a job to see its attempts, or to retry or cancel it.' : undefined}
+      >
         {e.jobs.length === 0 ? (
-          <p className="text-fg-2">No job processed this event (unrouted events are stored only).</p>
+          <InlineEmpty icon={<CircleDashed />}>No job processed this event (unrouted events are stored only).</InlineEmpty>
         ) : (
-          <ul className="flex flex-col gap-1 text-sm">
-            {e.jobs.map((j) => (
-              <li key={j.id} className="flex flex-wrap gap-3">
-                <Link href={`/dashboard/admin/jobs/${j.id}`} className="font-mono text-cyan underline-offset-4 hover:underline">
-                  {j.type}
-                </Link>
-                <span className="text-fg-2">{j.label}</span>
-                <span className="text-fg-2">{formatDateTime(j.createdAt)}</span>
-              </li>
-            ))}
-          </ul>
+          <Timeline
+            items={e.jobs.map((j) => {
+              const jobStatus = JOB_STATUSES.includes(j.status as JobStatus) ? (j.status as JobStatus) : null;
+              const entry = jobStatus ? jobStatusEntry({ status: jobStatus, label: j.label, attempts: j.attempts }) : null;
+              return {
+                key: j.id,
+                icon: <Workflow />,
+                tone: entry?.tone ?? 'panel',
+                time: `Enqueued ${formatDateTime(j.createdAt)}`,
+                title: (
+                  <Link href={`/dashboard/admin/jobs/${j.id}`} className="font-mono text-[13px] break-all text-cyan underline-offset-4 hover:underline">
+                    {j.type}
+                  </Link>
+                ),
+                aside: entry ? <StatusChip entry={entry} state={j.status} /> : <span className="text-xs text-fg-2">{j.label}</span>,
+              };
+            })}
+          />
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

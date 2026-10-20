@@ -2,89 +2,170 @@
  * Inbox thread list (T22; 06-design §11.2 "User Inbox" first fold): channel, lead, last message,
  * its delivery state, AI mode or takeover, the window state the server computed, and what needs a
  * person. Server-rendered; status is never colour-only (icon plus words).
+ *
+ * Aurora look (design spec §6): each row has an initials avatar tinted by its channel and a channel
+ * chip with the channel's name (WhatsApp and Email threads of one lead are told apart in words), a
+ * warning bar when the thread needs a person (the chips say why), a panel-hue dot when the customer
+ * wrote last, and the panel bar on the open thread. The list rises in once as a whole; rows carry no
+ * entrance of their own, because the list re-reads itself (every 10 s, every 3 s beside a pending
+ * send) and when a thread moves to the top React re-inserts the unchanged rows above it, which would
+ * restart a CSS entrance on exactly the rows that did not change. In the
+ * conversation's narrow side column (`compact`) the channel and window read as quiet icon + text
+ * facts and only what needs a person stays a chip, so a row no longer stacks four chip lines. In
+ * both layouts tinted chips are kept for what needs a person (approve, call, failed delivery,
+ * takeover); routine state (window open, AI mode) is a neutral chip with a toned icon.
  */
 import Link from 'next/link';
-import { Bot, Hand, Mail, MessageCircle, PhoneCall, ShieldAlert, TimerOff, Timer } from 'lucide-react';
+import { Bot, Hand, PhoneCall, ShieldAlert, TimerOff, Timer } from 'lucide-react';
+import { InitialsAvatar } from '@/components/client/InitialsAvatar';
+import { SourceChip } from '@/components/patterns/SourceChip';
+import { sourceStyle } from '@/components/patterns/source-style';
 import { DeliveryStatusBadge } from '@/components/patterns/StatusBadge';
+import { TONE_CLASSES } from '@/components/patterns/status-vocabulary';
 import { cn } from '@/components/ui/cn';
+import { Reveal } from '@/components/visual/Reveal';
 import type { InboxThreadRow } from '@/server/services/messaging/inbox';
 import { ageHint, formatClockTime, formatDayMonth } from './format';
 
 const MODE_LABELS = { OFF: 'AI off', DRAFT: 'AI drafts', AUTO: 'AI auto' } as const;
 
-export function ThreadList({ rows, activeId, timeZone, now }: { rows: InboxThreadRow[]; activeId?: string; timeZone: string; now: Date }) {
+const chip = 'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 [&>svg]:size-3 [&>svg]:shrink-0';
+/** Compact facts: icon + words without a chip border (the side column is too narrow for chips). */
+const fact = 'inline-flex items-center gap-1 whitespace-nowrap [&>svg]:size-3.5 [&>svg]:shrink-0';
+
+/**
+ * `compact` is the conversation page's side column (about 18rem): a one-line preview, the channel
+ * and the window (or takeover) as quiet icon + text facts, and chips only for what needs a person.
+ * It leaves out the delivery badge and the AI-mode chip. The full list keeps every chip.
+ */
+export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: InboxThreadRow[]; activeId?: string; timeZone: string; now: Date; compact?: boolean }) {
   return (
-    <ul className="flex flex-col divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-subtle bg-bg-1" data-thread-list>
-      {rows.map((t) => {
-        const active = t.conversationId === activeId;
-        const ChannelIcon = t.channel === 'EMAIL' ? Mail : MessageCircle;
-        return (
-          <li key={t.conversationId}>
-            <Link
-              href={`/dashboard/user/inbox/${t.conversationId}`}
-              aria-current={active ? 'page' : undefined}
-              className={cn('flex flex-col gap-1.5 px-4 py-3 transition-colors duration-150 hover:bg-bg-2 focus-visible:bg-bg-2 focus-visible:outline-none', active && 'bg-bg-2 shadow-[inset_2px_0_0_var(--accent)]')}
-              data-thread={t.conversationId}
-              data-channel={t.channel}
-            >
-              <span className="flex items-center gap-2">
-                <ChannelIcon aria-label={t.channel === 'EMAIL' ? 'Email' : 'WhatsApp'} className="size-4 shrink-0 text-fg-2" />
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg-1">{t.leadName}</span>
-                <span className="shrink-0 text-xs text-fg-3 tabular">{ageHint(now.getTime() - t.lastActivityAt.getTime())}</span>
-              </span>
-              <span className="line-clamp-2 text-sm text-fg-2">
-                {t.lastMessage ? `${t.lastMessage.direction === 'OUT' ? 'You: ' : ''}${t.lastMessage.preview}` : 'No messages yet'}
-              </span>
-              <span className="flex flex-wrap items-center gap-1.5 text-xs">
-                {t.lastMessage && t.lastMessage.direction === 'OUT' ? <DeliveryStatusBadge status={t.lastMessage.status} simulated={t.lastMessage.simulated} /> : null}
-                {t.humanTakeover ? (
-                  <span className="inline-flex items-center gap-1 rounded-sm border border-info/30 bg-info/10 px-1.5 py-0.5 text-info">
-                    <Hand aria-hidden="true" className="size-3" />
-                    You are handling
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-sm border border-border-strong bg-bg-2 px-1.5 py-0.5 text-fg-2">
-                    <Bot aria-hidden="true" className="size-3" />
-                    {MODE_LABELS[t.aiMode]}
-                  </span>
+    <Reveal className="min-w-0">
+      <ul className="flex flex-col divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-subtle bg-bg-1/80" data-thread-list>
+        {rows.map((t) => {
+          const active = t.conversationId === activeId;
+          const theyWroteLast = t.lastMessage?.direction === 'IN';
+          const channel = sourceStyle(t.channel === 'EMAIL' ? 'EMAIL_INBOUND' : 'WHATSAPP_INBOUND');
+          const ChannelIcon = channel.icon;
+          const windowEnd =
+            t.channel === 'WHATSAPP' && t.windowOpen && t.windowEndsAt
+              ? `Free-form until ${formatClockTime(t.windowEndsAt, timeZone)}${formatDayMonth(t.windowEndsAt, timeZone) === formatDayMonth(now, timeZone) ? '' : `, ${formatDayMonth(t.windowEndsAt, timeZone)}`}`
+              : null;
+          const attention = (
+            <>
+              {t.pendingApprovals > 0 ? (
+                <span className={cn(chip, TONE_CLASSES.warning)}>
+                  <ShieldAlert aria-hidden="true" />
+                  {t.pendingApprovals} to approve
+                </span>
+              ) : null}
+              {t.openCallRequests > 0 ? (
+                <span className={cn(chip, TONE_CLASSES.warning)}>
+                  <PhoneCall aria-hidden="true" />
+                  Call requested
+                </span>
+              ) : null}
+              {t.attentionDeliveries > 0 ? (
+                <span className={cn(chip, TONE_CLASSES.danger)}>
+                  <ShieldAlert aria-hidden="true" />
+                  {t.attentionDeliveries} failed or unknown
+                </span>
+              ) : null}
+            </>
+          );
+          return (
+            <li key={t.conversationId}>
+              <Link
+                href={`/dashboard/user/inbox/${t.conversationId}`}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'group relative flex gap-3 transition-colors duration-fast hover:bg-bg-2/70 focus-visible:-outline-offset-2',
+                  compact ? 'px-3.5 py-3' : 'px-4 py-3',
+                  active && 'bg-[linear-gradient(90deg,color-mix(in_oklab,var(--panel-hue)_12%,transparent),transparent_75%)] hover:bg-bg-2/40',
                 )}
-                {t.channel === 'WHATSAPP' ? (
-                  t.windowOpen && t.windowEndsAt ? (
-                    <span className="inline-flex items-center gap-1 rounded-sm border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
-                      <Timer aria-hidden="true" className="size-3" />
-                      Free-form until {formatClockTime(t.windowEndsAt, timeZone)}
-                      {formatDayMonth(t.windowEndsAt, timeZone) === formatDayMonth(now, timeZone) ? '' : `, ${formatDayMonth(t.windowEndsAt, timeZone)}`}
+                data-thread={t.conversationId}
+                data-channel={t.channel}
+              >
+                {active ? <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-panel" /> : t.needsYou ? <span aria-hidden="true" className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-warning" /> : null}
+                <span className={cn('flex min-w-0 flex-1', compact ? 'gap-2.5' : 'gap-3')}>
+                  <InitialsAvatar name={t.leadName} tone={t.channel === 'EMAIL' ? 'email' : 'whatsapp'} size={compact ? 'sm' : 'md'} className="mt-0.5" />
+                  <span className={cn('flex min-w-0 flex-1 flex-col', compact ? 'gap-1' : 'gap-1.5')}>
+                    <span className="flex items-center gap-2">
+                      <span className={cn('min-w-0 flex-1 truncate text-sm text-fg-1', theyWroteLast ? 'font-semibold' : 'font-medium')}>{t.leadName}</span>
+                      {theyWroteLast ? (
+                        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-2">
+                          <span aria-hidden="true" className="size-1.5 rounded-full bg-panel" />
+                          <span className="sr-only">The customer wrote last,</span>
+                        </span>
+                      ) : null}
+                      <span className="shrink-0 text-xs text-fg-3 tabular">{ageHint(now.getTime() - t.lastActivityAt.getTime())}</span>
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded-sm border border-border-strong bg-bg-2 px-1.5 py-0.5 text-fg-2">
-                      <TimerOff aria-hidden="true" className="size-3" />
-                      Window closed
+                    <span className={cn('text-sm', compact ? 'line-clamp-1' : 'line-clamp-2', theyWroteLast ? 'text-fg-1' : 'text-fg-2')}>
+                      {t.lastMessage ? `${t.lastMessage.direction === 'OUT' ? 'You: ' : ''}${t.lastMessage.preview}` : 'No messages yet'}
                     </span>
-                  )
-                ) : null}
-                {t.pendingApprovals > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-warning">
-                    <ShieldAlert aria-hidden="true" className="size-3" />
-                    {t.pendingApprovals} to approve
+                    {compact ? (
+                      <>
+                        <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-fg-2">
+                          <span className={fact}>
+                            <ChannelIcon aria-hidden="true" className={channel.iconClass} />
+                            {channel.label}
+                          </span>
+                          {t.humanTakeover ? (
+                            <span className={cn(fact, 'text-fg-1')}>
+                              <Hand aria-hidden="true" className="text-info" />
+                              You are handling
+                            </span>
+                          ) : null}
+                          {windowEnd ? (
+                            <span className={fact}>
+                              <Timer aria-hidden="true" className="text-success" />
+                              {windowEnd}
+                            </span>
+                          ) : t.channel === 'WHATSAPP' ? (
+                            <span className={fact}>
+                              <TimerOff aria-hidden="true" className="text-fg-3" />
+                              Window closed
+                            </span>
+                          ) : null}
+                        </span>
+                        {t.pendingApprovals > 0 || t.openCallRequests > 0 || t.attentionDeliveries > 0 ? <span className="flex flex-wrap items-center gap-1.5 text-xs">{attention}</span> : null}
+                      </>
+                    ) : (
+                      <span className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <SourceChip source={t.channel === 'EMAIL' ? 'EMAIL_INBOUND' : 'WHATSAPP_INBOUND'} withIcon />
+                        {t.lastMessage && t.lastMessage.direction === 'OUT' ? <DeliveryStatusBadge status={t.lastMessage.status} simulated={t.lastMessage.simulated} /> : null}
+                        {t.humanTakeover ? (
+                          <span className={cn(chip, TONE_CLASSES.info)}>
+                            <Hand aria-hidden="true" />
+                            You are handling
+                          </span>
+                        ) : (
+                          <span className={cn(chip, 'border-border-strong bg-bg-2 text-fg-2')}>
+                            <Bot aria-hidden="true" />
+                            {MODE_LABELS[t.aiMode]}
+                          </span>
+                        )}
+                        {windowEnd ? (
+                          <span className={cn(chip, 'border-border-strong bg-bg-2 text-fg-1')}>
+                            <Timer aria-hidden="true" className="text-success" />
+                            {windowEnd}
+                          </span>
+                        ) : t.channel === 'WHATSAPP' ? (
+                          <span className={cn(chip, 'border-border-strong bg-bg-2 text-fg-2')}>
+                            <TimerOff aria-hidden="true" />
+                            Window closed
+                          </span>
+                        ) : null}
+                        {attention}
+                      </span>
+                    )}
                   </span>
-                ) : null}
-                {t.openCallRequests > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-warning">
-                    <PhoneCall aria-hidden="true" className="size-3" />
-                    Call requested
-                  </span>
-                ) : null}
-                {t.attentionDeliveries > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-sm border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-danger">
-                    <ShieldAlert aria-hidden="true" className="size-3" />
-                    {t.attentionDeliveries} failed or unknown
-                  </span>
-                ) : null}
-              </span>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Reveal>
   );
 }

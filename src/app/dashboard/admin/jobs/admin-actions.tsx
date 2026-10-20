@@ -9,17 +9,25 @@
  * REAUTH_REQUIRED, the dialog asks for it in place: the password in LIVE, a fresh persona sign-in
  * in DEMO (the seeded personas have no password). The new session's CSRF token is used for the
  * retry, and the page refreshes after success.
+ *
+ * Every opening starts clean (reason, typed confirmation and the reauth panel reset when the
+ * trigger opens the dialog). The reason field states its length rule up front, counts characters,
+ * and is marked invalid (with the rule tied by aria-describedby) after a confirm it failed. The
+ * trigger may carry a decorative icon; its accessible name stays exactly `triggerLabel`. A
+ * destructive trigger is a danger outline, and the dialog's confirm is the solid danger button.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { KeyRound } from 'lucide-react';
+import { Ban, Check, KeyRound, OctagonPause, Play, RotateCw, Send, X, type LucideIcon } from 'lucide-react';
 import { ConfirmDialog, type ConfirmOutcome } from '@/components/patterns/ConfirmDialog';
 import { CSRF_HEADER_NAME } from '@/components/patterns/api-client';
 import { useCsrfToken } from '@/components/patterns/csrf';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { ADMIN_REASON_MAX, ADMIN_REASON_MIN, RESEND_CONFIRM_TEXT } from '@/lib/schemas/admin';
 
 type PostResult = { ok: true; data: unknown } | { ok: false; status: number; code: string | null; message: string; reference: string | null };
@@ -44,6 +52,15 @@ async function post(url: string, body: unknown, csrf: string | null): Promise<Po
   };
 }
 
+/**
+ * A destructive trigger is a danger outline: it names the risk without becoming the loudest thing
+ * on the page (the solid danger fill is kept for the confirm button inside the dialog).
+ */
+const DANGER_OUTLINE = 'border-danger/55 text-danger hover:border-danger hover:bg-danger/10 hover:text-danger';
+
+const TRIGGER_ICONS = { pause: OctagonPause, resume: Play, retry: RotateCw, cancel: Ban, delivered: Check, 'not-delivered': X, resend: Send } satisfies Record<string, LucideIcon>;
+export type AdminActionIcon = keyof typeof TRIGGER_ICONS;
+
 export type AdminActionProps = {
   triggerLabel: string;
   title: string;
@@ -59,6 +76,10 @@ export type AdminActionProps = {
   variant?: 'default' | 'outline' | 'destructive' | 'secondary';
   mode: 'demo' | 'live';
   workspaceName?: string;
+  /** Decorative trigger icon (aria-hidden; the name stays triggerLabel). */
+  icon?: AdminActionIcon;
+  size?: 'sm' | 'default';
+  className?: string;
 };
 
 export function AdminAction(props: AdminActionProps) {
@@ -71,6 +92,25 @@ export function AdminAction(props: AdminActionProps) {
   const [password, setPassword] = useState('');
   const [reauthError, setReauthError] = useState<string | null>(null);
   const [reauthing, setReauthing] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const fieldId = useId();
+  const reasonId = `${fieldId}-reason`;
+  const reasonHelpId = `${fieldId}-reason-help`;
+  const confirmId = `${fieldId}-confirm`;
+  const passwordId = `${fieldId}-password`;
+  const reasonLength = reason.trim().length;
+  const reasonInvalid = attempted && reasonLength < ADMIN_REASON_MIN;
+  const typedInvalid = attempted && Boolean(props.confirmText) && typed !== props.confirmText;
+
+  /** Each opening starts clean: no reason, confirmation or reauth panel left from a cancelled try. */
+  function resetForm() {
+    setReason('');
+    setTyped('');
+    setNeedsReauth(false);
+    setPassword('');
+    setReauthError(null);
+    setAttempted(false);
+  }
 
   async function reauthenticate() {
     setReauthing(true);
@@ -89,6 +129,7 @@ export function AdminAction(props: AdminActionProps) {
   }
 
   async function confirm(): Promise<ConfirmOutcome> {
+    setAttempted(true);
     const trimmed = reason.trim();
     if (trimmed.length < ADMIN_REASON_MIN) return { ok: false, message: `Give a reason of at least ${ADMIN_REASON_MIN} characters.` };
     if (props.confirmText && typed !== props.confirmText) return { ok: false, message: `Type ${props.confirmText} to confirm.` };
@@ -96,8 +137,7 @@ export function AdminAction(props: AdminActionProps) {
     const result = await post(props.endpoint, body, csrf ?? pageCsrf);
     if (result.ok) {
       toast.success(props.successMessage);
-      setReason('');
-      setTyped('');
+      resetForm();
       router.refresh();
       return { ok: true };
     }
@@ -108,10 +148,18 @@ export function AdminAction(props: AdminActionProps) {
     return { ok: false, message: result.message, reference: result.reference };
   }
 
+  const TriggerIcon = props.icon ? TRIGGER_ICONS[props.icon] : null;
+
   return (
     <ConfirmDialog
       trigger={
-        <Button variant={props.variant ?? (props.destructive ? 'destructive' : 'outline')} size="sm">
+        <Button
+          variant={props.variant ?? 'outline'}
+          size={props.size ?? 'sm'}
+          className={cn(props.destructive && !props.variant && DANGER_OUTLINE, props.className)}
+          onClick={resetForm}
+        >
+          {TriggerIcon ? <TriggerIcon aria-hidden="true" /> : null}
           {props.triggerLabel}
         </Button>
       }
@@ -125,20 +173,27 @@ export function AdminAction(props: AdminActionProps) {
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${props.endpoint}-reason`}>Reason (stored on the audit record)</Label>
-          <textarea
-            id={`${props.endpoint}-reason`}
+          <Label htmlFor={reasonId}>Reason (stored on the audit record)</Label>
+          <Textarea
+            id={reasonId}
             value={reason}
             maxLength={ADMIN_REASON_MAX}
             rows={3}
+            aria-describedby={reasonHelpId}
+            aria-invalid={reasonInvalid || undefined}
             onChange={(e) => setReason(e.target.value)}
-            className="min-h-20 w-full rounded-md border border-input bg-input/30 px-3 py-2 text-sm text-fg-1 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           />
+          <p id={reasonHelpId} className="flex flex-wrap justify-between gap-x-3 text-xs text-fg-2">
+            <span className={reasonInvalid ? 'text-danger' : undefined}>At least {ADMIN_REASON_MIN} characters.</span>
+            <span className="tabular">
+              {reason.length}/{ADMIN_REASON_MAX}
+            </span>
+          </p>
         </div>
         {props.confirmText ? (
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`${props.endpoint}-confirm`}>Type {props.confirmText} to confirm</Label>
-            <Input id={`${props.endpoint}-confirm`} value={typed} autoComplete="off" onChange={(e) => setTyped(e.target.value)} />
+            <Label htmlFor={confirmId}>Type {props.confirmText} to confirm</Label>
+            <Input id={confirmId} value={typed} autoComplete="off" aria-invalid={typedInvalid || undefined} className="font-mono" onChange={(e) => setTyped(e.target.value)} />
           </div>
         ) : null}
         {needsReauth ? (
@@ -149,8 +204,8 @@ export function AdminAction(props: AdminActionProps) {
             </p>
             {props.mode === 'live' ? (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor={`${props.endpoint}-password`}>Your password</Label>
-                <Input id={`${props.endpoint}-password`} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <Label htmlFor={passwordId}>Your password</Label>
+                <Input id={passwordId} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
             ) : null}
             <Button type="button" size="sm" variant="secondary" onClick={reauthenticate} disabled={reauthing || (props.mode === 'live' && password.length === 0)}>

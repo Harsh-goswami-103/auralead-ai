@@ -1,32 +1,55 @@
 /*
- * AuraLead design tokens (plan §10, reviews/ceo/06-design.md §11.7). Raw values live here; the
- * Tailwind 4 theme in src/app/globals.css maps them to utilities. Panels have one dark theme;
- * the paper set is for /quote and the PDF. Status is never color-only: every badge pairs a
- * token with an icon and a text label.
+ * AuraLead design tokens, palette v2 "Aurora" (design spec §1; plan §10 as amended by the palette
+ * ADR). Raw values live here; the Tailwind 4 theme in src/app/globals.css maps them to utilities.
+ * Panels have one dark theme; the paper set is for /quote and the PDF and is unchanged.
+ *
+ * Rules the values encode (contrast proofs: tests/unit/design/contrast.test.ts):
+ * - Aura is the only action color (buttons, links, focus) in every panel. Panel hues orient, they
+ *   never mean "clickable".
+ * - Violet --ai is AI provenance only; orange --demo is the DEMO banner and Simulated chips only.
+ *   Status hues are never decorative and never appear in gradients.
+ * - Gradients never put blue next to pink, and any ice -> flare segment interpolates in oklab
+ *   (oklch would cross AI violet). Each has a pre-placed sRGB fallback below.
+ * - Status is never color-only: every badge pairs a token with an icon and a text label.
  */
+@property --chroma-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 :root {
-  /* Dark ops surface */
-  --bg-0: #07080b;
-  --bg-1: #0d0f14;
-  --bg-2: #141720;
-  --bg-3: #1b1f2a;
-  --border-subtle: rgb(255 255 255 / 0.08);
-  --border-strong: rgb(255 255 255 / 0.15);
-  --text-1: #e8eaf0;
-  --text-2: #a3a9b8;
-  --text-3: #7d8496;
+  /* Surfaces: hue 264, chroma rises with lightness. Borders carry separation. */
+  --bg-0: #060a13; /* oklch(0.145 0.021 263) page */
+  --bg-1: #0c111c; /* oklch(0.178 0.024 265) sidebar, panels */
+  --bg-2: #131927; /* oklch(0.215 0.029 266) cards, inputs */
+  --bg-3: #1c2333; /* oklch(0.257 0.032 266) hover, selected */
+  --border-subtle: oklch(0.85 0.03 264 / 0.1);
+  --border-strong: oklch(0.85 0.03 264 / 0.18);
+  --border-input: #626c81; /* solid, >= 3:1 on bg-0..2 (WCAG 1.4.11) */
+  --text-1: #f1f3f9;
+  --text-2: #b7becc;
+  --text-3: #939cad; /* non-essential meta only; >= 4.5:1 up to bg-3 */
 
-  /* Cyan = action, links, focus. Violet is reserved for AI provenance and AI mode. */
-  --accent: #2bc8dc;
-  --accent-fg: #04121a;
-  --ai: #a78bfa;
+  /* Brand hues */
+  --aura: #00e1f3; /* oklch(0.830 0.142 205) action, links, focus, Client panel */
+  --azure: #1fc0ff; /* primary button gradient end; fill only (too close to info for text) */
+  --volt: #4181ff; /* decorative fills and chart series only (fails as text on bg-3) */
+  --volt-hi: #5c94ff; /* gradient stop */
+  --flare: #ff47c3; /* oklch(0.700 0.247 344) Platform admin panel, sparks */
+  --flare-ice: #ffcee4; /* pale stop of the admin gradient */
+  --zest: #aff03c; /* oklch(0.880 0.210 128) Operator panel, sparks; never next to a warning chip */
+  --ice: #d1f6fd; /* cool highlight stop */
+  --accent: var(--aura);
+  --accent-fg: #00151c; /* ink on every bright fill; white text fails on all of them */
+  --ai: #a78bfa; /* src/components/ai/** only */
 
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
-  --info: #60a5fa;
-  /* Demo banner and Simulated chips only. */
-  --demo: #fb923c;
+  /* Status: same semantics, chroma lifted; danger moved to h28 so it clears flare. */
+  --success: #21df9b;
+  --warning: #ffc334;
+  --danger: #f75e51;
+  --info: #67affd;
+  --demo: #ff9645; /* DEMO banner and Simulated chips only */
 
   /* Paper (quote page and PDF). --brand is set per workspace after contrast correction (F14). */
   --paper: #ffffff;
@@ -34,6 +57,43 @@
   --ink-2: #4a5060;
   --rule: #e3e6ec;
   --brand: #111318;
+
+  /* Panel signature defaults for pages outside a panel (auth, landing, portaled overlays). */
+  --panel-hue: var(--aura);
+  --panel-hue-2: var(--volt-hi);
+
+  /* Gradients (constant stops; panel-dependent ones are declared with the panel selectors). */
+  --grad-action: linear-gradient(in oklch 135deg, var(--aura), var(--azure));
+  --grad-aurora: linear-gradient(in oklch 100deg, var(--zest), var(--aura) 50%, var(--volt-hi));
+  --grad-client: linear-gradient(in oklch 100deg, var(--ice), var(--aura) 40%, var(--volt-hi));
+  --grad-operator: linear-gradient(in oklch 100deg, var(--zest), var(--aura));
+  --grad-admin: linear-gradient(in oklab 100deg, var(--flare-ice), var(--flare));
+  --panel-grad: var(--grad-aurora);
+
+  /* Film grain (static SVG noise; the app has no CSP, so data: works) and aurora alpha caps. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --aurora-alpha-text: 16%; /* hard cap for any blob under text */
+  --aurora-alpha-deco: 28%; /* blobs with no text over them */
+
+  /* Charts: fixed order and the color follows the entity (lead sources: Google Maps = 1 aura,
+     Google Sheets = 2 zest, Meta Lead Ads = 4 volt; 3 is flare). Resting fills use the base step;
+     -hi is for 2px strokes, markers and the hovered series. A 5th series folds into other. */
+  --chart-1: #00a8ba;
+  --chart-1-hi: #00d6ec;
+  --chart-2: #699700;
+  --chart-2-hi: #a4e238;
+  --chart-3: #d820a2;
+  --chart-3-hi: #f448bb;
+  --chart-4: #0f60fa;
+  --chart-4-hi: #528dff;
+  --chart-other: #7a808d;
+  /* Sequential magnitude ramp (single aura hue), dark to light. */
+  --chart-seq-1: #00646f;
+  --chart-seq-2: #00808e;
+  --chart-seq-3: #009eaf;
+  --chart-seq-4: #00bdd1;
+  --chart-seq-5: #0bddf3;
+  --chart-seq-6: #9bf2ff;
 
   /* Radii */
   --r-xs: 4px;
@@ -43,24 +103,36 @@
   --r-xl: 16px;
   --r-full: 9999px;
 
-  /* Motion */
-  --dur-fast: 150ms;
-  --dur-base: 200ms;
-  --dur-slow: 300ms;
+  /* Motion: exits are always faster than enters; loops animate transform/opacity only. */
+  --dur-instant: 90ms; /* press */
+  --dur-fast: 150ms; /* hover, color, every exit */
+  --dur-base: 220ms; /* popover, tooltip, toast */
+  --dur-slow: 320ms; /* sheet, dialog */
+  --dur-enter: 480ms; /* page header and section reveal */
+  --dur-chart: 450ms; /* one-time chart entry */
+  --dur-cinematic: 900ms; /* login and landing hero only */
+  --loop-aurora: 24s;
+  --loop-comet: 8s;
+  --loop-shimmer: 1.6s;
+  --loop-marquee: 40s;
   --ease-enter: cubic-bezier(0.2, 0, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-ambient: cubic-bezier(0.45, 0, 0.55, 1);
 
   /* Elevation: borders and surface steps; one shadow for overlays only. */
   --shadow-overlay: 0 16px 48px -12px rgb(0 0 0 / 0.6);
 
-  /* Glass (top bar, cmdk palette): alpha >= 0.72, blur <= 16px, solid fallback in globals.css. */
-  --glass-bg: rgb(13 15 20 / 0.78);
+  /* Glass (top bar, cmdk palette): bg-1 at alpha >= 0.78, blur <= 16px, solid fallback in globals.css. */
+  --glass-bg: rgb(12 17 28 / 0.78);
   --glass-blur: 12px;
 
   /* Layout */
   --banner-h: 32px;
   --topbar-h: 56px;
   --sidebar-w: 240px;
+  /* Toasts clear the mobile bottom tab bar (shown below lg). */
+  --toast-offset-bottom: calc(72px + env(safe-area-inset-bottom));
 
   /* shadcn semantic aliases (components/ui read these names). */
   --background: var(--bg-0);
@@ -79,7 +151,75 @@
   --surface-hover-foreground: var(--text-1);
   --destructive: var(--danger);
   --border: var(--border-subtle);
-  --input: var(--border-strong);
+  --input: var(--border-input);
   --ring: var(--accent);
   --radius: var(--r-md);
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --toast-offset-bottom: 24px;
+  }
+}
+
+/*
+ * Panel signatures (PanelShell sets data-panel). Orientation only: nav pill, eyebrow dot, top-bar
+ * hairline, page h1 gradient, KPI hairlines, header aurora, selected-row bar.
+ */
+[data-panel='user'] {
+  --panel-hue: var(--aura);
+  --panel-hue-2: var(--volt-hi);
+  --panel-grad: var(--grad-client);
+}
+[data-panel='employee'] {
+  --panel-hue: var(--zest);
+  --panel-hue-2: var(--aura);
+  --panel-grad: var(--grad-operator);
+}
+[data-panel='admin'] {
+  --panel-hue: var(--flare);
+  --panel-hue-2: var(--flare-ice);
+  --panel-grad: var(--grad-admin);
+}
+
+/*
+ * Gradients that read panel hues. A custom property substitutes var() where it is declared, so
+ * these are re-declared on every panel root; [data-chroma] marks an element that animates
+ * --chroma-angle (the comet border) so the conic angle is read on that element.
+ */
+:root,
+[data-panel],
+[data-chroma] {
+  --grad-hairline: linear-gradient(90deg, transparent, var(--panel-hue) 30%, var(--panel-hue-2) 70%, transparent);
+  --grad-comet: conic-gradient(
+    in oklab from var(--chroma-angle),
+    transparent 0 62%,
+    var(--panel-hue) 80%,
+    var(--ice) 88%,
+    var(--flare) 95%,
+    transparent
+  );
+}
+
+/* sRGB fallback for browsers without gradient color-space syntax (stops pre-placed so no violet appears). */
+@supports not (background: linear-gradient(in oklch, red, blue)) {
+  :root {
+    --grad-action: linear-gradient(135deg, #00e1f3, #00d1f9, #1fc0ff);
+    --grad-aurora: linear-gradient(100deg, #aff03c, #03f3b6 25%, #00e1f3 50%, #24beff 75%, #5c94ff);
+    --grad-client: linear-gradient(100deg, #d1f6fd, #00e1f3 40%, #24beff 70%, #5c94ff);
+    --grad-operator: linear-gradient(100deg, #aff03c, #03f3b6 50%, #00e1f3);
+    --grad-admin: linear-gradient(100deg, #ffcee4, #ff47c3);
+  }
+  :root,
+  [data-panel],
+  [data-chroma] {
+    --grad-comet: conic-gradient(
+      from var(--chroma-angle),
+      transparent 0 62%,
+      var(--panel-hue) 80%,
+      var(--ice) 88%,
+      var(--flare) 95%,
+      transparent
+    );
+  }
 }

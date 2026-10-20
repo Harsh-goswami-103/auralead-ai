@@ -758,3 +758,44 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Why:** The plan fixes the screens, the boundary behaviour, the P15 transition and the test list, but T22 owns no service, route for quotes, or quote component path, and the existing services had no reject, queue read model, composer approval or manual-send operation.
 - **Covered by:** `tests/integration/inbox/inbox.test.ts`, `tests/integration/approvals/approval-queue.test.ts`, `tests/integration/quotes/manual-send.test.ts`, `tests/components/inbox/composer.test.tsx`, `tests/components/approvals/{approval-actions,quote-share-panel}.test.tsx`, `tests/e2e/inbox/{window-boundary,takeover}.spec.ts`, `tests/e2e/approvals/approve-send.spec.ts`, `tests/e2e/quotes/manual-share.spec.ts`, the tenant matrix (15 new manifest entries).
 - **Reversibility:** 4.
+
+### ADR-66 UI v2 "Aurora": colorful, animated, cinematic redesign (owner request, 2026-10-20)
+- **Decision:** The owner asked for a far more colorful, punchy and cinematic UI with more animation, built from the best prebuilt components (three.js, shadcn, Skiper UI and similar). The redesign keeps every product rule that carries meaning and amends only the visual rules of plan §10 and 06-design §11.7-11.8:
+  - **Palette v2 "Aurora"** (`src/styles/tokens.css`): blue-tinted surfaces; `--text-3` raised so it passes on `bg-3` (4.40:1 became 5.68:1); a solid `--border-input` that meets WCAG 1.4.11 (1.57:1 became 3.33:1); brand hues aura (action, links, focus, Client panel), azure (button gradient end only), volt / volt-hi (decorative fills and gradient stops only), flare (Platform admin, sparks), zest (Operator panel, sparks), ice; status chroma lifted, and danger moved from hue 22 to 28 so it clears flare. Each panel has a signature hue set on `[data-panel]` (mirrored to `<body>` so portaled overlays match). It is used only for orientation (nav pill, eyebrow, hairlines, page title). Buttons, links and focus stay aura everywhere. Gradients never put blue next to pink, and ice to flare interpolates in oklab, so no gradient crosses the reserved AI violet. Contrast is proven by `tests/unit/design/contrast.test.ts`.
+  - **Gradient text** in panels: the one page `h1` per view (through `PageHeader`), the auth wordmark, the decorative 404 numeral and the landing hero keyword. Never on numbers, body copy or tables.
+  - **Ambient motion in panels**:
+    - Loops: the page-header aurora drift plus at most one comet border or border beam per view. Loops animate transform or opacity only and pause offscreen and in hidden tabs.
+    - Entrances: one-time staggered fade-rise, CSS keyframes from first paint, never re-run on refresh.
+    - Indicators: sliding nav and tab indicators.
+    - Durations above 300 ms are allowed for entrances (480 ms), one-time chart entry (450 ms) and the landing/login hero (900 ms). Exits stay at 150 ms or less.
+  - **Glow**: one primary-CTA hover glow per view, now also in panels, through `src/components/visual/GlowFrame`. The ESLint glow rule is unchanged: glow utilities still live only in `src/components/visual/**`.
+  - **/login and /invite**: full-bleed aurora with the 3D aura core (WebGL from 1024 px), a glass card (alpha >= 0.78) in a comet border, and colorful persona cards. Their accessible names still start with the persona label. The floating role switcher is not rendered on /login, where the persona list carries the `data-demo-role-switcher` marker.
+  - **3D** (`src/components/visual/aura/**`): a procedural R3F scene, i.e. a noise-displaced energy core, particle rings, and lead streams in (Sheets, Meta, Maps) and out (Quote, WhatsApp). Its presets are hero (landing), auth and tile (command center, >= 1440 px only, as plan §10 allows). It uses a 3D-only spark palette, including an amber Maps stream. The plan §10 WebGL policy is kept: SSR poster first, then `next/dynamic({ ssr: false })` after idle and in view, `useVisualBudget` (off for reduced motion, no WebGL2, Save-Data, <= 4 cores, narrow screens), DPR <= 1.5, particle caps, pause offscreen, poster on context loss, no textures, HDRIs, bloom or fetched fonts.
+  - **Landing `/` (T30, built early with this redesign)**:
+    - Built: hero, a pipeline diagram labelled with real behavior, a feature bento, an ROI calculator with visible editable assumptions ("Illustrative estimate"), a principles strip, the DEMO banner in DEMO, and a mode-aware CTA (so the page is `force-dynamic`).
+    - Not built yet: `tests/e2e/visual/visual-budget.spec.ts`, which needs a production build manifest, and the three panel previews. `tests/e2e/visual/webgl-fallback.spec.ts` exists.
+    - Copy to revisit if M5 slips: the integrations marquee names the providers the product is built around, but live WhatsApp and email adapters land in M5.
+  - **GatedAction**: a gated control always renders inert (dashed border, lock icon, muted text) whatever variant the caller asked for. It gains `reasonId` with `GateReason` so a reason can sit outside a segmented control, and a third props form for a control that is always gated in a render (no `onAction` or `href`).
+  - **No dashboard `loading.tsx`**: measured on Next 16.4.1, a segment `loading.tsx` streams 200 before nested pages call `notFound()`, turning 404s into soft 404s. Panels get per-panel `error.tsx` boundaries plus a root `not-found`, `error` and `global-error` instead.
+  - **Public quote and unsubscribe**: the paper theme stays light and printable, with a brand-derived palette, a CSS-only one-time entrance and a phone "Review and accept" bar. The DEMO banner is shown on /unsubscribe in DEMO.
+  - **Kept unchanged**:
+    - no count-ups, tickers, live pulses or invented numbers (metrics render their final value);
+    - status is always icon plus label;
+    - violet means AI only, orange means DEMO only;
+    - glow and three.js live only in `src/components/visual/**`;
+    - no new runtime dependency (only `@types/three` as an exact devDependency).
+  - **Licences**: Magic UI, Motion Primitives, shadcn and other MIT techniques are re-implemented, with attribution in `THIRD_PARTY_NOTICES.md`. Aceternity UI, Skiper UI and React Bits (non-OSI licences) are inspiration only; no code was copied.
+- **Why:** The owner's direction supersedes the restrained visual brief, but the product's truthfulness and accessibility rules are what make it trustworthy, so they stay. The audit that preceded the redesign also found real UI bugs. All are fixed here:
+  - 390 px overflow on the client home and pricing;
+  - focus hidden on primary buttons and approval rows;
+  - raw audit and pipeline codes shown to people;
+  - "AI prepared" on template text;
+  - endless auto-refresh loops;
+  - the white default 404 at `/`;
+  - no error boundaries;
+  - a missing favicon;
+  - the pause banner ignoring `outbound.lock`;
+  - public quote header alignment and no-JS issues.
+- **Alternatives:** keep the monochrome brief and add only motion (rejected: not what the owner asked for); copy prebuilt Aceternity or Skiper UI components (rejected: licences); add bloom post-processing (rejected: an extra render pass; additive fresnel halo shells give the look at no cost).
+- **Covered by:** `tests/unit/design/*` (contrast, tokens, motion presets), `tests/unit/visual/*` (visual budget, aura layout), `tests/components/visual/*`, `tests/components/patterns/{aurora-shell,shell-polish,gated-action}.test.tsx`, `tests/unit/landing/*` (ROI math, landing render), `tests/unit/quotes/public-quote-paper.test.ts`, the new panel component tests under `tests/components/{inbox,pricing,quotes,leads,approvals,admin}`, `tests/integration/shell/{panel-chrome,panel-home}.test.ts`, `tests/unit/lib/format-text.test.ts`, `tests/e2e/visual/webgl-fallback.spec.ts`.
+- **Reversibility:** 4 (tokens and the visual library are the single sources; pages consume them through shared patterns).

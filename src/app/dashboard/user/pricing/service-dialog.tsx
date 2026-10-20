@@ -8,6 +8,8 @@
  * reference) is shown when it refuses.
  */
 import { useState, type ReactNode } from 'react';
+import { Pencil, Plus } from 'lucide-react';
+import { IconChip } from '@/components/patterns/IconChip';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { paiseToRupeeString, parseRupeesToPaise } from '@/lib/money';
@@ -108,6 +110,18 @@ function changes(service: CatalogServiceDto, v: Parsed): Record<string, unknown>
   return out;
 }
 
+/** A titled group of fields; the title is a visual divider (labels name every field). */
+function FieldGroup(props: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <p aria-hidden="true" className="flex items-center gap-3 text-xs font-medium tracking-[0.12em] text-fg-3 uppercase after:h-px after:flex-1 after:bg-border-subtle">
+        {props.title}
+      </p>
+      {props.children}
+    </div>
+  );
+}
+
 export function ServiceDialog(props: { trigger: ReactNode; service: CatalogServiceDto | null; expectedVersion: number; workspaceName: string }) {
   const creating = props.service === null;
   const [open, setOpen] = useState(false);
@@ -166,10 +180,14 @@ export function ServiceDialog(props: { trigger: ReactNode; service: CatalogServi
       }}
     >
       <DialogTrigger asChild>{props.trigger}</DialogTrigger>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto border-border-strong bg-bg-1 sm:max-w-xl">
+      {/* The footer sticks to the bottom of this scroller: the bottom scroll padding (footer, 113px stacked or 69px from sm, plus a two-line hint) keeps a focused field and its hint clear of it. */}
+      <DialogContent className="scroll-pb-40 sm:max-w-xl sm:scroll-pb-28">
         <DialogHeader>
-          <DialogTitle>{creating ? 'Add a service' : `Edit ${props.service?.name ?? ''}`}</DialogTitle>
-          <DialogDescription className="text-fg-2">
+          <div className="flex items-center gap-3">
+            <IconChip>{creating ? <Plus aria-hidden="true" /> : <Pencil aria-hidden="true" />}</IconChip>
+            <DialogTitle>{creating ? 'Add a service' : `Edit ${props.service?.name ?? ''}`}</DialogTitle>
+          </div>
+          <DialogDescription>
             {creating
               ? 'The service and its price are added to a new price list version.'
               : 'A price or quantity change publishes a new price list version. Issued quotes keep their prices.'}{' '}
@@ -178,41 +196,47 @@ export function ServiceDialog(props: { trigger: ReactNode; service: CatalogServi
         </DialogHeader>
         <form
           noValidate
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-5"
           onSubmit={(e) => {
             e.preventDefault();
             void submit();
           }}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField name="code" label="Code" value={form.code} onChange={set('code')} error={errors.code} readOnly={!creating} hint={creating ? 'Short and unique, e.g. SEO-BASIC. It cannot change later.' : 'Codes cannot change.'} />
-            <TextField name="name" label="Name" value={form.name} onChange={set('name')} error={errors.name} />
-          </div>
-          <TextField name="description" label="Description" multiline value={form.description} onChange={set('description')} hint="Shown on quotes under the service name." />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField name="price" label="Unit price" prefix="₹" inputMode="decimal" value={form.price} onChange={set('price')} error={errors.price} />
-            <TextField name="unitLabel" label="Per" value={form.unitLabel} onChange={set('unitLabel')} error={errors.unitLabel} placeholder="page, month, visit" />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField name="minQty" label="Minimum quantity" inputMode="numeric" value={form.minQty} onChange={set('minQty')} error={errors.minQty} />
-            <TextField name="maxQty" label="Maximum quantity" inputMode="numeric" value={form.maxQty} onChange={set('maxQty')} error={errors.maxQty} hint="Up to 10,000." />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField name="timelineDays" label="Typical timeline" inputMode="numeric" suffix="days" value={form.timelineDays} onChange={set('timelineDays')} error={errors.timelineDays} hint="Optional." />
-            <TextField
-              name="discountLimit"
-              label="Discount limit"
-              inputMode="decimal"
-              suffix="%"
-              value={form.discountLimit}
-              onChange={set('discountLimit')}
-              error={errors.discountLimit}
-              hint="Optional. A quote with this service cannot be discounted beyond it."
-            />
-          </div>
+          <FieldGroup title="Service">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField name="code" label="Code" value={form.code} onChange={set('code')} error={errors.code} readOnly={!creating} hint={creating ? 'Short and unique, e.g. SEO-BASIC. It cannot change later.' : 'Codes cannot change.'} />
+              <TextField name="name" label="Name" value={form.name} onChange={set('name')} error={errors.name} />
+            </div>
+            <TextField name="description" label="Description" multiline value={form.description} onChange={set('description')} hint="Shown on quotes under the service name." />
+          </FieldGroup>
+          <FieldGroup title="Price">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField name="price" label="Unit price" prefix="₹" inputMode="decimal" value={form.price} onChange={set('price')} error={errors.price} />
+              <TextField name="unitLabel" label="Per" value={form.unitLabel} onChange={set('unitLabel')} error={errors.unitLabel} placeholder="page, month, visit" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField name="minQty" label="Minimum quantity" inputMode="numeric" value={form.minQty} onChange={set('minQty')} error={errors.minQty} />
+              <TextField name="maxQty" label="Maximum quantity" inputMode="numeric" value={form.maxQty} onChange={set('maxQty')} error={errors.maxQty} hint="Up to 10,000." />
+            </div>
+          </FieldGroup>
+          <FieldGroup title="Limits">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField name="timelineDays" label="Typical timeline" inputMode="numeric" suffix="days" value={form.timelineDays} onChange={set('timelineDays')} error={errors.timelineDays} hint="Optional." />
+              <TextField
+                name="discountLimit"
+                label="Discount limit"
+                inputMode="decimal"
+                suffix="%"
+                value={form.discountLimit}
+                onChange={set('discountLimit')}
+                error={errors.discountLimit}
+                hint="Optional. A quote with this service cannot be discounted beyond it."
+              />
+            </div>
+          </FieldGroup>
           {Object.keys(errors).length > 0 ? <FormAlert message="Fix the highlighted fields." /> : null}
           {failure ? <FormAlert message={failure.message} reference={failure.reference} /> : null}
-          <DialogFooter>
+          <DialogFooter className="sticky -bottom-6 z-10 -mx-6 -mb-6 border-t border-border-subtle bg-bg-1 px-6 py-4">
             <Button type="button" variant="outline" disabled={pending} onClick={() => setOpen(false)}>
               Cancel
             </Button>

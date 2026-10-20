@@ -5,7 +5,7 @@
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GATE_CATEGORIES, GatedAction } from '@/components/patterns/GatedAction';
+import { GATE_CATEGORIES, GateReason, GatedAction } from '@/components/patterns/GatedAction';
 
 afterEach(cleanup);
 
@@ -78,6 +78,38 @@ describe('GatedAction', () => {
     expect(control.hasAttribute('href')).toBe(false);
     expect(control.tabIndex).toBe(0);
     expect(screen.getByText('Simulators exist only in DEMO.')).toBeTruthy();
+  });
+
+  it('with reasonId: renders only the control, described by a GateReason placed elsewhere', () => {
+    const onAction = vi.fn();
+    const gate = { category: 'eligibility' as const, reason: 'Auto needs workspace auto-send to be on.' };
+    render(
+      <div>
+        <div role="group" aria-label="AI mode">
+          <GatedAction label="Auto" onAction={onAction} gate={gate} reasonId="auto-reason" />
+        </div>
+        <GateReason id="auto-reason" gate={gate} />
+      </div>,
+    );
+    const group = screen.getByRole('group', { name: 'AI mode' });
+    const button = screen.getByRole('button', { name: 'Auto' });
+    expect(button.getAttribute('aria-describedby')).toBe('auto-reason');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(group.textContent).toBe('Auto');
+    expect(document.getElementById('auto-reason')?.textContent).toBe(gate.reason);
+    fireEvent.click(button);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('always-gated form (no onAction, no href): an aria-disabled button with its reason', () => {
+    render(<GatedAction label="Retry" gate={{ category: 'eligibility', reason: 'An AMBIGUOUS attempt must be resolved first.' }} />);
+    const button = screen.getByRole('button', { name: 'Retry' });
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.hasAttribute('href')).toBe(false);
+    const describedBy = button.getAttribute('aria-describedby');
+    expect(document.getElementById(describedBy ?? '')?.textContent).toContain('An AMBIGUOUS attempt must be resolved first.');
+    fireEvent.click(button);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   });
 
   it('marks itself busy while the action runs and ignores repeat clicks', async () => {
