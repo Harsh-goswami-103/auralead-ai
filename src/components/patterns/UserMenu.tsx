@@ -1,16 +1,18 @@
 'use client';
 
 /**
- * Account menu: who is signed in, in which role, and sign out (POST /api/app/auth/logout with the
- * session's CSRF token; the route revokes the session row and clears the cookie).
+ * Account menu: who is signed in, in which role, a link to the documentation (/docs, T37), and sign
+ * out (POST /api/app/auth/logout with the session's CSRF token; the route revokes the session row
+ * and clears the cookie).
  *
  * Look (design spec §6): the initials avatar sits in a 2px ring of the panel gradient. The menu
  * opens on an identity card: the avatar, name, email, and a role chip with the panel-hue dot.
  * Sign out tints toward danger on hover, since it ends the session. The trigger's name starts
  * with the initials it shows, so speech input can say what it sees (WCAG 2.5.3).
  */
+import Link from 'next/link';
 import { useState } from 'react';
-import { LoaderCircle, LogOut } from 'lucide-react';
+import { BookOpen, LoaderCircle, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/cn';
 import {
@@ -84,6 +86,12 @@ export function UserMenu({ user }: { user: MenuUser }) {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className="py-2">
+          <Link href="/docs">
+            <BookOpen aria-hidden="true" className="text-fg-2" />
+            Documentation
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => void signOut()}
           disabled={pending}

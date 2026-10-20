@@ -2,10 +2,11 @@
  * Landing top bar (plan T30, 06-design F15): the glass nav is one of the few places glass is
  * allowed (alpha >= .78 with a solid fallback, surface-glass). Product mark + wordmark, in-page
  * anchors (md and up; the page is one scroll on phones) with a scroll-spy pill (a small client
- * island) and the primary CTA, which stays visible at every width. A 1px aurora hairline closes
- * the bar. Server-safe.
+ * island), the documentation link (lg and up, T37) and the primary CTA, which stays visible at
+ * every width. A 1px aurora hairline closes the bar. Server-safe.
  */
 import Link from 'next/link';
+import { BookOpen } from 'lucide-react';
 import { ProductMark } from '@/components/patterns/ProductMark';
 import { PrimaryCta, type LandingMode } from './cta';
 import { LandingNavLinks } from './LandingNavLinks';
@@ -31,6 +32,14 @@ export function LandingNav({ mode }: { mode: LandingMode }) {
           </Link>
           <LandingNavLinks />
           <div className="ml-auto flex items-center gap-2">
+            {/* The documentation link, from 1024px where it fits beside the section links and the CTA; the footer always has it. */}
+            <Link
+              href="/docs"
+              className="hidden min-h-11 items-center gap-1.5 rounded-md px-3 text-sm text-fg-2 transition-colors duration-fast ease-enter hover:bg-bg-2/70 hover:text-fg-1 lg:inline-flex lg:min-h-9"
+            >
+              <BookOpen aria-hidden="true" className="size-4 shrink-0" />
+              Docs
+            </Link>
             <PrimaryCta mode={mode} size="sm" />
           </div>
         </nav>
