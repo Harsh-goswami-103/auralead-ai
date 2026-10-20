@@ -7,7 +7,8 @@
  *    and not under its stored status.
  *  - Search matches the quote number (case-insensitive) or the lead's name through the normalised
  *    column (`Lead.nameNormalized`: case, accents and punctuation folded, plan §5.8), never a JSON
- *    or free-text scan.
+ *    or free-text scan. Only letters, digits, hyphens and spaces ever reach a LIKE, so `%` and `_`
+ *    are never wildcards (ADR-77); a query with nothing searchable matches nothing.
  *  - "Needs pricing review" narrows to quotes flagged for review.
  *  - Counts per status cover every quotation matching the search (two grouped statements), so the
  *    status chips stay true when the list itself is capped.
@@ -50,12 +51,25 @@ export function effectiveStatusWhere(status: QuoteStatus, now: Date): Prisma.Quo
   return { status };
 }
 
+/**
+ * Quote numbers are capital letters, digits and hyphens (`Q-0001`). Prisma's `contains` becomes a
+ * LIKE without escaping, so only a query made of those characters is matched against the number:
+ * `%` and `_` never reach a pattern as wildcards (the ADR-72 rule for lead search).
+ */
+const NUMBER_QUERY = /^[A-Z0-9-]+$/;
+
+/** Matches nothing: a query with nothing searchable in it finds no quotation. */
+const NOTHING: Prisma.QuoteWhereInput = { id: { in: [] } };
+
 function searchWhere(q: string | undefined): Prisma.QuoteWhereInput | null {
   if (!q) return null;
+  const or: Prisma.QuoteWhereInput[] = [];
+  const upper = q.toUpperCase();
+  if (NUMBER_QUERY.test(upper)) or.push({ number: { contains: upper } });
+  // normalizeName keeps only letters, digits and single spaces, so no wildcard survives it.
   const name = normalizeName(q);
-  const or: Prisma.QuoteWhereInput[] = [{ number: { contains: q.toUpperCase() } }];
   if (name) or.push({ lead: { nameNormalized: { contains: name } } });
-  return { OR: or };
+  return or.length > 0 ? { OR: or } : NOTHING;
 }
 
 function whereOf(filters: QuoteListFilters, now: Date): Prisma.QuoteWhereInput {

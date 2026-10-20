@@ -2,7 +2,8 @@
  * T27 quotations list filters: the status filter uses the status a reader sees (an approved, sent
  * or opened quote past its validity is EXPIRED before the sweep runs, and is not SENT any more);
  * search matches the quote number or the lead's name through the normalised column (case and
- * accents folded); "needs pricing review" narrows to flagged drafts; the status counts cover every
+ * accents folded), and `%` / `_` never act as LIKE wildcards (ADR-77); "needs pricing review"
+ * narrows to flagged drafts; the status counts cover every
  * quotation matching the search, not just the listed rows; everything stays inside the caller's
  * workspace. The page renders the filter form with the current values and an honest empty state.
  */
@@ -62,6 +63,22 @@ describe('listQuotesFiltered', () => {
     expect(idsOf(await listQuotesFiltered(ctx, { q: number.toLowerCase() }))).toEqual([ids.sent]);
     expect(idsOf(await listQuotesFiltered(ctx, { q: 'RENU dental' }))).toEqual([ids.draft, ids.sentLapsed].sort());
     expect(idsOf(await listQuotesFiltered(ctx, { q: 'renu', status: 'EXPIRED' }))).toEqual([ids.sentLapsed]);
+  });
+
+  it('never lets % or _ act as LIKE wildcards in the number or name search (ADR-77)', async () => {
+    const ctx = await ctxFor(h, 'owner');
+    const sent = await db.quote.findUniqueOrThrow({ where: { id: ids.sent } });
+    const underscored = sent.number.replace('-', '_');
+    expect(underscored).not.toBe(sent.number);
+    for (const q of ['%', '_', '%%', '__', '%-%', '_-_', underscored]) {
+      expect(idsOf(await listQuotesFiltered(ctx, { q })), `search ${q}`).toEqual([]);
+      const counts = await countQuotesByStatus(ctx, { q });
+      expect(Object.values(counts).reduce((a, b) => a + b, 0), `counts for ${q}`).toBe(0);
+    }
+    // Normal numbers still match, whole or in part, in any case.
+    expect(idsOf(await listQuotesFiltered(ctx, { q: sent.number.toLowerCase() }))).toEqual([ids.sent]);
+    expect(idsOf(await listQuotesFiltered(ctx, { q: sent.number.slice(-4) }))).toEqual([ids.sent]);
+    expect(await countQuotesByStatus(ctx, { q: sent.number })).toMatchObject({ SENT: 1, DRAFT: 0, EXPIRED: 0 });
   });
 
   it('narrows to drafts that need a pricing review', async () => {
