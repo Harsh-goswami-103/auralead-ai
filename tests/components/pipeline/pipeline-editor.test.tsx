@@ -122,7 +122,7 @@ describe('PipelineEditor', () => {
     renderEditor();
     fireEvent.change(screen.getByLabelText('Stage'), { target: { value: 'delivery' } });
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Remove Delivery' })));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    await waitFor(() => expect(document.querySelector('[data-validation="valid"]')).not.toBeNull(), { timeout: 2000 });
     fetchMock.mockResolvedValueOnce(json(409, { code: 'PIPELINE_VERSION_CONFLICT', message: 'The pipeline was changed by someone else. Reload to see the current version.', reference: 'req_9' }));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save as new version' })));
     expect(screen.getByRole('alert').textContent).toContain('changed by someone else');
@@ -147,3 +147,128 @@ describe('PipelineEditor', () => {
     expect(screen.getByText('Local generator (DEMO)')).toBeTruthy();
   });
 });
+
+/**
+ * Adversarial review (ADR-84), finding 1: removing or adding a stage keeps the keyboard panel on a
+ * stage that exists. The stage picker moves to a present stage (the one before the removed stage
+ * in run order, or the added stage) with its description and controls, and From/To are cleared
+ * when they named the removed stage, so "Add connection" asks for a choice instead of answering
+ * about a stage that is gone.
+ */
+describe('PipelineEditor after a stage is removed or added', () => {
+  const stageSelect = () => screen.getByLabelText('Stage') as HTMLSelectElement;
+
+  it('the stage picker moves to the stage before the removed one, with its controls', () => {
+    fetchMock.mockResolvedValue(json(200, { ok: true, issues: [] }));
+    renderEditor();
+    fireEvent.change(stageSelect(), { target: { value: 'draft' } });
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Remove Draft' })));
+    expect(stageSelect().value).toBe('score');
+    expect(within(screen.getByRole('complementary', { name: 'Edit the pipeline with the keyboard' })).getByText(SCORE_DESCRIPTION)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Score' })).toBeTruthy();
+
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Add Draft' })));
+    expect(stageSelect().value).toBe('draft');
+    expect(screen.getByRole('button', { name: 'Remove Draft' })).toBeTruthy();
+  });
+
+  it('From and To that named the removed stage are cleared, so Add connection asks for a choice', () => {
+    fetchMock.mockResolvedValue(json(200, { ok: true, issues: [] }));
+    renderEditor();
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: 'score' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: 'approval' } });
+    fireEvent.change(stageSelect(), { target: { value: 'score' } });
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Remove Score' })));
+    expect((screen.getByLabelText('From') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('To') as HTMLSelectElement).value).toBe('approval');
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Add connection' })));
+    expect(screen.getByRole('alert').textContent).toBe('Choose the stage the connection starts from and the stage it leads to.');
+  });
+});
+
+/**
+ * Adversarial review (ADR-84), finding 2: the validation verdict always belongs to the graph on
+ * screen. Every edit switches the live region to a neutral "Checking" at once (no "not valid" for a
+ * valid edit during the debounce, no earlier "Valid" left next to Save for a graph nobody checked),
+ * and Save stays aria-disabled until the server's verdict for the current graph says valid.
+ */
+describe('PipelineEditor validation verdict', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const live = () => document.querySelector('[role="status"][data-validation]') as HTMLElement;
+  const saveButton = () => screen.getByRole('button', { name: 'Save as new version' });
+
+  it('a valid edit is announced as checking, never as not valid, until the server answers', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { ok: true, issues: [] }));
+    renderEditor();
+    fireEvent.change(screen.getByLabelText('Stage'), { target: { value: 'delivery' } });
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Remove Delivery' })));
+    expect(live().getAttribute('data-validation')).toBe('checking');
+    expect(live().textContent).toContain('Checking');
+    expect(live().textContent).not.toMatch(/not valid/i);
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(live().getAttribute('data-validation')).toBe('valid');
+    expect(live().textContent).toContain('Valid. Save to make it the active version.');
+    expect(saveButton().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('after a valid verdict, an invalid edit never shows the earlier Valid and keeps Save disabled', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { ok: true, issues: [] }));
+    renderEditor();
+    fireEvent.change(screen.getByLabelText('Stage'), { target: { value: 'delivery' } });
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Remove Delivery' })));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(live().getAttribute('data-validation')).toBe('valid');
+
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        ok: false,
+        issues: [
+          { code: 'CYCLE', message: 'loop' },
+          { code: 'STAGE_ORDER', message: 'order', edge: { from: 'draft', to: 'score' } },
+        ],
+      }),
+    );
+    act(() => connectVia('draft', 'score'));
+    expect(live().getAttribute('data-validation')).toBe('checking');
+    expect(live().textContent).not.toContain('Valid');
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+    const before = fetchMock.mock.calls.length;
+    await act(async () => fireEvent.click(saveButton()));
+    expect(fetchMock.mock.calls.length).toBe(before);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(live().getAttribute('data-validation')).toBe('invalid');
+    expect(live().textContent).toContain('These connections form a loop.');
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('an approval mode change is checked too before Save is enabled', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { ok: true, issues: [] }));
+    renderEditor({ autoSendEnabled: true });
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Policy approval' })));
+    expect(live().getAttribute('data-validation')).toBe('checking');
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(bodyOf(0).approvalMode).toBe('POLICY_AUTO');
+    expect(saveButton().getAttribute('aria-disabled')).toBeNull();
+  });
+});
+
+const SCORE_DESCRIPTION = 'Checks the website (LIVE only) and gives a heuristic fit score with reasons.';
