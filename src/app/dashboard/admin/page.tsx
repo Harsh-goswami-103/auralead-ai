@@ -1,7 +1,10 @@
 /**
- * Platform admin home (T09, M1): platform counts and worker liveness derived from the database.
- * No tenant records: drilling into a workspace goes through the audited adminContext (later
- * admin pages).
+ * Platform admin home, "Global metrics" (T09, M1; T25): platform health, account counts, the global
+ * business totals and one row per workspace, all read by `loadPlatformMetrics` (services/metrics)
+ * in a fixed number of statements. Aggregates only, never tenant records: drilling into a
+ * workspace's records goes through the audited adminContext (T29). Business totals and the
+ * workspace table use the same definitions as each owner's command center (printed under the
+ * table); confirmed revenue reads unavailable because AuraLead records no payments (O6).
  *
  * Look (design spec §6): the PageHeader with its "As of" time, then the two platform health cards,
  * each with its state chip in the card header: the worker (its facts, and how far the last
@@ -16,7 +19,27 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Building2, Cpu, Crown, HeartCrack, HeartPulse, ListChecks, Send, ShieldCheck, UserCog, UserRoundX, UsersRound, Webhook } from 'lucide-react';
+import {
+  ArrowRight,
+  BadgeCheck,
+  Building2,
+  CircleSlash,
+  ClipboardCheck,
+  Cpu,
+  Crown,
+  Gauge,
+  HeartCrack,
+  HeartPulse,
+  ListChecks,
+  MessagesSquare,
+  Send,
+  ShieldCheck,
+  TrendingUp,
+  UserCog,
+  UserRoundX,
+  UsersRound,
+  Webhook,
+} from 'lucide-react';
 import { formatAge } from '@/components/admin/admin-vocabulary';
 import { DetailField } from '@/components/admin/DetailField';
 import { InlineEmpty } from '@/components/admin/InlineEmpty';
@@ -24,6 +47,8 @@ import { MetricTile } from '@/components/admin/MetricTile';
 import { OutboundSources, OutboundStateChip, pauseSources } from '@/components/admin/OutboundState';
 import { SectionTitle } from '@/components/admin/SectionTitle';
 import { StatusChip } from '@/components/admin/StatusChip';
+import { RefreshButton } from '@/components/metrics/RefreshButton';
+import { WorkspaceMetricsTable } from '@/components/metrics/WorkspaceMetricsTable';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { Button } from '@/components/ui/button';
@@ -32,9 +57,12 @@ import { BorderBeam } from '@/components/visual/BorderBeam';
 import { Reveal } from '@/components/visual/Reveal';
 import { SpotlightCard } from '@/components/visual/SpotlightCard';
 import { formatDateTime } from '@/lib/format/date';
+import { formatINR } from '@/lib/money';
 import { getPageContext } from '@/server/auth/page-context';
 import { getRuntime } from '@/server/boot';
-import { loadAdminHome, WORKER_STALE_AFTER_MS, type AdminHome } from '@/server/services/shell/panel-home';
+import { CONFIRMED_REVENUE } from '@/server/services/metrics/definitions';
+import { loadPlatformMetrics, PLATFORM_METRICS, type PlatformMetrics } from '@/server/services/metrics/platform';
+import { WORKER_STALE_AFTER_MS } from '@/server/services/shell/panel-home';
 
 export const metadata: Metadata = { title: 'Global metrics' };
 export const dynamic = 'force-dynamic';
@@ -55,18 +83,25 @@ const TOOLS = [
     body: 'Stored provider deliveries with redacted payloads, the jobs that processed them, and rejections.',
     icon: Webhook,
   },
+  {
+    href: '/dashboard/admin/productivity',
+    title: 'Employee productivity',
+    body: 'Per-employee counts from the audit trail for the last 7 or 30 days, each with its definition. No combined score.',
+    icon: Gauge,
+  },
 ] as const;
 
 export default async function AdminHomePage() {
   const page = await getPageContext();
   if (!page) redirect('/login');
   const { config } = getRuntime();
-  const home = await loadAdminHome(page.ctx, {
+  const home = await loadPlatformMetrics(page.ctx, {
     envOutboundPaused: config.outboundPaused,
     lockFile: config.paths.outboundLockFile,
   });
-  const asOf = page.ctx.clock.now();
-  const { workspaces, people, worker, outbound } = home;
+  const asOf = home.asOf;
+  const { people, worker, outbound, totals } = home;
+  const workspaces = totals.workspaces;
   const paused = workspaces.automationPaused;
   const beatAge = worker ? Math.max(0, asOf.getTime() - worker.lastBeatAt.getTime()) : null;
 
@@ -77,6 +112,7 @@ export default async function AdminHomePage() {
         title="Global metrics"
         description={`Counts for this ${page.ctx.mode === 'demo' ? 'DEMO' : 'LIVE'} database. Workspace records open only through an audited drilldown.`}
         meta={`As of ${formatDateTime(asOf)}`}
+        actions={<RefreshButton />}
       />
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
@@ -185,7 +221,50 @@ export default async function AdminHomePage() {
         </dl>
       </section>
 
-      <nav aria-label="Admin tools" className="grid min-w-0 gap-4 md:grid-cols-2">
+      <section aria-labelledby="business-heading" className="flex flex-col gap-3">
+        <Reveal as="h2" delay={0.14} id="business-heading" className="font-display text-lg font-semibold text-fg-1">
+          Leads and quotations, all workspaces
+        </Reveal>
+        <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <MetricTile index={0} label={PLATFORM_METRICS.leads.label} value={totals.leads.toLocaleString('en-IN')} hue="client" icon={<UsersRound />} hint={`${totals.newLeads.toLocaleString('en-IN')} new in 7 days`} />
+          <MetricTile index={1} label={PLATFORM_METRICS.openConversations.label} value={totals.openConversations.toLocaleString('en-IN')} hue="client" icon={<MessagesSquare />} hint="Not closed" />
+          <MetricTile index={2} label={PLATFORM_METRICS.quotesAwaitingApproval.label} value={totals.quotesAwaitingApproval.toLocaleString('en-IN')} hue="client" icon={<ClipboardCheck />} hint="Drafts" />
+          <MetricTile index={3} label={PLATFORM_METRICS.pipelineValue.label} value={formatINR(totals.pipelineValue.paise)} hue="client" icon={<TrendingUp />} hint={`${totals.pipelineValue.count.toLocaleString('en-IN')} sent or opened`} />
+          <MetricTile index={4} label={PLATFORM_METRICS.acceptedQuoteValue.label} value={formatINR(totals.acceptedQuoteValue.paise)} hue="client" icon={<BadgeCheck />} hint={`${totals.acceptedQuoteValue.count.toLocaleString('en-IN')} accepted; not payments`} />
+          <MetricTile index={5} label={totals.confirmedRevenue.label} value={totals.confirmedRevenue.value} hue="neutral" icon={<CircleSlash />} hint={totals.confirmedRevenue.reason} />
+        </dl>
+        <p className="text-xs text-fg-2">{CONFIRMED_REVENUE.definition}</p>
+      </section>
+
+      <SectionCard
+        title={
+          <SectionTitle icon={<Building2 />} hue="volt">
+            Workspaces
+          </SectionTitle>
+        }
+        meta={`${home.workspaces.length.toLocaleString('en-IN')} in this ${page.ctx.mode === 'demo' ? 'DEMO' : 'LIVE'} database. Counts and sums only; opening a workspace's records is an audited drilldown.`}
+      >
+        {home.workspaces.length === 0 ? (
+          <InlineEmpty icon={<Building2 />}>No workspaces yet.</InlineEmpty>
+        ) : (
+          <WorkspaceMetricsTable
+            rows={home.workspaces}
+            definitions={{
+              people: PLATFORM_METRICS.people,
+              assignments: PLATFORM_METRICS.assignments,
+              leads: PLATFORM_METRICS.leads,
+              newLeads: PLATFORM_METRICS.newLeads,
+              openConversations: PLATFORM_METRICS.openConversations,
+              quotesAwaitingApproval: PLATFORM_METRICS.quotesAwaitingApproval,
+              pipelineValue: PLATFORM_METRICS.pipelineValue,
+              acceptedQuoteValue: PLATFORM_METRICS.acceptedQuoteValue,
+              lastActivity: PLATFORM_METRICS.lastActivity,
+            }}
+          />
+        )}
+      </SectionCard>
+
+      <nav aria-label="Admin tools" className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {TOOLS.map((tool, i) => {
           const Icon = tool.icon;
           return (
@@ -213,7 +292,7 @@ export default async function AdminHomePage() {
 }
 
 /** The worker state chip: the one element on this page whose text is exactly "Running". */
-function WorkerChip(props: { worker: AdminHome['worker'] }) {
+function WorkerChip(props: { worker: PlatformMetrics['worker'] }) {
   const { worker } = props;
   if (worker === null) return <StatusChip entry={{ label: 'No heartbeat yet', tone: 'neutral', icon: HeartCrack }} state="none" size="md" />;
   return (

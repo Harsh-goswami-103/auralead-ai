@@ -1131,4 +1131,65 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { quoteId: fixture('workspaceB.quoteId') },
     calls: [{ method: 'POST', body: { expectedVersion: 1, via: 'MARK_SENT' }, expect: signedIn(404), note: "mark workspace B's quote as sent manually (P15)" }],
   },
+
+  // ---- Metrics and command centers (T25) --------------------------------------------------------
+  {
+    path: '/dashboard/admin/productivity',
+    file: 'src/app/dashboard/admin/productivity/page.tsx',
+    kind: 'page',
+    owner: 'T25',
+    access: 'session',
+    roles: ['SUPER_ADMIN'],
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 404, superAdmin: 200 } }],
+    crawlAs: ['admin'],
+  },
+
+  // ---- Pricing branding (T27) -------------------------------------------------------------------
+  {
+    path: '/dashboard/user/pricing/branding',
+    file: 'src/app/dashboard/user/pricing/branding/page.tsx',
+    kind: 'page',
+    owner: 'T27',
+    access: 'session',
+    roles: ['USER'],
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 200, employeeUnassigned: 404, employeeNoCapability: 404, superAdmin: 404 } }],
+    crawlAs: ['user'],
+  },
+  {
+    path: '/api/app/branding',
+    file: 'src/app/api/app/branding/route.ts',
+    kind: 'api',
+    owner: 'T27',
+    access: 'session',
+    roles: ['USER'],
+    capability: 'pricing.override',
+    calls: [{ method: 'POST', body: { termsText: 'Prices in INR. Tenant matrix probe.' }, expect: signedIn(404, { ownerA: 200 }), note: "the caller's own workspace branding" }],
+  },
+  {
+    path: '/api/app/branding/logo',
+    file: 'src/app/api/app/branding/logo/route.ts',
+    kind: 'api',
+    owner: 'T27',
+    access: 'session',
+    roles: ['USER'],
+    calls: [
+      { method: 'GET', expect: signedIn(404), note: "the caller's own logo; the seed has none, so the owner also gets 404 LOGO_NOT_SET" },
+      {
+        method: 'POST',
+        body: { contentType: 'image/svg+xml', fileName: 'logo.svg', dataBase64: 'PHN2Zz48L3N2Zz4=' },
+        expect: signedIn(404, { ownerA: 422 }),
+        note: 'an SVG is refused (P7) before anything is stored',
+      },
+    ],
+  },
+  {
+    path: '/api/app/branding/logo/remove',
+    file: 'src/app/api/app/branding/logo/remove/route.ts',
+    kind: 'api',
+    owner: 'T27',
+    access: 'session',
+    roles: ['USER'],
+    capability: 'pricing.override',
+    calls: [{ method: 'POST', body: {}, expect: signedIn(404, { ownerA: 200 }), note: "the caller's own logo (none in the seed: no change)" }],
+  },
 ];

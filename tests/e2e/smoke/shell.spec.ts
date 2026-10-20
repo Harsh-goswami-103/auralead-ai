@@ -51,9 +51,11 @@ test('the role switcher opens each panel with seeded data', async ({ page }) => 
   await page.getByRole('button', { name: /^Workspace owner/ }).first().click();
   await page.waitForURL('**/dashboard/user');
   await expect(page.getByRole('heading', { level: 1, name: 'Smile Avenue Dental Clinic' })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Teeth whitening (in-clinic)' })).toBeVisible();
-  await expect(page.getByText('₹8,500.00')).toBeVisible();
-  await expect(page.getByText('Ananya Sharma').first()).toBeVisible();
+  // The command center (T25): DB-derived KPIs with O6 labels, and the "As of" time.
+  await expect(page.getByText('Pipeline value', { exact: true })).toBeVisible();
+  await expect(page.getByText('Accepted quote value', { exact: true })).toBeVisible();
+  await expect(page.getByText('Confirmed revenue', { exact: true })).toBeVisible();
+  await expect(page.getByText(/^As of /)).toBeVisible();
 
   // The floating switcher is on panel routes too.
   await switchTo(page, 'Employee');
