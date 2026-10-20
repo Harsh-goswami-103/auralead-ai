@@ -34,6 +34,7 @@ import {
   APPROVAL_MODE_LABELS,
   connect,
   disconnect,
+  draftKey,
   edgeIssues,
   edgeKey,
   issueText,
@@ -42,6 +43,7 @@ import {
   orderedStages,
   removeStage,
   sameGraph,
+  stageAfterRemoval,
   STAGE_INFO,
   STAGE_ORDER,
   toPayloadGraph,
@@ -73,7 +75,11 @@ function useWideScreen(): boolean {
   );
 }
 
-type Validation = { state: 'idle' } | { state: 'checking' } | { state: 'done'; ok: boolean; issues: EditorIssue[] } | { state: 'error'; message: string };
+/** A server verdict, tied to the draft it was computed for (`draftKey`, ADR-84). */
+type Verdict = { key: string; state: 'done'; ok: boolean; issues: EditorIssue[] } | { key: string; state: 'error'; message: string };
+
+/** What the validation panel says: the saved version, "checking" for a draft without its own verdict, or that verdict. */
+type Shown = { state: 'saved' } | { state: 'checking' } | Verdict;
 
 type SaveState = { kind: 'saved'; version: number } | { kind: 'error'; message: string; reference: string | null } | null;
 
@@ -92,13 +98,13 @@ export function PipelineEditor(props: PipelineEditorProps) {
   const router = useRouter();
   const csrf = useCsrfToken();
   const wide = useWideScreen();
-  const ids = { from: useId(), to: useId(), stage: useId(), policy: useId() };
+  const ids = { from: useId(), to: useId(), stage: useId(), policy: useId(), status: useId(), saveNote: useId() };
 
   const [base, setBase] = useState({ version: props.baseVersion, graph: props.initialGraph, approvalMode: props.initialApprovalMode });
   const [graph, setGraph] = useState<EditorGraph>(props.initialGraph);
   const [approvalMode, setApprovalMode] = useState<PipelineApprovalMode>(props.initialApprovalMode);
   const [selectedId, setSelectedId] = useState<string | null>(props.initialGraph.stages[0]?.id ?? null);
-  const [validation, setValidation] = useState<Validation>({ state: 'idle' });
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>(null);
   const [saving, setSaving] = useState(false);
@@ -108,34 +114,55 @@ export function PipelineEditor(props: PipelineEditorProps) {
   const savingRef = useRef(false);
 
   const dirty = !sameGraph(graph, base.graph) || approvalMode !== base.approvalMode;
-  // An unchanged pipeline is the saved one, which the server validated when it was saved.
-  const shown: Validation = useMemo(() => (dirty ? validation : { state: 'idle' }), [dirty, validation]);
+  const currentKey = useMemo(() => draftKey(graph, approvalMode), [graph, approvalMode]);
+  const hasVerdict = verdict !== null && verdict.key === currentKey;
+  // An unchanged pipeline is the saved one, which the server validated when it was saved. Any other
+  // draft shows a verdict only if it was computed for exactly this draft; until then it is checking,
+  // from the moment of the edit (no stale "Valid", no "not valid" during the debounce).
+  const shown: Shown = useMemo(() => (!dirty ? { state: 'saved' } : hasVerdict ? verdict! : { state: 'checking' }), [dirty, hasVerdict, verdict]);
   const issues = useMemo(() => (shown.state === 'done' ? shown.issues : []), [shown]);
   const loops = useMemo(() => loopEdges(graph), [graph]);
+  const saveReady = shown.state === 'done' && shown.ok;
 
   const validate = useCallback(
-    async (g: EditorGraph, mode: PipelineApprovalMode) => {
+    async (g: EditorGraph, mode: PipelineApprovalMode, key: string) => {
       const no = ++requestNo.current;
-      setValidation({ state: 'checking' });
       const res = await postPipeline<{ ok: boolean; issues: unknown }>('/api/app/pipeline/validate', { workspaceSlug: props.workspaceSlug, graph: toPayloadGraph(g), approvalMode: mode }, csrf);
       if (no !== requestNo.current) return;
-      if (!res.ok) setValidation({ state: 'error', message: res.message });
-      else setValidation({ state: 'done', ok: res.data.ok, issues: issuesOf({ issues: res.data.issues }) });
+      if (!res.ok) setVerdict({ key, state: 'error', message: res.message });
+      else setVerdict({ key, state: 'done', ok: res.data.ok, issues: issuesOf({ issues: res.data.issues }) });
     },
     [csrf, props.workspaceSlug],
   );
 
-  // Every edit is checked by the server (debounced); a newer edit supersedes an answer in flight.
+  // Every draft without its own verdict is checked by the server (debounced); a newer request
+  // supersedes an answer still in flight.
   useEffect(() => {
-    if (!props.canEdit || !dirty) return;
-    const id = window.setTimeout(() => void validate(graph, approvalMode), 250);
+    if (!props.canEdit || !dirty || hasVerdict) return;
+    const id = window.setTimeout(() => void validate(graph, approvalMode, currentKey), 250);
     return () => window.clearTimeout(id);
-  }, [graph, approvalMode, dirty, props.canEdit, validate]);
+  }, [graph, approvalMode, currentKey, dirty, hasVerdict, props.canEdit, validate]);
 
-  function change(next: EditorGraph) {
+  /**
+   * Applies an edit. The stage picker always stays on a stage that exists (`select` when given,
+   * else the current one, else the first), and From/To are cleared when they named a stage that is
+   * gone (ADR-84).
+   */
+  function change(next: EditorGraph, select?: string | null) {
     setRefusal(null);
     setSaveState(null);
     setGraph(next);
+    const present = new Set(next.stages.map((s) => s.id));
+    const keep = select ?? selectedId;
+    setSelectedId(keep !== null && present.has(keep) ? keep : (orderedStages(next)[0]?.id ?? null));
+    if (from !== '' && !present.has(from)) setFrom('');
+    if (to !== '' && !present.has(to)) setTo('');
+  }
+
+  function chooseMode(mode: PipelineApprovalMode) {
+    setRefusal(null);
+    setSaveState(null);
+    setApprovalMode(mode);
   }
 
   function tryConnect(a: string, b: string) {
@@ -148,15 +175,17 @@ export function PipelineEditor(props: PipelineEditorProps) {
   }
 
   async function save() {
-    if (savingRef.current) return;
+    // Save waits for the server's verdict on exactly this draft (the server re-validates anyway).
+    if (!saveReady || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setSaveState(null);
+    const key = currentKey;
     const res = await postPipeline<{ version: number }>('/api/app/pipeline/versions', { workspaceSlug: props.workspaceSlug, graph: toPayloadGraph(graph), approvalMode, expectedVersion: base.version }, csrf);
     savingRef.current = false;
     setSaving(false);
     if (!res.ok) {
-      if (res.issues.length > 0) setValidation({ state: 'done', ok: false, issues: res.issues });
+      if (res.issues.length > 0) setVerdict({ key, state: 'done', ok: false, issues: res.issues });
       setSaveState({ kind: 'error', message: res.message, reference: res.reference });
       return;
     }
@@ -170,7 +199,6 @@ export function PipelineEditor(props: PipelineEditorProps) {
   const policyGate: Gate | null = props.autoSendEnabled
     ? null
     : { category: 'configuration', reason: 'Policy approval needs workspace auto-send to be on. Until then a person approves every first message.' };
-  const valid = shown.state === 'done' ? shown.ok : !dirty;
 
   const listView = (
     <PipelineListView
@@ -220,7 +248,7 @@ export function PipelineEditor(props: PipelineEditorProps) {
               </NativeSelect>
               {selected ? <p className="text-xs text-fg-2">{STAGE_INFO[selected.kind].description}</p> : null}
               {selected && !STAGE_INFO[selected.kind].required ? (
-                <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => change(removeStage(graph, selected.id))}>
+                <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => change(removeStage(graph, selected.id), stageAfterRemoval(graph, selected.id))}>
                   <Minus aria-hidden="true" />
                   Remove {STAGE_INFO[selected.kind].label}
                 </Button>
@@ -229,7 +257,16 @@ export function PipelineEditor(props: PipelineEditorProps) {
               ) : null}
               <div className="flex flex-wrap gap-2">
                 {STAGE_ORDER.filter((k) => !graph.stages.some((s) => s.kind === k)).map((k) => (
-                  <Button key={k} type="button" variant="secondary" size="sm" onClick={() => change(addStage(graph, k))}>
+                  <Button
+                    key={k}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      const next = addStage(graph, k);
+                      change(next, next.stages.find((s) => s.kind === k)?.id ?? null);
+                    }}
+                  >
                     <Plus aria-hidden="true" />
                     Add {STAGE_INFO[k].label}
                   </Button>
@@ -317,13 +354,13 @@ export function PipelineEditor(props: PipelineEditorProps) {
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-1 text-xs font-medium text-fg-2">Approval</legend>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant={approvalMode === 'HUMAN' ? 'secondary' : 'ghost'} size="sm" aria-pressed={approvalMode === 'HUMAN'} onClick={() => setApprovalMode('HUMAN')}>
+                <Button type="button" variant={approvalMode === 'HUMAN' ? 'secondary' : 'ghost'} size="sm" aria-pressed={approvalMode === 'HUMAN'} onClick={() => chooseMode('HUMAN')}>
                   {APPROVAL_MODE_LABELS.HUMAN}
                 </Button>
                 {policyGate ? (
                   <GatedAction label={APPROVAL_MODE_LABELS.POLICY_AUTO} gate={policyGate} reasonId={ids.policy} size="sm" />
                 ) : (
-                  <Button type="button" variant={approvalMode === 'POLICY_AUTO' ? 'secondary' : 'ghost'} size="sm" aria-pressed={approvalMode === 'POLICY_AUTO'} onClick={() => setApprovalMode('POLICY_AUTO')}>
+                  <Button type="button" variant={approvalMode === 'POLICY_AUTO' ? 'secondary' : 'ghost'} size="sm" aria-pressed={approvalMode === 'POLICY_AUTO'} onClick={() => chooseMode('POLICY_AUTO')}>
                     {APPROVAL_MODE_LABELS.POLICY_AUTO}
                   </Button>
                 )}
@@ -337,21 +374,37 @@ export function PipelineEditor(props: PipelineEditorProps) {
           <h3 id={`${ids.stage}-validation`} className="font-display text-md font-semibold text-fg-1">
             Validation
           </h3>
-          <div role="status" aria-live="polite" data-validation={shown.state === 'done' ? (shown.ok ? 'valid' : 'invalid') : shown.state} className="flex flex-col gap-1.5 text-sm">
+          <div id={ids.status} role="status" aria-live="polite" data-validation={shown.state === 'done' ? (shown.ok ? 'valid' : 'invalid') : shown.state} className="flex flex-col gap-1.5 text-sm">
             {shown.state === 'checking' ? (
               <span className="flex items-center gap-2 text-fg-2">
                 <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />
-                Checking the pipeline
+                Checking the pipeline...
               </span>
             ) : shown.state === 'error' ? (
-              <span className="flex items-center gap-2 text-danger">
+              <span className="flex flex-wrap items-center gap-2 text-danger">
                 <CircleAlert aria-hidden="true" className="size-4" />
                 {shown.message}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setVerdict(null);
+                    void validate(graph, approvalMode, currentKey);
+                  }}
+                >
+                  Check again
+                </Button>
               </span>
-            ) : valid ? (
+            ) : shown.state === 'saved' ? (
               <span className="flex items-center gap-2 text-fg-1">
                 <CircleCheck aria-hidden="true" className="size-4 text-success" />
-                {dirty ? 'Valid. Save to make it the active version.' : `Valid. This is the active version${base.version > 0 ? ` (v${base.version})` : ''}.`}
+                {`Valid. This is the active version${base.version > 0 ? ` (v${base.version})` : ''}.`}
+              </span>
+            ) : shown.ok ? (
+              <span className="flex items-center gap-2 text-fg-1">
+                <CircleCheck aria-hidden="true" className="size-4 text-success" />
+                Valid. Save to make it the active version.
               </span>
             ) : (
               <ul className="flex flex-col gap-1">
@@ -372,10 +425,24 @@ export function PipelineEditor(props: PipelineEditorProps) {
 
         <div className="flex flex-wrap items-center gap-3">
           {dirty ? (
-            <Button type="button" onClick={() => void save()} aria-busy={saving || undefined}>
-              <Save aria-hidden="true" />
-              {saving ? 'Saving...' : 'Save as new version'}
-            </Button>
+            <>
+              <Button
+                type="button"
+                onClick={() => void save()}
+                aria-busy={saving || undefined}
+                aria-disabled={!saveReady || undefined}
+                aria-describedby={saveReady ? undefined : `${ids.status} ${ids.saveNote}`}
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:brightness-100"
+              >
+                <Save aria-hidden="true" />
+                {saving ? 'Saving...' : 'Save as new version'}
+              </Button>
+              {saveReady ? null : (
+                <span id={ids.saveNote} className="text-xs text-fg-2">
+                  {shown.state === 'checking' ? 'Save is available once the check above finishes.' : 'Save is available once the check above passes.'}
+                </span>
+              )}
+            </>
           ) : saveState === null ? (
             <span className="text-sm text-fg-2">No unsaved changes.</span>
           ) : null}
