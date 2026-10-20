@@ -1107,4 +1107,16 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { quoteId: fixture('workspaceB.quoteId') },
     calls: [{ method: 'POST', body: { expectedVersion: 1, via: 'MARK_SENT' }, expect: signedIn(404), note: "mark workspace B's quote as sent manually (P15)" }],
   },
+
+  // ---- Metrics and command centers (T25) --------------------------------------------------------
+  {
+    path: '/dashboard/admin/productivity',
+    file: 'src/app/dashboard/admin/productivity/page.tsx',
+    kind: 'page',
+    owner: 'T25',
+    access: 'session',
+    roles: ['SUPER_ADMIN'],
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 404, superAdmin: 200 } }],
+    crawlAs: ['admin'],
+  },
 ];
