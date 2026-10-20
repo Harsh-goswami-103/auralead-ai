@@ -21,6 +21,8 @@
     "test:integration": "vitest run --project integration",
     "test:components": "vitest run --project components",
     "test:e2e": "playwright test",
+    "test:e2e:fresh": "playwright test --config playwright.fresh.config.ts",
+    "verify": "node scripts/verify.mjs",
     "setup": "tsx scripts/setup.ts",
     "db:path": "tsx scripts/db-path.ts",
     "postinstall": "prisma generate",
