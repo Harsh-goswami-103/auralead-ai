@@ -178,6 +178,8 @@ export default defineConfig([
     'playwright-report/**',
     'next-env.d.ts',
     'src/generated/**',
+    // Agent worktrees and local tooling state; never part of the project.
+    '.claude/**',
   ]),
 
   {

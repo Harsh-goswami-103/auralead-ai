@@ -9,6 +9,8 @@ const desktop = devices['Desktop Chrome'];
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  // AT1 builds its own copy of the repo: playwright.fresh.config.ts (run by `npm run verify`).
+  testIgnore: /smoke\/fresh-setup\.spec\.ts/,
   globalSetup: './tests/e2e/support/global-setup.ts',
   globalTeardown: './tests/e2e/support/global-teardown.ts',
   outputDir: 'test-results',
