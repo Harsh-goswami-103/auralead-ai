@@ -536,7 +536,8 @@ export type SendPlan = {
   /** E.164 phone or normalized email at preflight time. */
   to: string;
   destinationKey: string;
-  template: { name: string; language: string } | null;
+  /** The template row as synced (T32: raw components and the mapping, for header and quick-reply payloads). */
+  template: { name: string; language: string; components: unknown; variableMap: unknown } | null;
   variables: Record<string, string>;
   body: string | null;
   subject: string | null;
@@ -555,8 +556,13 @@ export type PreflightResult =
 export type PreflightDeps = DispatchDeps & {
   /** `outbound.lock` present or OUTBOUND_PAUSED=1 (O1). */
   externalOutboundPause: boolean;
-  /** False in LIVE until the channel's live adapter (T32 / T33) is registered: skipped NOT_CONFIGURED. */
+  /** False when the registry built no transport (LIVE without a usable integration): skipped NOT_CONFIGURED. */
   transportAvailable: boolean;
+  /**
+   * Why there is no transport (T32). CREDENTIAL_UNREADABLE is recorded beside NOT_CONFIGURED on the
+   * skipped attempt, so the inbox can say "Credential unreadable, re-enter".
+   */
+  transportProblem?: { code: string } | null;
 };
 
 function stringRecord(value: unknown): Record<string, string> {
@@ -566,16 +572,16 @@ function stringRecord(value: unknown): Record<string, string> {
   return out;
 }
 
-async function closeAttempt(tx: ScopedTx, ctx: AppCtx, attempt: { id: string; messageId: string }, state: 'SKIPPED' | 'CANCELLED', reasons: string[]): Promise<void> {
+async function closeAttempt(tx: ScopedTx, ctx: AppCtx, attempt: { id: string; messageId: string }, state: 'SKIPPED' | 'CANCELLED', reasons: string[], details: readonly string[] = []): Promise<void> {
   const now = ctx.clock.now();
-  await tx.dispatchAttempt.updateMany({ where: { id: attempt.id, state: 'QUEUED' }, data: { state, reasonCode: reasons[0] ?? state, errorRedacted: reasons.join(','), updatedAt: now } });
+  await tx.dispatchAttempt.updateMany({ where: { id: attempt.id, state: 'QUEUED' }, data: { state, reasonCode: reasons[0] ?? state, errorRedacted: [...reasons, ...details].join(','), updatedAt: now } });
   await projectUnsent(tx as unknown as Tx, { workspaceId: requireWorkspace(ctx), messageId: attempt.messageId }, 'NOT_SENT');
   await recordAudit(tx, ctx, {
     action: state === 'SKIPPED' ? 'dispatch.skipped' : 'dispatch.cancelled',
     targetType: 'DispatchAttempt',
     targetId: attempt.id,
     simulated: ctx.mode === 'demo',
-    summary: { reasons },
+    summary: { reasons, ...(details.length > 0 ? { details: [...details] } : {}) },
   });
 }
 
@@ -675,7 +681,8 @@ export async function preflightDispatch(tx: ScopedTx, ctx: AppCtx, ref: { messag
     if (result.deferrable) return { kind: 'deferred', runAt: deferralRunAt(result.reasons, now, workspace.timezone), reason: result.reasons.join(',') };
     // A skip is caused by a non-deferrable reason; name it first so a pause never reads as the cause.
     const skipReasons = [...result.reasons.filter((r) => !DEFERRABLE_REASONS.has(r)), ...result.reasons.filter((r) => DEFERRABLE_REASONS.has(r))];
-    await closeAttempt(tx, ctx, attempt, 'SKIPPED', skipReasons);
+    const details = deps.transportProblem && result.reasons.includes('NOT_CONFIGURED') && deps.transportProblem.code !== 'INTEGRATION_NOT_CONFIGURED' ? [deps.transportProblem.code] : [];
+    await closeAttempt(tx, ctx, attempt, 'SKIPPED', skipReasons, details);
     if (message.channel === 'WHATSAPP') await maybeEmailFallback(tx, ctx, { attempt, message, leadId: lead.id, reasons: result.reasons }, deps);
     return { kind: 'skipped', reasons: result.reasons, attemptId: attempt.id };
   }
@@ -689,7 +696,7 @@ export async function preflightDispatch(tx: ScopedTx, ctx: AppCtx, ref: { messag
     await closeAttempt(tx, ctx, attempt, 'SKIPPED', ['CONTACT_MISSING']);
     return { kind: 'skipped', reasons: ['CONTACT_MISSING'], attemptId: attempt.id };
   }
-  const template = message.templateId ? await tx.whatsAppTemplate.findFirst({ where: { id: message.templateId }, select: { name: true, language: true } }) : null;
+  const template = message.templateId ? await tx.whatsAppTemplate.findFirst({ where: { id: message.templateId }, select: { name: true, language: true, components: true, variableMap: true } }) : null;
 
   const moved = await tx.dispatchAttempt.updateMany({ where: { id: attempt.id, state: 'QUEUED' }, data: { state: 'SENDING', updatedAt: now } });
   if (moved.count !== 1) return { kind: 'done' };

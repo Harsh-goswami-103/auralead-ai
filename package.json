@@ -35,7 +35,8 @@
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts",
     "lead:erase": "tsx scripts/lead-erase.ts",
-    "admin:bootstrap": "tsx scripts/admin-bootstrap.ts"
+    "admin:bootstrap": "tsx scripts/admin-bootstrap.ts",
+    "creds:rotate": "tsx scripts/creds-rotate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.134.0",

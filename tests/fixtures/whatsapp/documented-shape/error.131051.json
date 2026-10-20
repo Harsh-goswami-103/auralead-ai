@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#131051) Unsupported message type",
+    "type": "OAuthException",
+    "code": 131051,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Message type is not currently supported."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

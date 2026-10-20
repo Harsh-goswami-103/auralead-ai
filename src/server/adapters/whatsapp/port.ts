@@ -9,7 +9,8 @@
  * resend). A thrown error is treated by the caller as ambiguous.
  *
  * Implementations: `demo.ts` (DEMO: records the would-be send, labelled simulated, zero network)
- * and the Cloud API adapter (T32, LIVE only, through `adapters/http/outbound.ts`).
+ * and `cloud-api.ts` (T32, LIVE only, through `adapters/http/outbound.ts`). `adapters/registry.ts`
+ * is the only place that picks one.
  */
 export type FailureClass = 'PRE_SEND' | 'RETRYABLE' | 'PERMANENT';
 
@@ -41,7 +42,15 @@ export type WaSendRequest = {
   /** E.164 recipient. */
   to: string;
   kind: 'template' | 'freeform';
-  template: { name: string; language: string; variables: Record<string, string> } | null;
+  template: {
+    name: string;
+    language: string;
+    variables: Record<string, string>;
+    /** The template's raw provider components as synced (T32): which header and buttons the send fills. */
+    components?: unknown;
+    /** Quick-reply payload ids set on this send, by button index (ADR-62, T32). */
+    quickReplies?: ReadonlyArray<{ index: number; payload: string }>;
+  } | null;
   body: string | null;
   document: WaDocument | null;
 };

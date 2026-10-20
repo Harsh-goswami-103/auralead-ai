@@ -18,9 +18,12 @@
  */
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { catalogEntry, INTEGRATION_CATALOG, type IntegrationCatalogEntry, type IntegrationGroup } from '@/lib/domain/integrations';
+import { NOT_SENDABLE_LABELS, parseTemplateMapping, templateShape, type QuickReplyIntentValue, type TemplateVariableSource } from '@/lib/domain/whatsapp-templates';
 import { NotFoundError } from '@/lib/errors';
+import { isQualityRed } from '@/server/adapters/whatsapp/limits';
 import type { AppCtx } from '@/server/auth/context';
 import { hasCapability, requireCapability, requireWorkspace } from '@/server/auth/guards';
+import { CREDENTIAL_UNREADABLE_CODE, CREDENTIAL_UNREADABLE_MESSAGE } from './types';
 
 export type IntegrationConfigValue = { key: string; label: string; value: string | null };
 export type MaskedCredential = { field: string; label: string; saved: boolean; last4: string | null; updatedAt: Date | null };
@@ -43,8 +46,10 @@ export type IntegrationCardView = {
   lastCheckedAt: Date | null;
   verifiedAt: Date | null;
   lastError: { code: string; message: string | null } | null;
+  /** "Credential unreadable, re-enter" when a saved secret no longer decrypts (T32); else null. */
+  credentialProblem: string | null;
   /** WhatsApp only: raw provider strings, or null when never fetched (shown as Unknown). */
-  quality: { qualityRaw: string | null; messagingLimitRaw: string | null; checkedAt: Date | null } | null;
+  quality: { qualityRaw: string | null; messagingLimitRaw: string | null; checkedAt: Date | null; pausesAutomation: boolean } | null;
   /** WorkspaceSettings internal daily cap for the channel (an internal cap, not a provider limit). */
   internalDailyCap: number | null;
   /** WhatsApp only: synced template counts. */
@@ -70,6 +75,12 @@ export type TemplateView = {
   intent: string | null;
   variables: string[];
   syncedAt: Date;
+  /** T32 mapping (P12): what each body variable holds, the quick-reply buttons and their intents. */
+  sources: Record<string, TemplateVariableSource>;
+  quickReplies: Array<{ index: number; text: string; intent: QuickReplyIntentValue | null }>;
+  documentHeader: boolean;
+  /** Null when the template can be sent from this app; otherwise why not, in words. */
+  notSendable: string | null;
 };
 
 export type IntegrationActivity = { id: string; action: string; result: 'SUCCESS' | 'DENIED' | 'FAILED'; simulated: boolean; outcome: string | null; createdAt: Date };
@@ -137,12 +148,13 @@ function maskedCredential(field: { key: string; label: string }, secrets: Record
   const last4Raw = typeof raw === 'string' ? raw : typeof record(raw).last4 === 'string' ? (record(raw).last4 as string) : null;
   const updatedRaw = record(raw).updatedAt;
   const updatedAt = typeof updatedRaw === 'string' && !Number.isNaN(Date.parse(updatedRaw)) ? new Date(updatedRaw) : null;
+  // updatedAt is shown for any saved value; last4 only when it is four plain characters (T32 stores null for short values).
   return {
     field: field.key,
     label: field.label,
     saved,
     last4: saved && last4Raw !== null && LAST4_RE.test(last4Raw) ? last4Raw : null,
-    updatedAt: saved && last4Raw !== null && LAST4_RE.test(last4Raw) ? updatedAt : null,
+    updatedAt: saved ? updatedAt : null,
   };
 }
 
@@ -179,7 +191,11 @@ function cardFor(
     lastCheckedAt: row?.lastCheckedAt ?? null,
     verifiedAt: row?.verifiedAt ?? null,
     lastError: row?.lastErrorCode ? { code: row.lastErrorCode, message: row.lastErrorRedacted } : null,
-    quality: entry.kind === 'WHATSAPP_CLOUD' ? { qualityRaw: row?.qualityRaw ?? null, messagingLimitRaw: row?.messagingLimitRaw ?? null, checkedAt: row?.limitsCheckedAt ?? null } : null,
+    credentialProblem: row?.lastErrorCode === CREDENTIAL_UNREADABLE_CODE ? CREDENTIAL_UNREADABLE_MESSAGE : null,
+    quality:
+      entry.kind === 'WHATSAPP_CLOUD'
+        ? { qualityRaw: row?.qualityRaw ?? null, messagingLimitRaw: row?.messagingLimitRaw ?? null, checkedAt: row?.limitsCheckedAt ?? null, pausesAutomation: isQualityRed(row?.qualityRaw ?? null) }
+        : null,
     internalDailyCap: capFor(entry.kind, settings),
     templates: entry.kind === 'WHATSAPP_CLOUD' ? templates : null,
   };
@@ -232,6 +248,26 @@ function variableNames(schema: unknown): string[] {
     .slice(0, 20);
 }
 
+function templateView(t: { id: string; name: string; language: string; category: string; status: string; intent: string | null; variableSchema: unknown; variableMap: unknown; components: unknown; syncedAt: Date }): TemplateView {
+  const shape = templateShape(t.components);
+  const mapping = parseTemplateMapping(t.variableMap);
+  const fromSchema = variableNames(t.variableSchema);
+  return {
+    id: t.id,
+    name: t.name,
+    language: t.language,
+    category: t.category,
+    status: t.status,
+    intent: t.intent,
+    variables: shape.bodyVariables.length > 0 ? shape.bodyVariables : fromSchema,
+    syncedAt: t.syncedAt,
+    sources: mapping.body,
+    quickReplies: shape.quickReplies.map((q) => ({ index: q.index, text: q.text, intent: mapping.buttons[String(q.index)] ?? null })),
+    documentHeader: shape.documentHeader,
+    notSendable: shape.sendable.ok ? null : NOT_SENDABLE_LABELS[shape.sendable.reason],
+  };
+}
+
 export async function getIntegrationSetup(ctx: AppCtx, kind: IntegrationKind): Promise<IntegrationSetupView> {
   requireCapability(ctx, 'leads.read');
   const workspace = await workspaceOf(ctx);
@@ -245,9 +281,9 @@ export async function getIntegrationSetup(ctx: AppCtx, kind: IntegrationKind): P
           await ctx.db.whatsAppTemplate.findMany({
             where: { integrationId: row.id },
             orderBy: [{ name: 'asc' }, { language: 'asc' }],
-            select: { id: true, name: true, language: true, category: true, status: true, intent: true, variableSchema: true, syncedAt: true },
+            select: { id: true, name: true, language: true, category: true, status: true, intent: true, variableSchema: true, variableMap: true, components: true, syncedAt: true },
           })
-        ).map((t) => ({ id: t.id, name: t.name, language: t.language, category: t.category, status: t.status, intent: t.intent, variables: variableNames(t.variableSchema), syncedAt: t.syncedAt }))
+        ).map((t) => templateView(t))
       : [];
 
   const targets = [{ targetType: 'IntegrationKind', targetId: kind }, ...(row ? [{ targetType: 'Integration', targetId: row.id }] : [])];

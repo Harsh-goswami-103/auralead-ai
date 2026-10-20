@@ -14,6 +14,7 @@
  *   (status, lastCheckedAt, redacted error, verifiedAt only on CONNECTED) and audited together.
  * Needs `integrations.manage`.
  */
+import type { Prisma } from '@/generated/prisma/client';
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { catalogEntry, SIMULATED_TEST_LABEL } from '@/lib/domain/integrations';
 import { DomainRuleError, NotFoundError } from '@/lib/errors';
@@ -21,8 +22,10 @@ import { redactText } from '@/lib/redact';
 import type { AppCtx } from '@/server/auth/context';
 import { requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { withTx } from '@/server/db/tx';
-import { recordAudit } from '@/server/services/audit/record';
-import type { LiveTesters } from './types';
+import type { JobStore } from '@/server/jobs/queue';
+import { recordAudit, type AuditCtx, type AuditDb } from '@/server/services/audit/record';
+import { armIntegrationSchedules } from './schedules';
+import type { LiveTestOutcome, LiveTesters } from './types';
 
 export type ConnectionTestResult = {
   outcome: 'SIMULATED' | 'VERIFICATION_REQUIRED' | 'TESTED';
@@ -38,6 +41,55 @@ export type ConnectionTestDeps = { testers: LiveTesters };
 
 const NOT_TESTABLE: ReadonlySet<IntegrationStatus> = new Set(['NOT_CONFIGURED', 'REVOKED', 'SIMULATED']);
 const MAX_ERROR_CHARS = 500;
+const ARMING_STATUSES: ReadonlySet<IntegrationStatus> = new Set(['CONNECTED', 'DEGRADED']);
+
+type PersistDb = AuditDb &
+  JobStore & {
+    integration: { updateMany(args: { where: { id: string; workspaceId: string }; data: Prisma.IntegrationUpdateManyMutationInput }): PromiseLike<{ count: number }> };
+  };
+
+/**
+ * Stores one live test outcome (status, check time, redacted error, verifiedAt only on CONNECTED)
+ * with its audit row, inside the caller's transaction. Used by Test connection and by the
+ * `integration.health` job (T32). A CONNECTED or DEGRADED outcome arms the integration's scheduled
+ * checks (schedules.ts): the manual test runs them now, a scheduled run arms the next bucket.
+ */
+export async function persistLiveTestOutcome(
+  tx: PersistDb,
+  ctx: AuditCtx & { mode: 'demo' | 'live' },
+  row: { id: string; workspaceId: string; kind: IntegrationKind; status: IntegrationStatus },
+  outcome: LiveTestOutcome,
+  opts: { trigger: 'manual' | 'scheduled'; causationId?: string | null },
+): Promise<{ errorCode: string | null; errorRedacted: string | null }> {
+  const now = ctx.clock.now();
+  const errorCode = outcome.status === 'CONNECTED' ? null : (outcome.errorCode ?? null);
+  const errorRedacted = outcome.status === 'CONNECTED' || !outcome.errorMessage ? null : redactText(outcome.errorMessage).slice(0, MAX_ERROR_CHARS);
+  await tx.integration.updateMany({
+    where: { id: row.id, workspaceId: row.workspaceId },
+    data: {
+      status: outcome.status,
+      lastCheckedAt: now,
+      lastErrorCode: errorCode,
+      lastErrorRedacted: errorRedacted,
+      ...(outcome.status === 'CONNECTED' ? { verifiedAt: now } : {}),
+    },
+  });
+  // A scheduled check is audited only when it changes the status (no hourly noise in the trail).
+  if (opts.trigger === 'manual' || outcome.status !== row.status) {
+    await recordAudit(tx, ctx, {
+      action: 'integration.test',
+      targetType: 'Integration',
+      targetId: row.id,
+      workspaceId: row.workspaceId,
+      result: outcome.status === 'CONNECTED' ? 'SUCCESS' : 'FAILED',
+      summary: { kind: row.kind, outcome: 'TESTED', status: outcome.status, previousStatus: row.status, errorCode, trigger: opts.trigger },
+    });
+  }
+  if (ctx.mode === 'live' && ARMING_STATUSES.has(outcome.status)) {
+    await armIntegrationSchedules(tx, ctx, row, { runNow: opts.trigger === 'manual', causationId: opts.causationId ?? null });
+  }
+  return { errorCode, errorRedacted };
+}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -101,27 +153,7 @@ export async function testIntegrationConnection(ctx: AppCtx, input: { kind: Inte
 
   // The provider call happens outside any transaction (plan §3).
   const outcome = await tester(ctx, { id: row.id, workspaceId, kind: row.kind, status: row.status, config: record(row.config) });
-  const errorCode = outcome.status === 'CONNECTED' ? null : (outcome.errorCode ?? null);
-  const errorRedacted = outcome.status === 'CONNECTED' || !outcome.errorMessage ? null : redactText(outcome.errorMessage).slice(0, MAX_ERROR_CHARS);
-  await withTx(ctx.db, async (tx) => {
-    await tx.integration.update({
-      where: { id: row.id },
-      data: {
-        status: outcome.status,
-        lastCheckedAt: now,
-        lastErrorCode: errorCode,
-        lastErrorRedacted: errorRedacted,
-        ...(outcome.status === 'CONNECTED' ? { verifiedAt: now } : {}),
-      },
-    });
-    await recordAudit(tx, ctx, {
-      action: 'integration.test',
-      targetType: 'Integration',
-      targetId: row.id,
-      result: outcome.status === 'CONNECTED' ? 'SUCCESS' : 'FAILED',
-      summary: { kind: input.kind, outcome: 'TESTED', status: outcome.status, previousStatus: row.status, errorCode },
-    });
-  });
+  const { errorCode, errorRedacted } = await withTx(ctx.db, (tx) => persistLiveTestOutcome(tx as unknown as PersistDb, ctx, { id: row.id, workspaceId, kind: row.kind, status: row.status }, outcome, { trigger: 'manual' }));
   const message =
     outcome.status === 'CONNECTED'
       ? `${entry.label} answered the connection test.`

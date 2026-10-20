@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#131056) (Business Account, Consumer Account) pair rate limit hit",
+    "type": "OAuthException",
+    "code": 131056,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Too many messages sent from the sender phone number to the same recipient phone number in a short period of time."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

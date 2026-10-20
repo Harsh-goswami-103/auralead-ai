@@ -14,7 +14,7 @@ import { postJson } from '@/components/patterns/api-client';
 import { useCsrfToken } from '@/components/patterns/csrf';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 
-type SyncResponse = { simulated: boolean; created: number; existing: number; updated: number };
+type SyncResponse = { simulated: boolean; created: number; existing: number; updated: number; missing?: number };
 
 export function TemplateSyncButton(props: { workspaceSlug: string; gate: Gate | null }) {
   const router = useRouter();
@@ -28,8 +28,9 @@ export function TemplateSyncButton(props: { workspaceSlug: string; gate: Gate | 
       setLine({ text: `${res.message}${res.reference ? ` Reference ${res.reference}.` : ''}`, role: 'alert' });
       return;
     }
-    const { created, existing, simulated } = res.data;
-    const text = `${created} ${created === 1 ? 'template' : 'templates'} added, ${existing} already synced.${simulated ? ' Simulated, no provider contacted.' : ''}`;
+    const { created, existing, updated, missing, simulated } = res.data;
+    const changes = `${updated > 0 ? `, ${updated} updated` : ''}${missing ? `, ${missing} no longer listed in WhatsApp Manager (left unchanged)` : ''}`;
+    const text = `${created} ${created === 1 ? 'template' : 'templates'} added, ${existing} already synced${changes}.${simulated ? ' Simulated, no provider contacted.' : ''}`;
     setLine({ text, role: 'status' });
     toast.success('Templates synced', { description: text });
     router.refresh();
