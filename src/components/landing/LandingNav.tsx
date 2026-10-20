@@ -25,7 +25,7 @@ export function LandingNav({ mode }: { mode: LandingMode }) {
     <header data-landing-nav="" className="sticky top-0 z-40">
       <div className="surface-glass border-b border-border-subtle">
         <nav aria-label="Main" className="mx-auto flex h-16 w-full max-w-[1280px] items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="-ml-1 flex shrink-0 items-center gap-2.5 rounded-md px-1 py-1">
+          <Link href="/" className="-ml-1 flex shrink-0 items-center gap-2.5 rounded-md px-1 py-1 max-lg:min-h-11">
             <ProductMark className="size-8 shrink-0" />
             <Wordmark />
           </Link>

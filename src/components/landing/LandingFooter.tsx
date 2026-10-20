@@ -15,7 +15,7 @@ export function LandingFooter({ mode }: { mode: LandingMode }) {
       <div aria-hidden="true" className="hairline-panel absolute inset-x-0 top-0" />
       <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-8 px-4 py-10 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-8">
         <div className="flex max-w-sm flex-col gap-3">
-          <Link href="/" className="-ml-1 flex w-fit items-center gap-2.5 rounded-md px-1 py-1">
+          <Link href="/" className="-ml-1 flex w-fit items-center gap-2.5 rounded-md px-1 py-1 max-lg:min-h-11">
             <ProductMark className="size-8 shrink-0" />
             <Wordmark />
           </Link>

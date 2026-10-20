@@ -91,6 +91,8 @@ export type RoiEstimate = {
   repliesWithLift: number;
   extraReplies: number;
   extraDeals: number;
+  /** Extra deals x 10^8, exact: leads x lift x close rate in basis points has no more decimals. */
+  extraDealsE8: bigint;
   /** Exact expected value in paise, rounded half up to a whole paisa. */
   extraRevenuePaise: bigint;
   hoursSaved: number;
@@ -114,12 +116,14 @@ export function estimateRoi(input: Partial<Record<RoiKey, unknown>>): RoiEstimat
   const extraDeals = (extraReplies * i.closeRatePct) / 100;
   const leads = BigInt(i.leadsPerMonth);
   const dealPaise = BigInt(i.dealValueInr) * 100n;
-  const extraRevenuePaise = divRound(leads * toBasisPoints(appliedLiftPts) * toBasisPoints(i.closeRatePct) * dealPaise, BP * BP);
+  const extraDealsE8 = leads * toBasisPoints(appliedLiftPts) * toBasisPoints(i.closeRatePct);
+  const extraRevenuePaise = divRound(extraDealsE8 * dealPaise, BP * BP);
   return {
     repliesNow,
     repliesWithLift: repliesNow + extraReplies,
     extraReplies,
     extraDeals,
+    extraDealsE8,
     extraRevenuePaise,
     hoursSaved: i.leadsPerMonth * i.hoursSavedPerLead,
     appliedLiftPts,
@@ -128,6 +132,8 @@ export function estimateRoi(input: Partial<Record<RoiKey, unknown>>): RoiEstimat
 
 const WHOLE_RUPEES = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0, minimumFractionDigits: 0 });
 const ONE_DECIMAL = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1, minimumFractionDigits: 0 });
+const TWO_DECIMALS = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+const EIGHT_DECIMALS = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 8, minimumFractionDigits: 0 });
 
 /** "₹60,000": whole rupees (half up) in Indian grouping, for an estimate where paise are noise. */
 export function formatWholeRupees(paise: bigint): string {
@@ -138,4 +144,20 @@ export function formatWholeRupees(paise: bigint): string {
 /** Counts and hours with at most one decimal ("2.4", "1,250"). */
 export function formatAmount(value: number): string {
   return ONE_DECIMAL.format(Number.isFinite(value) ? value : 0);
+}
+
+/** An assumption at the precision it is used with (two decimals at most: "0.26", "1,00,000"). */
+export function formatInput(value: number): string {
+  return TWO_DECIMALS.format(Number.isFinite(value) ? value : 0);
+}
+
+/**
+ * The exact extra-deal count from extraDealsE8 ("0.084", "2.4"): times the deal value it gives the
+ * revenue figure, to the whole rupee, where formatAmount's one decimal would not ("0.1").
+ */
+export function formatDeals(dealsE8: bigint): string {
+  const scale = BP * BP;
+  const positive = dealsE8 < 0n ? -dealsE8 : dealsE8;
+  const fraction = (positive % scale).toString().padStart(8, '0');
+  return EIGHT_DECIMALS.format(`${dealsE8 < 0n ? '-' : ''}${(positive / scale).toString()}.${fraction}` as Intl.StringNumericLiteral);
 }

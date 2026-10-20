@@ -15,6 +15,10 @@ import { cn } from '@/components/ui/cn';
 import { usePrefersReducedMotion } from '@/components/visual/use-prefers-reduced-motion';
 import { LANDING_SECTIONS, type LandingSectionHref } from './sections';
 
+/* The Button's invisible hit area (spec §0.5): at least 44x44px below lg, the pill keeps its size. */
+const TOUCH_TARGET =
+  'max-lg:before:absolute max-lg:before:top-1/2 max-lg:before:left-1/2 max-lg:before:size-full max-lg:before:min-h-11 max-lg:before:min-w-11 max-lg:before:-translate-x-1/2 max-lg:before:-translate-y-1/2';
+
 function useCurrentSection(): LandingSectionHref | null {
   const [current, setCurrent] = useState<LandingSectionHref | null>(null);
   useEffect(() => {
@@ -53,6 +57,7 @@ export function LandingNavLinks() {
               aria-current={active ? 'true' : undefined}
               className={cn(
                 'relative flex rounded-md px-3 py-2 text-sm transition-colors duration-fast ease-enter',
+                TOUCH_TARGET,
                 active ? 'text-fg-1' : 'text-fg-2 hover:bg-bg-2/70 hover:text-fg-1',
               )}
             >

@@ -13,6 +13,8 @@ import {
   clampInput,
   estimateRoi,
   formatAmount,
+  formatDeals,
+  formatInput,
   formatWholeRupees,
   parseInput,
   resetInputs,
@@ -139,5 +141,41 @@ describe('formatting', () => {
     expect(formatAmount(2.4)).toBe('2.4');
     expect(formatAmount(1250)).toBe('1,250');
     expect(formatAmount(Number.NaN)).toBe('0');
+  });
+
+  it('formats an assumption at the two decimals it is used with', () => {
+    expect(formatInput(parseInput('hoursSavedPerLead', '0.255'))).toBe('0.26');
+    expect(formatInput(parseInput('replyRatePct', '12.345'))).toBe('12.35');
+    expect(formatInput(parseInput('leadsPerMonth', '1e400'))).toBe('1,00,000');
+    expect(formatInput(100_000_000)).toBe('10,00,00,000');
+    expect(formatInput(Number.NaN)).toBe('0');
+  });
+
+  it('shows the exact extra deals, never a rounded count beside a non-zero revenue', () => {
+    const at = (leadsPerMonth: number) => estimateRoi({ ...ROI_DEFAULTS, leadsPerMonth });
+    expect(formatDeals(at(7).extraDealsE8)).toBe('0.084');
+    expect(formatDeals(at(3).extraDealsE8)).toBe('0.036');
+    expect(formatDeals(at(1).extraDealsE8)).toBe('0.012');
+    expect(formatDeals(at(200).extraDealsE8)).toBe('2.4');
+    expect(formatDeals(at(0).extraDealsE8)).toBe('0');
+    expect(formatDeals(estimateRoi({ ...ROI_DEFAULTS, leadsPerMonth: 99_999, replyLiftPts: 6.33, closeRatePct: 17.77 }).extraDealsE8)).toBe('1,124.82975159');
+  });
+
+  it('gives a deal count that times the deal value is the revenue figure, to the whole rupee', () => {
+    const pct = fc.integer({ min: 0, max: 10_000 }).map((bp) => bp / 100);
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 100_000 }), pct, pct, pct, fc.integer({ min: 0, max: 100_000_000 }), (leads, reply, lift, close, deal) => {
+        const e = estimateRoi({ leadsPerMonth: leads, replyRatePct: reply, replyLiftPts: lift, closeRatePct: close, dealValueInr: deal });
+        const shown = formatDeals(e.extraDealsE8).replace(/,/g, '');
+        const [whole = '0', fraction = ''] = shown.split('.');
+        const shownE8 = BigInt(whole) * 100_000_000n + BigInt(fraction.padEnd(8, '0'));
+        expect(shownE8).toBe(e.extraDealsE8);
+        // deals x deal value (paise) against the headline paise: equal up to the half-paisa rounding.
+        const revenueE8 = shownE8 * BigInt(deal) * 100n;
+        const diff = revenueE8 - e.extraRevenuePaise * 100_000_000n;
+        expect(diff < 0n ? -diff : diff).toBeLessThanOrEqual(50_000_000n);
+        if (e.extraRevenuePaise > 0n) expect(shown).not.toBe('0');
+      }),
+    );
   });
 });
