@@ -43,6 +43,8 @@ export function spawnTsx(scriptPath: string, options: SpawnTsxOptions = {}): Spa
     env: { ...process.env, ...options.env },
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    // POSIX: its own process group, so `terminate` can kill the child together with its descendants.
+    detached: process.platform !== 'win32',
   });
   if (child.pid === undefined) throw new Error(`failed to spawn ${scriptPath}`);
 
@@ -140,10 +142,21 @@ function taskkillTree(pid: number): Promise<void> {
   });
 }
 
-/** Kills a pid and (on Windows) its whole tree, then waits for it to disappear. */
+/** SIGKILL to the whole process group of a pid spawned `detached` (POSIX only); false if it is not a group leader. */
+function killProcessGroup(pid: number): boolean {
+  try {
+    process.kill(-pid, 'SIGKILL');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Kills a pid and its descendants (taskkill /T on Windows, the process group elsewhere), then waits for it to disappear. */
 export async function killPidTree(pid: number, timeoutMs = 10_000): Promise<void> {
   if (!isPidAlive(pid)) return;
   if (process.platform === 'win32') await taskkillTree(pid);
+  else killProcessGroup(pid);
   if (isPidAlive(pid)) {
     try {
       process.kill(pid, 'SIGKILL');
@@ -158,6 +171,7 @@ export async function killPidTree(pid: number, timeoutMs = 10_000): Promise<void
 export async function terminate(handle: SpawnedNode, timeoutMs = 10_000): Promise<void> {
   if (handle.child.exitCode !== null || handle.child.signalCode !== null) return;
   if (process.platform === 'win32') await taskkillTree(handle.pid);
+  else killProcessGroup(handle.pid);
   if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL');
   await handle.waitForExit(timeoutMs);
   if (!(await waitForPidExit(handle.pid, timeoutMs))) throw new Error(`pid ${handle.pid} still alive after terminate`);

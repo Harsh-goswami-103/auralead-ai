@@ -40,6 +40,7 @@ function cleanEnv(): Record<string, string> {
   else env.XDG_DATA_HOME = dataHome;
   env.TSX_TSCONFIG_PATH = path.join(REPO_ROOT, 'tsconfig.json');
   env.PRISMA_HIDE_UPDATE_MESSAGE = '1';
+  env.CHECKPOINT_DISABLE = '1';
   return env;
 }
 
