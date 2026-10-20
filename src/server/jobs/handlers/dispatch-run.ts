@@ -3,6 +3,10 @@
  * Payload v1 `{ messageId }`, workspace job, kind send (5 attempts), serialKey = conversationId.
  *
  *   P1  pause point `dispatch.p1` (after the claim, before preflight)
+ *   0   the transport from the adapter registry for the job's workspace (T32), outside any
+ *       transaction: DEMO the demo transport, LIVE the provider adapter or a typed problem that
+ *       preflight turns into the NOT_CONFIGURED skip (an unreadable credential is also recorded on
+ *       the integration: "Credential unreadable, re-enter"); never a demo transport in LIVE
  *   1   preflight in a fenced, tenant-scoped transaction -> SENDING committed (or skip/cancel/defer)
  *   P2  `dispatch.p2`; a lost lease here stops before the call (the reaper makes it AMBIGUOUS)
  *   2   provider call through the channel transport, outside any transaction
@@ -20,11 +24,15 @@ import { getConfig } from '@/lib/config';
 import { LeaseLostError, fenceJob } from '@/server/db/fence';
 import type { ScopedTx } from '@/server/db/scoped';
 import { withTx } from '@/server/db/tx';
-import { createDemoEmailTransport } from '@/server/adapters/email/demo';
 import type { EmailTransport } from '@/server/adapters/email/port';
+import type { GraphSeams, Resolution } from '@/server/adapters/registry';
 import { boundedError } from '@/server/adapters/whatsapp/error-map';
-import { createDemoWhatsAppTransport, createFileDemoOutbox, demoOutboxDir } from '@/server/adapters/whatsapp/demo';
 import type { SendOutcome, WhatsAppTransport } from '@/server/adapters/whatsapp/port';
+import type { AppCtx } from '@/server/auth/context';
+import type { KeyRing } from '@/server/security/secrets';
+import { markCredentialUnreadable } from '@/server/services/integrations/credentials';
+import { quickReplyPayloadsFor } from '@/server/services/integrations/template-sync';
+import { resolveWorkspaceEmail, resolveWorkspaceWhatsApp, type TransportDeps } from '@/server/services/integrations/transports';
 import { readArtifactFile } from '@/server/pdf/artifacts';
 import {
   ARTIFACT_RECHECK_MS,
@@ -56,16 +64,28 @@ export type DispatchRuntimeDeps = {
   unsubscribeKey: Buffer | null;
   outboundLockFile: string;
   envOutboundPaused: boolean;
+  /** The credentials key ring, to decrypt the workspace's channel credentials (LIVE). */
+  keyRing?: KeyRing | null;
+  /** META_GRAPH_VERSION (LIVE WhatsApp); null means WhatsApp is not configured on this server. */
+  graphVersion?: string | null;
 };
 
 export type TransportEnv = { mode: 'demo' | 'live'; clock: Clock; storageDir: string };
 
+/** How the handler gets its transport for one job: the registry's answer for the job's workspace. */
+export type TransportResolver<T> = (ctx: AppCtx, deps: TransportDeps) => Promise<Resolution<T>>;
+
 export type DispatchJobOptions = {
   mode?: () => 'demo' | 'live';
   deps?: () => DispatchRuntimeDeps;
-  /** null = no transport for this mode (LIVE until T32 / T33 register theirs): skipped NOT_CONFIGURED. */
+  /**
+   * Test doubles that replace the registry entirely (a scripted provider stand-in). null = no
+   * transport: skipped NOT_CONFIGURED. Without them the registry decides per workspace.
+   */
   whatsapp?: (env: TransportEnv) => WhatsAppTransport | null;
   email?: (env: TransportEnv) => EmailTransport | null;
+  /** Graph test seams for the registry's Cloud API transport (a scripted HTTP answer, a local URL). */
+  graph?: GraphSeams;
 };
 
 export function dispatchDepsFromConfig(): DispatchRuntimeDeps {
@@ -79,16 +99,24 @@ export function dispatchDepsFromConfig(): DispatchRuntimeDeps {
     unsubscribeKey: config.secrets.sessionSecret ? deriveUnsubscribeKey(config.secrets.sessionSecret) : null,
     outboundLockFile: config.paths.outboundLockFile,
     envOutboundPaused: config.outboundPaused,
+    keyRing: config.secrets.credentials,
+    graphVersion: config.meta.graphVersion,
   };
 }
 
-/** DEMO: the recording demo transports (zero network). LIVE: the provider adapters, added by T32 (WhatsApp) and T33 (email). */
-export function defaultWhatsAppTransport(env: TransportEnv): WhatsAppTransport | null {
-  return env.mode === 'demo' ? createDemoWhatsAppTransport(createFileDemoOutbox(demoOutboxDir(env.storageDir)), env.clock) : null;
-}
+type Resolved = { transport: WhatsAppTransport | EmailTransport | null; problem: Extract<Resolution<unknown>, { ok: false }> | null };
 
-export function defaultEmailTransport(env: TransportEnv): EmailTransport | null {
-  return env.mode === 'demo' ? createDemoEmailTransport(createFileDemoOutbox(demoOutboxDir(env.storageDir)), env.clock) : null;
+/**
+ * The transport for this job (T32): a test double when one was given, else the adapter registry's
+ * answer for the job's workspace (DEMO: the recording demo transport; LIVE: the provider adapter or
+ * a typed problem, never a demo transport). Credentials are decrypted here, outside any transaction.
+ */
+async function resolveTransport(channel: Channel, options: DispatchJobOptions, env: TransportEnv, ctx: AppCtx, d: DispatchRuntimeDeps): Promise<Resolved> {
+  const double = channel === 'WHATSAPP' ? options.whatsapp : options.email;
+  if (double) return { transport: double(env), problem: null };
+  const deps: TransportDeps = { keyRing: d.keyRing ?? null, graphVersion: d.graphVersion ?? null, storageDir: d.storageDir, ...(options.graph ? { graph: options.graph } : {}) };
+  const resolved = channel === 'WHATSAPP' ? await resolveWorkspaceWhatsApp(ctx, deps) : await resolveWorkspaceEmail(ctx, deps);
+  return resolved.ok ? { transport: resolved.value, problem: null } : { transport: null, problem: resolved };
 }
 
 /** A tenant-scoped transaction whose first statement (after the write lock) is the claimToken fence (E5). */
@@ -127,7 +155,9 @@ async function sendPlan(channel: Channel, plan: SendPlan, deps: DispatchRuntimeD
         workspaceId: plan.workspaceId,
         to: plan.to,
         kind: plan.kind === 'WA_TEMPLATE' ? 'template' : 'freeform',
-        template: plan.template ? { name: plan.template.name, language: plan.template.language, variables: plan.variables } : null,
+        template: plan.template
+          ? { name: plan.template.name, language: plan.template.language, variables: plan.variables, components: plan.template.components, quickReplies: quickReplyPayloadsFor(plan.template) }
+          : null,
         body: plan.body,
         document: document ? { ...document, mimeType: 'application/pdf' } : null,
       });
@@ -158,8 +188,6 @@ async function sendPlan(channel: Channel, plan: SendPlan, deps: DispatchRuntimeD
 export function createDispatchJob(channel: Channel, options: DispatchJobOptions = {}): JobDefinition {
   const mode = options.mode ?? (() => getConfig().mode);
   const deps = options.deps ?? dispatchDepsFromConfig;
-  const waFactory = options.whatsapp ?? defaultWhatsAppTransport;
-  const emailFactory = options.email ?? defaultEmailTransport;
   return {
     type: dispatchJobType(channel),
     kind: 'send',
@@ -173,18 +201,24 @@ export function createDispatchJob(channel: Channel, options: DispatchJobOptions 
       const m = mode();
       const d = deps();
       const env: TransportEnv = { mode: m, clock: job.clock, storageDir: d.storageDir };
-      const wa = channel === 'WHATSAPP' ? waFactory(env) : null;
-      const email = channel === 'EMAIL' ? emailFactory(env) : null;
       const ctx = jobCtx(job, workspaceId, m);
+      const resolved = await resolveTransport(channel, options, env, ctx, d);
+      const wa = channel === 'WHATSAPP' ? (resolved.transport as WhatsAppTransport | null) : null;
+      const email = channel === 'EMAIL' ? (resolved.transport as EmailTransport | null) : null;
       const externalOutboundPause = d.envOutboundPaused || existsSync(d.outboundLockFile);
+      const problem = resolved.problem;
 
-      const pre: PreflightResult = await scopedFencedTx(job, ctx.db, (tx) =>
-        preflightDispatch(tx, ctx, { messageId: payload.messageId, jobId: job.job.id }, {
+      const pre: PreflightResult = await scopedFencedTx(job, ctx.db, async (tx) => {
+        if (problem?.code === 'CREDENTIAL_UNREADABLE' && problem.integrationId) {
+          await markCredentialUnreadable(tx as never, ctx, { workspaceId, integrationId: problem.integrationId, field: problem.field ?? null });
+        }
+        return preflightDispatch(tx, ctx, { messageId: payload.messageId, jobId: job.job.id }, {
           contactKeyPepper: d.contactKeyPepper,
           externalOutboundPause,
-          transportAvailable: (channel === 'WHATSAPP' ? wa : email) !== null,
-        }),
-      );
+          transportAvailable: resolved.transport !== null,
+          transportProblem: problem ? { code: problem.code } : null,
+        });
+      });
       switch (pre.kind) {
         case 'cancelled':
           return { outcome: 'cancelled', reason: pre.reason };

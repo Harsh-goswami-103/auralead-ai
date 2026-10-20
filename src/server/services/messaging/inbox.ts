@@ -240,6 +240,8 @@ function noteFor(m: { direction: MessageDirection; initiatedBy: string | null; s
     return reasons.includes('HUMAN_TAKEOVER') ? 'AI reply cancelled by takeover' : 'AI reply cancelled: the conversation mode changed';
   }
   if (attempt.state === 'CANCELLED' && attempt.reasonCode === 'NEWER_INBOUND') return 'Superseded by a newer customer message';
+  // T32: the channel's saved credential no longer decrypts (recorded beside NOT_CONFIGURED).
+  if (attempt.state === 'SKIPPED' && reasons.includes('CREDENTIAL_UNREADABLE')) return 'Not sent: Credential unreadable, re-enter.';
   if (attempt.state === 'SKIPPED' || attempt.state === 'CANCELLED') return `Not sent: ${dispatchReasonLabel(attempt.reasonCode) ?? 'blocked before sending'}.`;
   if (attempt.state === 'FAILED') return `Failed: ${dispatchReasonLabel(attempt.reasonCode) ?? 'provider error'}.`;
   return null;

@@ -6,21 +6,27 @@
  * prerequisites, the non-secret configuration values, the credentials masked (saved + last four,
  * no reveal), the webhook URL where this app has the verified receiver, the channel's disclosures,
  * the synced WhatsApp templates with Sync templates, and the integration's recent audited activity.
+ * With `integrations.manage` (T32) the Credentials section is the credential form (settings and
+ * secrets, empty password fields, never echoed back), the templates open their mapping, and an
+ * unreadable credential is called out ("Credential unreadable, re-enter"). Without it the masked
+ * view is shown with the permission reason.
  * An unknown kind slug is 404; reading needs `leads.read`, actions `integrations.manage`.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, ClipboardList, FlaskConical, Info, KeyRound, ListChecks, MessageSquareText, Settings2, Webhook } from 'lucide-react';
+import { ArrowLeft, ClipboardList, FlaskConical, Gauge, Info, KeyRound, ListChecks, MessageSquareText, Settings2, Webhook } from 'lucide-react';
+import { CredentialForm } from '@/components/integrations/CredentialForm';
 import { setupHref } from '@/components/integrations/IntegrationCard';
 import { MaskedCredentials } from '@/components/integrations/MaskedCredentials';
 import { NotInAssignment } from '@/components/integrations/NotInAssignment';
 import { TemplateSyncButton } from '@/components/integrations/TemplateSyncButton';
 import { TemplateTable } from '@/components/integrations/TemplateTable';
 import { TestConnectionButton } from '@/components/integrations/TestConnectionButton';
-import { ACTIVITY_LABELS, templateSyncGate, testConnectionGate } from '@/components/integrations/vocabulary';
+import { ACTIVITY_LABELS, manageGate, templateSyncGate, testConnectionGate } from '@/components/integrations/vocabulary';
 import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { EmptyState } from '@/components/patterns/EmptyState';
+import { GatedAction } from '@/components/patterns/GatedAction';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
@@ -34,6 +40,12 @@ import { getIntegrationSetup } from '@/server/services/integrations/center';
 import { readOrNull, workspacePage } from '../_lib/workspace-page';
 
 export const dynamic = 'force-dynamic';
+
+/** A raw provider value, or "Unknown, last checked <time>" (R26: never a guessed tier). */
+function rawOrUnknown(value: string | null, checkedAt: Date | null, timeZone: string): string {
+  if (value !== null) return value;
+  return checkedAt ? `Unknown, last checked ${formatDateTime(checkedAt, timeZone)}` : 'Unknown, never checked';
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ kind: string }> }): Promise<Metadata> {
   const kind = integrationKindFromSlug((await params).kind);
@@ -108,6 +120,38 @@ export default async function IntegrationSetupPage({ params }: { params: Promise
             ) : null}
           </SectionCard>
 
+          {setup.card.quality ? (
+            <SectionCard
+              className="lg:col-span-2"
+              title={
+                <ChipTitle icon={<Gauge aria-hidden="true" />} hue="ice">
+                  Quality and messaging limit
+                </ChipTitle>
+              }
+              meta="Exactly as Meta reports them, checked every hour while WhatsApp is connected. No tier list is assumed."
+            >
+              <dl className="grid gap-3 sm:grid-cols-3" data-quality>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs text-fg-2">Quality rating</dt>
+                  <dd className="font-mono text-sm text-fg-1">{rawOrUnknown(setup.card.quality.qualityRaw, setup.card.quality.checkedAt, setup.workspace.timezone)}</dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs text-fg-2">Messaging limit</dt>
+                  <dd className="font-mono text-sm text-fg-1">{rawOrUnknown(setup.card.quality.messagingLimitRaw, setup.card.quality.checkedAt, setup.workspace.timezone)}</dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs text-fg-2">Last checked</dt>
+                  <dd className="text-sm text-fg-1">{setup.card.quality.checkedAt ? formatDateTime(setup.card.quality.checkedAt, setup.workspace.timezone) : 'Never'}</dd>
+                </div>
+              </dl>
+              {setup.card.quality.pausesAutomation ? (
+                <p role="note" data-quality-pause className="rounded-lg border border-warning/35 bg-warning/10 px-3 py-2 text-sm text-fg-1">
+                  Automated WhatsApp sends are paused while the quality rating is RED. Sends a person approves still go out.
+                </p>
+              ) : null}
+            </SectionCard>
+          ) : null}
+
           <SectionCard
             title={
               <ChipTitle icon={<ListChecks aria-hidden="true" />} hue="zest">
@@ -149,7 +193,31 @@ export default async function IntegrationSetupPage({ params }: { params: Promise
             }
             meta="Encrypted with the deployment key ring. Only the last four characters are ever shown; a saved value cannot be revealed."
           >
-            <MaskedCredentials items={setup.card.credentials} timeZone={setup.workspace.timezone} />
+            {setup.canManage ? (
+              <CredentialForm
+                workspaceSlug={ws}
+                workspaceName={name}
+                kind={kind}
+                kindSlug={entry.slug}
+                label={entry.label}
+                provider={entry.provider}
+                mode={setup.mode}
+                timeZone={setup.workspace.timezone}
+                config={setup.card.config}
+                credentials={setup.card.credentials}
+                credentialProblem={setup.card.credentialProblem}
+              />
+            ) : (
+              <div className="flex flex-col gap-3">
+                {setup.card.credentialProblem ? (
+                  <p role="note" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-fg-1">
+                    {setup.card.credentialProblem}.
+                  </p>
+                ) : null}
+                <MaskedCredentials items={setup.card.credentials} timeZone={setup.workspace.timezone} />
+                <GatedAction label="Edit credentials" variant="secondary" size="sm" gate={manageGate(false)!} />
+              </div>
+            )}
           </SectionCard>
 
           {setup.webhookUrlPath ? (
@@ -203,7 +271,7 @@ export default async function IntegrationSetupPage({ params }: { params: Promise
                   description="Business-initiated WhatsApp messages need an approved template. Sync them to make them available to approvals and the inbox."
                 />
               ) : (
-                <TemplateTable templates={setup.templates} timeZone={setup.workspace.timezone} />
+                <TemplateTable templates={setup.templates} timeZone={setup.workspace.timezone} mapping={setup.canManage ? { workspaceSlug: ws } : null} />
               )}
             </SectionCard>
           ) : null}

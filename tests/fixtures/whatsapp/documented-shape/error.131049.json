@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#131049) This message was not delivered to maintain healthy ecosystem engagement.",
+    "type": "OAuthException",
+    "code": 131049,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "In order to maintain a healthy ecosystem engagement, the message failed to be delivered."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

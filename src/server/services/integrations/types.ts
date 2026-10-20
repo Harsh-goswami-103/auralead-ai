@@ -12,6 +12,8 @@
  *   audits it. It is called outside any transaction (no network in a transaction, plan §3).
  * - `LiveTemplateSync` (T32): fetches the WABA's templates and stores them with raw status and
  *   category strings (ADR-17, P12), returning the counts.
+ * T32 registers both in `live-adapters.ts` (`liveAdapters(deps)`): testers for WhatsApp, Anthropic and
+ * OpenAI and the WhatsApp template sync; T33-T36 append their kinds there.
  *
  * Nothing here ever decrypts or returns a secret: the integration handed to an adapter carries no
  * ciphertext, and every read model exposes credentials only as "saved + last four".
@@ -49,6 +51,12 @@ export type TemplateSyncResult = {
   created: number;
   existing: number;
   updated: number;
+  /** LIVE: stored templates the provider no longer listed (left unchanged; a send would be refused by the provider). */
+  missing?: number;
 };
+
+/** Stored on the integration when a saved secret no longer decrypts (T32): shown on its setup page. */
+export const CREDENTIAL_UNREADABLE_CODE = 'CREDENTIAL_UNREADABLE';
+export const CREDENTIAL_UNREADABLE_MESSAGE = 'Credential unreadable, re-enter';
 
 export type LiveTemplateSync = (ctx: AppCtx, integration: IntegrationForAdapter) => Promise<TemplateSyncResult>;

@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#100) Invalid parameter",
+    "type": "OAuthException",
+    "code": 100,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Parameter value is not valid."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

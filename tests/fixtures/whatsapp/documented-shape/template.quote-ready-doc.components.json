@@ -1,0 +1,44 @@
+[
+  {
+    "type": "HEADER",
+    "format": "DOCUMENT",
+    "example": {
+      "header_handle": [
+        "4::aW..."
+      ]
+    }
+  },
+  {
+    "type": "BODY",
+    "text": "Hello {{1}}, your quotation {{2}} is attached. Tap a button below.",
+    "example": {
+      "body_text": [
+        [
+          "Priya",
+          "Q-0001"
+        ]
+      ]
+    }
+  },
+  {
+    "type": "FOOTER",
+    "text": "Reply STOP to opt out"
+  },
+  {
+    "type": "BUTTONS",
+    "buttons": [
+      {
+        "type": "QUICK_REPLY",
+        "text": "Send my quote"
+      },
+      {
+        "type": "QUICK_REPLY",
+        "text": "Request a call"
+      },
+      {
+        "type": "QUICK_REPLY",
+        "text": "Stop promotions"
+      }
+    ]
+  }
+]
