@@ -16,7 +16,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, CalendarClock, CircleCheck, Clock, FileStack, History, ListChecks, ScrollText, Send, ShieldAlert, Tags, Timer, Undo2, type LucideIcon } from 'lucide-react';
-import { ChipTitle } from '@/components/client/IconChip';
+import { ChipTitle } from '@/components/patterns/IconChip';
 import { humanize } from '@/components/client/labels';
 import { QuoteTimeline } from '@/components/client/QuoteTimeline';
 import { PageHeader } from '@/components/patterns/PageHeader';

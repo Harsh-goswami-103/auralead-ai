@@ -15,7 +15,7 @@
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FileSpreadsheet, FlaskConical, Loader2, MapPin, Megaphone, Play, RefreshCw } from 'lucide-react';
-import { ChipTitle } from '@/components/client/IconChip';
+import { ChipTitle } from '@/components/patterns/IconChip';
 import { toast } from 'sonner';
 import { usePolling } from '@/components/leads/use-polling';
 import { postJson } from '@/components/patterns/api-client';

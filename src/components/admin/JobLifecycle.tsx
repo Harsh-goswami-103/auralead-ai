@@ -12,7 +12,7 @@
  * re-runs on a refresh and rests at once under reduced motion. Server-safe.
  */
 import { Check, Circle, CircleDashed } from 'lucide-react';
-import { RailDraw } from '@/components/client/RailDraw';
+import { RailDraw } from '@/components/visual/RailDraw';
 import type { StatusEntry } from '@/components/patterns/status-vocabulary';
 import { cn } from '@/components/ui/cn';
 import { DotPattern } from '@/components/visual/Patterns';

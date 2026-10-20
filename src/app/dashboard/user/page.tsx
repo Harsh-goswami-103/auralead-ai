@@ -38,11 +38,11 @@ import {
   Users,
   Workflow,
 } from 'lucide-react';
-import { ChipTitle, IconChip } from '@/components/client/IconChip';
+import { ChipTitle, IconChip } from '@/components/patterns/IconChip';
 import { InitialsAvatar } from '@/components/client/InitialsAvatar';
 import { PipelineStepper } from '@/components/client/PipelineStepper';
 import { ScrollRegion } from '@/components/client/ScrollRegion';
-import { HUE_TILE, type BrandHue } from '@/components/client/hues';
+import { HUE_TILE, type BrandHue } from '@/components/patterns/hues';
 import { days, plural } from '@/components/client/labels';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';

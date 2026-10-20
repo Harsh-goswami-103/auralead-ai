@@ -21,7 +21,7 @@ import { ArrowLeft, CalendarClock, CircleCheck, Clock, FileCheck2, FileText, Gav
 import { ApprovalActions } from '@/components/approvals/ApprovalActions';
 import { ApprovalEditor } from '@/components/approvals/ApprovalEditor';
 import { approvalStatusEntry, dispatchEntry, ITEM_KINDS } from '@/components/approvals/approval-vocabulary';
-import { ChipTitle, IconChip } from '@/components/client/IconChip';
+import { ChipTitle, IconChip } from '@/components/patterns/IconChip';
 import { FlagChips, flagLabel, itemKind } from '@/components/approvals/QueueList';
 import { VersionDiff } from '@/components/approvals/VersionDiff';
 import { AutoRefresh } from '@/components/inbox/AutoRefresh';

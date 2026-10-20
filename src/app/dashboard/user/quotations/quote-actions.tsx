@@ -11,7 +11,7 @@
  */
 import { useState } from 'react';
 import { CircleCheck, PencilLine, X, XCircle } from 'lucide-react';
-import { IconChip } from '@/components/client/IconChip';
+import { IconChip } from '@/components/patterns/IconChip';
 import { ConfirmDialog } from '@/components/patterns/ConfirmDialog';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { Button } from '@/components/ui/button';
@@ -111,7 +111,7 @@ export function QuoteActions(props: QuoteActionsProps) {
               }}
             />
           ) : (
-            <GatedAction label="Cancel quotation" variant="outline" gate={NO_EDIT} onAction={() => setRevising(false)} />
+            <GatedAction label="Cancel quotation" variant="outline" gate={NO_EDIT} />
           )
         ) : null}
       </div>

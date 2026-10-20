@@ -12,7 +12,7 @@ import type { CSSProperties } from 'react';
 import { ArrowDownToLine, Circle, Gauge, PenLine, Send, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { Reveal } from '@/components/visual/Reveal';
-import { RailDraw } from './RailDraw';
+import { RailDraw } from '@/components/visual/RailDraw';
 
 const STAGE_ICONS: Readonly<Record<string, LucideIcon>> = {
   ingestion: ArrowDownToLine,

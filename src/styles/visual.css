@@ -316,6 +316,8 @@
   .visual-beam {
     position: absolute;
     inset: 0;
+    /* The light's square box rides the border path; clip it so it can never widen a page. */
+    overflow: hidden;
     pointer-events: none;
     border-radius: inherit;
     border: var(--beam-width) solid transparent;

@@ -171,12 +171,7 @@ export default async function AdminJobsPage(props: { searchParams: Promise<Searc
         className={cn(outbound.paused && 'border-danger/45 [--grad-hairline:linear-gradient(var(--danger),var(--danger))]')}
         accent
       >
-        {outbound.paused ? null : (
-          // Clip the streak's box: the mask hides it visually, but its layout box would widen the page at 390px.
-          <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
-            <BorderBeam duration={10} />
-          </span>
-        )}
+        {outbound.paused ? null : <BorderBeam duration={10} />}
         <p className="text-sm text-fg-2">
           {outbound.paused
             ? `Held by ${sources.join(', ')}. Sends already handed to a provider complete; nothing new passes preflight.`
