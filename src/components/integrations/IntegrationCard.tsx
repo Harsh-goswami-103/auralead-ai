@@ -31,7 +31,7 @@ export type IntegrationCardData = {
   credentials: Array<{ saved: boolean }>;
   lastCheckedAt: Date | null;
   lastError: { code: string; message: string | null } | null;
-  quality: { qualityRaw: string | null; messagingLimitRaw: string | null; checkedAt: Date | null } | null;
+  quality: { qualityRaw: string | null; messagingLimitRaw: string | null; checkedAt: Date | null; pausesAutomation?: boolean } | null;
   internalDailyCap: number | null;
   templates: { approved: number; total: number } | null;
 };
@@ -96,6 +96,11 @@ export function IntegrationCard(props: { card: IntegrationCardData; workspaceSlu
           <Fact icon={<Gauge />} label="Quality and messaging limit">
             {card.quality.qualityRaw ?? 'Unknown'} · {card.quality.messagingLimitRaw ?? 'Unknown'}
             <span className="block text-xs text-fg-2">As reported by Meta. Last checked: {checked(card.quality.checkedAt)}</span>
+            {card.quality.pausesAutomation ? (
+              <span data-quality-pause className="mt-1 block text-xs text-warning">
+                Automated WhatsApp sends are paused while the quality rating is RED. Sends a person approves still go out.
+              </span>
+            ) : null}
           </Fact>
         ) : null}
         {card.internalDailyCap !== null ? (

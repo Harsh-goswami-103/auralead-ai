@@ -1,0 +1,196 @@
+{
+  "_about": "Every fixture in this folder is a documented-shape fixture derived from Meta's published Cloud API and Graph API references and the dated error map (src/server/adapters/whatsapp/error-map.ts). None is recorded live traffic. The documentation hosts were not reachable from the build environment on 2026-10-20; shapes come from search-result snippets and are UNVERIFIED until a live check (docs/integrations.md).",
+  "files": {
+    "request.template-document-header.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false
+    },
+    "request.text.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false
+    },
+    "request.document.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false
+    },
+    "template.quote-ready-doc.components.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "note": "components of one template as the template list returns them"
+    },
+    "response.send-accepted.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.send-no-message-id.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "a 2xx without messages[0].id: not a confirmed send"
+    },
+    "response.media-upload.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.phone-number.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/messaging-limits",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "field names and values UNVERIFIED; messaging_limit_tier is documented as deprecated in favour of whatsapp_business_manager_messaging_limit"
+    },
+    "response.phone-number-red.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/messaging-limits",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.phone-number-no-quality.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/messaging-limits",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "the answer carries neither field: stored as null, shown as Unknown with the check time"
+    },
+    "response.waba.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.templates-page-1.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.templates-page-2.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "the last page: no paging.next"
+    },
+    "response.templates-paused.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "quote_ready_doc PAUSED; welcome_first_touch recategorised MARKETING to UTILITY; the other two no longer listed"
+    },
+    "error.131049.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.131026.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.131047.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.131050.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.130429.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.131056.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.132000.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.132001.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.132015.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.131051.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.190.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 401
+    },
+    "error.100.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.131000.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 500
+    }
+  }
+}

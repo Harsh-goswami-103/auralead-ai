@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#131000) Something went wrong",
+    "type": "OAuthException",
+    "code": 131000,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Message failed to send due to an unknown error."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

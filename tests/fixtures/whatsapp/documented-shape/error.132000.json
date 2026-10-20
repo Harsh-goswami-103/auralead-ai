@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#132000) Number of parameters does not match the expected number of params",
+    "type": "OAuthException",
+    "code": 132000,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "body: number of localizable_params (1) does not match the expected number of params (2)"
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

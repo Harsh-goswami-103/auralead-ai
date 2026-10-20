@@ -19,6 +19,7 @@ The plan is locked: [`docs/implementation-plan.md`](docs/implementation-plan.md)
 | `npm run db:restore -- --latest --yes` | Stop web and worker first. Writes `outbound.lock`, restores in one transaction, marks in-flight sends AMBIGUOUS, replays the SuppressionJournal, stays paused until resumed in Platform admin > Jobs (T24) |
 | `npm run lead:erase -- --workspace <slug> --lead <id> --reason "<ref>" --yes` | Erases a lead's personal data; suppression keys kept, `contactPlain` nulled, PII-free `lead.erase` tombstone (T24) |
 | `npm run admin:bootstrap -- --email <address>` | LIVE only. Prints a single-use invite link that creates the first SUPER_ADMIN (refuses once one exists); `--recover` prints a one-hour password reset link for an existing administrator (ADR-67, ADR-68) |
+| `npm run creds:rotate` | Stop web and worker first. Re-encrypts every integration credential and webhook processing payload under CREDENTIALS_ACTIVE_KID; keep the old key in CREDENTIALS_KEYRING until it reports "Remaining under other kids: 0"; idempotent; exits 1 while anything is left or unreadable (T32) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | `eslint .` (flat config, ESLint 10 + eslint-config-next 16.4.1) |
 | `npm run test` | Vitest, all projects (unit, integration, components); runs with `TZ=America/New_York` |

@@ -1,0 +1,88 @@
+{
+  "data": [
+    {
+      "id": "7001",
+      "name": "quote_ready_doc",
+      "language": "en",
+      "status": "APPROVED",
+      "category": "UTILITY",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "DOCUMENT",
+          "example": {
+            "header_handle": [
+              "4::aW..."
+            ]
+          }
+        },
+        {
+          "type": "BODY",
+          "text": "Hello {{1}}, your quotation {{2}} is attached. Tap a button below.",
+          "example": {
+            "body_text": [
+              [
+                "Priya",
+                "Q-0001"
+              ]
+            ]
+          }
+        },
+        {
+          "type": "FOOTER",
+          "text": "Reply STOP to opt out"
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "Send my quote"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "Request a call"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "Stop promotions"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "7002",
+      "name": "welcome_first_touch",
+      "language": "en",
+      "status": "APPROVED",
+      "category": "MARKETING",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Namaste {{1}}, thank you for your interest in {{2}}."
+        },
+        {
+          "type": "BUTTONS",
+          "buttons": [
+            {
+              "type": "QUICK_REPLY",
+              "text": "Get a quote"
+            },
+            {
+              "type": "QUICK_REPLY",
+              "text": "Stop"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "paging": {
+    "cursors": {
+      "before": "QVFIUBEFORE",
+      "after": "QVFIUAFTER1"
+    },
+    "next": "https://graph.facebook.com/v24.0/209876543210987/message_templates?limit=100&after=QVFIUAFTER1"
+  }
+}

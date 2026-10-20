@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "id": "7003",
+      "name": "festive_offer_blast",
+      "language": "en",
+      "status": "REJECTED",
+      "category": "MARKETING",
+      "components": [
+        {
+          "type": "BODY",
+          "text": "Flat 50% off this festive season only!"
+        }
+      ]
+    },
+    {
+      "id": "7004",
+      "name": "seasonal_promo_image",
+      "language": "hi",
+      "status": "PENDING",
+      "category": "MARKETING",
+      "components": [
+        {
+          "type": "HEADER",
+          "format": "IMAGE"
+        },
+        {
+          "type": "BODY",
+          "text": "नमस्ते {{1}}"
+        }
+      ]
+    }
+  ],
+  "paging": {
+    "cursors": {
+      "before": "QVFIUBEFORE2",
+      "after": "QVFIUAFTER2"
+    }
+  }
+}

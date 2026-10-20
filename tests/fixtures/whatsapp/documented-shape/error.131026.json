@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "(#131026) Message Undeliverable.",
+    "type": "OAuthException",
+    "code": 131026,
+    "error_data": {
+      "messaging_product": "whatsapp",
+      "details": "Unable to deliver message."
+    },
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

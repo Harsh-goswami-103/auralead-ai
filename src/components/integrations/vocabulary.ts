@@ -100,6 +100,12 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'integration.test': 'Connection tested',
   'integration.simulated.create': 'Demo simulation set up',
   'integration.templates.sync': 'Templates synced',
+  'integration.credentials.set': 'Credentials saved',
+  'integration.credentials.revoke': 'Credentials revoked',
+  'integration.credentials.unreadable': 'Credential unreadable, re-enter',
+  'integration.quality.check': 'Quality and limit checked',
+  'integration.quality.automation_paused': 'Automation paused: quality rating RED',
+  'integration.quality.automation_resumed': 'Automation resumed: quality rating no longer RED',
 };
 
 /** Statuses a LIVE connection test can run on (stored, configured, not revoked). */
