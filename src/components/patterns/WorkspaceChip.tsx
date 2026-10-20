@@ -5,10 +5,16 @@
  * top bar, so an operator never acts in the wrong tenant. The list holds only workspaces the
  * server resolved for this session (memberships or active assignments). Switching posts the slug
  * to /api/app/auth/active-workspace, which re-checks it; the browser never decides access.
+ *
+ * Look (design spec §6): the building icon sits in a panel-hue tile and the DEMO pill carries
+ * the demo hatch. In the menu each workspace has a monogram tile, a plan pill, and a check on the
+ * current one. The chip is a flex item of the top bar's middle slot: it is as wide as its content
+ * (it no longer stretches across the bar) and shrinks with the name truncated, never into the
+ * buttons beside it.
  */
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Building2, Check, ChevronsUpDown } from 'lucide-react';
+import { Building2, Check, ChevronsUpDown, LoaderCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/components/ui/cn';
 import {
@@ -28,8 +34,8 @@ function ModePill({ mode }: { mode: 'DEMO' | 'LIVE' }) {
   return (
     <span
       className={cn(
-        'rounded-xs border px-1 text-[11px] leading-4 font-medium',
-        mode === 'DEMO' ? 'border-demo/40 bg-demo/10 text-demo' : 'border-success/40 bg-success/10 text-success',
+        'shrink-0 rounded-xs border px-1.5 text-[11px] leading-4 font-semibold',
+        mode === 'DEMO' ? 'demo-hatch border-demo/50 text-demo' : 'border-success/40 bg-success/12 text-success',
       )}
     >
       {mode === 'DEMO' ? 'Demo' : 'Live'}
@@ -40,11 +46,13 @@ function ModePill({ mode }: { mode: 'DEMO' | 'LIVE' }) {
 function ChipBody({ ws, placeholder }: { ws: ChipWorkspace | null; placeholder: string }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <Building2 aria-hidden="true" className="size-4 shrink-0 text-fg-2" />
+      <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-md bg-panel/14 text-panel">
+        <Building2 className="size-4" />
+      </span>
       {ws ? (
         <>
           <span className="truncate font-medium text-fg-1">{ws.name}</span>
-          <span className="hidden truncate text-xs text-fg-2 sm:inline">{ws.planLabel}</span>
+          <span className="hidden shrink-0 text-xs text-fg-2 md:inline">{ws.planLabel}</span>
           <ModePill mode={ws.mode} />
         </>
       ) : (
@@ -52,6 +60,11 @@ function ChipBody({ ws, placeholder }: { ws: ChipWorkspace | null; placeholder: 
       )}
     </span>
   );
+}
+
+function monogram(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0] ?? '?') + (words[1]?.[0] ?? '')).toUpperCase();
 }
 
 export function WorkspaceChip(props: { current: ChipWorkspace | null; workspaces: ChipWorkspace[]; panel: 'user' | 'employee' }) {
@@ -68,14 +81,14 @@ export function WorkspaceChip(props: { current: ChipWorkspace | null; workspaces
 
   if (props.workspaces.length <= 1 && current) {
     return (
-      <div data-workspace-chip className="flex h-9 min-w-0 items-center rounded-md border border-border-subtle bg-bg-2 px-3">
+      <div data-workspace-chip className="flex h-9 max-w-full min-w-0 items-center rounded-lg border border-border-subtle bg-bg-2/80 pr-3 pl-1">
         <ChipBody ws={current} placeholder={placeholder} />
       </div>
     );
   }
   if (props.workspaces.length === 0) {
     return (
-      <div data-workspace-chip className="flex h-9 min-w-0 items-center rounded-md border border-dashed border-border-strong px-3">
+      <div data-workspace-chip className="flex h-9 max-w-full min-w-0 items-center rounded-lg border border-dashed border-border-strong pr-3 pl-1">
         <ChipBody ws={null} placeholder={placeholder} />
       </div>
     );
@@ -101,25 +114,41 @@ export function WorkspaceChip(props: { current: ChipWorkspace | null; workspaces
       <DropdownMenuTrigger
         data-workspace-chip
         aria-label={current ? `Workspace: ${current.name}, ${current.planLabel}, ${current.mode === 'DEMO' ? 'Demo' : 'Live'}. Switch workspace` : 'Choose a workspace'}
-        className="flex h-9 max-w-[22rem] min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-bg-2 px-3 transition-colors duration-150 hover:bg-bg-3"
+        className="group flex h-9 max-w-[min(24rem,100%)] min-w-0 items-center gap-2 rounded-lg border border-border-subtle bg-bg-2/80 pr-2 pl-1 transition-colors duration-fast ease-enter hover:border-panel/45 hover:bg-bg-3 data-[state=open]:border-panel/45 data-[state=open]:bg-bg-3"
       >
         <ChipBody ws={current} placeholder={placeholder} />
-        <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-fg-3" />
+        <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-fg-3 transition-colors duration-fast group-hover:text-fg-2" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72 border-border-strong bg-bg-1">
-        <DropdownMenuLabel className="text-xs font-normal text-fg-2">
+      <DropdownMenuContent align="start" className="w-[min(20rem,calc(100vw-2rem))] p-1.5">
+        <DropdownMenuLabel className="flex items-center gap-2 px-2 pt-1.5 pb-2 text-[11px] font-semibold tracking-[0.14em] text-fg-2 uppercase">
+          <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-panel" />
           {props.panel === 'employee' ? 'Assigned workspaces' : 'Your workspaces'}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {props.workspaces.map((w) => (
-          <DropdownMenuItem key={w.slug} onSelect={() => void switchTo(w.slug)} className="flex items-center justify-between gap-2 py-2">
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-fg-1">{pending === w.slug ? `Switching to ${w.name}...` : w.name}</span>
-              <span className="truncate text-xs text-fg-2">{w.planLabel}</span>
-            </span>
-            {w.slug === current?.slug ? <Check aria-label="Current workspace" className="size-4 text-cyan" /> : null}
-          </DropdownMenuItem>
-        ))}
+        {props.workspaces.map((w) => {
+          const isCurrent = w.slug === current?.slug;
+          return (
+            <DropdownMenuItem key={w.slug} onSelect={() => void switchTo(w.slug)} className="flex items-center gap-3 py-2">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'flex size-8 shrink-0 items-center justify-center rounded-md border font-display text-xs font-semibold',
+                  isCurrent ? 'border-panel/35 bg-panel/14 text-panel' : 'border-border-subtle bg-bg-1 text-fg-2',
+                )}
+              >
+                {pending === w.slug ? <LoaderCircle className="size-4 motion-safe:animate-spin" /> : monogram(w.name)}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-fg-1">{pending === w.slug ? `Switching to ${w.name}...` : w.name}</span>
+                <span className="flex items-center gap-1.5 text-xs text-fg-2">
+                  <span className="truncate">{w.planLabel}</span>
+                  <ModePill mode={w.mode} />
+                </span>
+              </span>
+              {isCurrent ? <Check aria-label="Current workspace" className="size-4 shrink-0 text-panel" /> : null}
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

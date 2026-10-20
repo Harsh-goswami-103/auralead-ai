@@ -11,13 +11,22 @@
  * key that a retry of the same text reuses, so the server queues one dispatch. A refusal keeps the
  * draft, shows the reason and switches the action; nothing is ever reported as sent here: the
  * thread shows "Queued" and then the provider's status as it arrives.
+ *
+ * Aurora look (design spec §5-§6): shared field surfaces, the card's border takes the aura hue while
+ * a field inside has focus, and the WhatsApp window gets a thin bar of the time left out of 24 h,
+ * toned by what is left (over 6 h success, under 6 h warning, under 1 h danger). The bar is
+ * decorative (the sentence above says the time in words), static, and moves only when the 60 s
+ * re-evaluation does; its width is rounded so server and client render the same markup.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CircleAlert, Clock, FileText, Save, Send } from 'lucide-react';
+import { CircleAlert, CircleCheck, Clock, FileText, Save, Send } from 'lucide-react';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { useCsrfToken } from '@/components/patterns/csrf';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/components/ui/cn';
 import { newRequestKey, postAction } from './api';
 import { formatClockTime, formatDayMonth, remainingHint } from './format';
@@ -38,21 +47,26 @@ const REVIEWABLE = new Set(['WINDOW_CLOSED', 'TEMPLATE_NOT_APPROVED', 'NOT_CONFI
 const NO_SEND: Gate = { category: 'permission', reason: 'Your role can draft replies but not approve and send them. Save it for review instead.' };
 const NO_DRAFT: Gate = { category: 'permission', reason: 'Your role cannot write messages in this workspace.' };
 
-const fieldClass =
-  'w-full rounded-md border border-input bg-input/30 px-3 py-2 text-sm text-fg-1 outline-none placeholder:text-fg-3 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type Refusal = { message: string; reference: string | null; next: 'TEMPLATE' | 'REVIEW' | 'NONE' };
 type Notice = { tone: 'info' | 'success'; text: string };
 
-/** The server's "now", advanced by the time the page has been open. */
+/**
+ * The server's "now", advanced by the time the page has been open. Render reads only the server
+ * time it was given (server and client markup match; no clock read during render); the 60 s tick
+ * measures the client's offset to it after mount. A refresh with a newer server time restarts it.
+ */
 function useServerNow(serverNow: string): number {
-  const [offset] = useState(() => new Date(serverNow).getTime() - Date.now());
-  const [now, setNow] = useState(() => Date.now() + offset);
+  const rendered = new Date(serverNow).getTime();
+  const [clock, setClock] = useState({ rendered, now: rendered });
+  if (clock.rendered !== rendered) setClock({ rendered, now: rendered });
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now() + offset), 60_000);
+    const offset = rendered - Date.now();
+    const id = window.setInterval(() => setClock((c) => (c.rendered === rendered ? { rendered, now: Date.now() + offset } : c)), 60_000);
     return () => window.clearInterval(id);
-  }, [offset]);
-  return now;
+  }, [rendered]);
+  return clock.rendered === rendered ? clock.now : rendered;
 }
 
 export function Composer(props: ComposerProps) {
@@ -145,7 +159,7 @@ export function Composer(props: ComposerProps) {
   const templateGate: Gate | null = !props.permissions.canSend ? NO_SEND : props.templateGate;
 
   return (
-    <section aria-label="Reply" className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-1 p-3 sm:p-4">
+    <section aria-label="Reply" className="flex min-w-0 flex-col gap-3 rounded-xl border border-border-subtle bg-bg-1/80 p-3 transition-colors duration-fast focus-within:border-aura/40 sm:p-4">
       <EligibilityLine {...props} now={now} closedOnClient={closedOnClient} refusal={refusal} />
 
       {!isWhatsApp ? (
@@ -153,9 +167,8 @@ export function Composer(props: ComposerProps) {
           <Label htmlFor={`subject-${props.conversationId}`} className="text-fg-1">
             Subject
           </Label>
-          <input
+          <Input
             id={`subject-${props.conversationId}`}
-            className={fieldClass}
             value={subject}
             maxLength={200}
             onChange={(e) => {
@@ -169,9 +182,9 @@ export function Composer(props: ComposerProps) {
         <Label htmlFor={`message-${props.conversationId}`} className="text-fg-1">
           Message
         </Label>
-        <textarea
+        <Textarea
           id={`message-${props.conversationId}`}
-          className={cn(fieldClass, 'min-h-24 resize-y')}
+          className="min-h-24 resize-y placeholder:text-fg-3"
           value={body}
           maxLength={isWhatsApp ? 4096 : 10_000}
           placeholder={isWhatsApp ? 'Write a WhatsApp reply' : 'Write an email'}
@@ -202,8 +215,9 @@ export function Composer(props: ComposerProps) {
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="text-sm text-success">
-          {notice.text}
+        <p role="status" className="flex items-start gap-2 text-sm text-success">
+          <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <span>{notice.text}</span>
         </p>
       ) : null}
 
@@ -228,20 +242,20 @@ export function Composer(props: ComposerProps) {
                 <Label htmlFor={`template-${props.conversationId}`} className="text-fg-2">
                   Template
                 </Label>
-                <select id={`template-${props.conversationId}`} className={cn(fieldClass, 'h-9 py-0')} value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                <NativeSelect id={`template-${props.conversationId}`} wrapperClassName="w-full" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
                   {props.templates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.language}, {t.category.toLowerCase()})
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               {(template?.variables ?? []).map((v) => (
                 <div key={v} className="flex flex-col gap-1.5">
                   <Label htmlFor={`var-${props.conversationId}-${v}`} className="text-fg-2">
                     Variable {v}
                   </Label>
-                  <input id={`var-${props.conversationId}-${v}`} className={fieldClass} value={variables[v] ?? ''} onChange={(e) => setVariables((prev) => ({ ...prev, [v]: e.target.value }))} />
+                  <Input id={`var-${props.conversationId}-${v}`} value={variables[v] ?? ''} onChange={(e) => setVariables((prev) => ({ ...prev, [v]: e.target.value }))} />
                 </div>
               ))}
             </div>
@@ -275,12 +289,21 @@ function EligibilityLine(props: ComposerProps & { now: number; closedOnClient: b
     line = props.freeform.eligible ? 'Email can be sent to this contact.' : `${props.freeform.labels.join('. ')}.`;
     tone = props.freeform.eligible ? 'text-fg-1' : 'text-warning';
   }
+  const showBar = props.channel === 'WHATSAPP' && end !== null && !props.closedOnClient && props.refusal === null;
+  const left = end ? end.getTime() - props.now : 0;
+  const fraction = Math.max(0.02, Math.min(1, left / DAY_MS));
+  const barTone = left > 6 * 60 * 60 * 1000 ? 'bg-success' : left > 60 * 60 * 1000 ? 'bg-warning' : 'bg-danger';
   return (
-    <div className="flex flex-col gap-0.5" data-composer-eligibility>
+    <div className="flex flex-col gap-1" data-composer-eligibility>
       <p className={cn('flex items-center gap-1.5 text-sm font-medium', tone)}>
         <Clock aria-hidden="true" className="size-4 shrink-0" />
         <span>{line}</span>
       </p>
+      {showBar ? (
+        <span aria-hidden="true" className="my-0.5 block h-1 w-full max-w-sm overflow-hidden rounded-full bg-bg-3">
+          <span className={cn('block h-full rounded-full transition-[width] duration-slow ease-enter', barTone)} style={{ width: `${Math.round(fraction * 100)}%` }} />
+        </span>
+      ) : null}
       {props.freeform.deferrable ? <p className="text-xs text-warning">Sends will wait: {props.freeform.labels.join('; ')}.</p> : null}
       <p className="text-xs text-fg-2">Final check happens at send.</p>
     </div>

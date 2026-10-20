@@ -41,7 +41,14 @@ export type AuraPresetConfig = {
   restZ: number;
   /** World width that must stay visible at rest; on narrower boxes the whole scene scales down. */
   frameWidth: number;
-  core: { position: Vec3; scale: number };
+  /*
+   * The energy core. amp/freq/flow drive the noise displacement (height, scale, speed); energy 0 is
+   * the calm look (aura body, ice bands, a thin flare silhouette) and 1 the hero look (deeper volt
+   * valleys, palette-sheen iso-bands, a pulsing hot centre, zest and flare fringes).
+   */
+  core: { position: Vec3; scale: number; amp: number; freq: number; flow: number; energy: number };
+  /** Multiplier on the halo shells' intensity (the fake bloom). */
+  haloGain: number;
   dustRadius: number;
   streams: boolean;
   aurora: boolean;
@@ -58,7 +65,8 @@ export const AURA_PRESETS: Record<AuraPreset, AuraPresetConfig> = {
     startZ: 7.9,
     restZ: 7,
     frameWidth: 6.6,
-    core: { position: [0, 0, 0], scale: 1 },
+    core: { position: [0, 0, 0], scale: 1, amp: 0.2, freq: 1.15, flow: 1.35, energy: 1 },
+    haloGain: 1.45,
     dustRadius: 3.2,
     streams: true,
     aurora: false,
@@ -73,7 +81,8 @@ export const AURA_PRESETS: Record<AuraPreset, AuraPresetConfig> = {
     startZ: 7.9,
     restZ: 7,
     frameWidth: 6,
-    core: { position: [1.6, -0.3, 0], scale: 1 },
+    core: { position: [1.6, -0.3, 0], scale: 1, amp: 0.16, freq: 1.05, flow: 1, energy: 0 },
+    haloGain: 1,
     dustRadius: 3.2,
     streams: false,
     aurora: true,
@@ -88,7 +97,8 @@ export const AURA_PRESETS: Record<AuraPreset, AuraPresetConfig> = {
     startZ: 6.2,
     restZ: 6.2,
     frameWidth: 5.6,
-    core: { position: [0, 0, 0], scale: 1.15 },
+    core: { position: [0, 0, 0], scale: 1.15, amp: 0.16, freq: 1.05, flow: 1, energy: 0 },
+    haloGain: 1,
     dustRadius: 2.2,
     streams: false,
     aurora: false,

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c2333"/>
+      <stop offset="1" stop-color="#0c111c"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="7" y1="16" x2="25" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00e1f3"/>
+      <stop offset="1" stop-color="#5c94ff"/>
+    </linearGradient>
+    <radialGradient id="core">
+      <stop offset="0" stop-color="#d1f6fd"/>
+      <stop offset="1" stop-color="#00e1f3"/>
+    </radialGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="url(#tile)" stroke="#2f3747"/>
+  <circle cx="16" cy="16" r="8.5" fill="none" stroke="url(#ring)" stroke-width="2.25"/>
+  <circle cx="16" cy="16" r="3" fill="url(#core)"/>
+  <path d="M5.75 9.25 11.4 12.9" stroke="#aff03c" stroke-width="1.9" stroke-linecap="round"/>
+  <path d="M5.75 22.75l5.65-3.65" stroke="#ff47c3" stroke-width="1.9" stroke-linecap="round"/>
+  <path d="M26.25 16h-6.4" stroke="#d1f6fd" stroke-width="1.9" stroke-linecap="round"/>
+</svg>
