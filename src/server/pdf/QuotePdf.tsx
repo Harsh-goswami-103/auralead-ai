@@ -5,9 +5,13 @@
  *  - Inter (with U+20B9) is registered by render.ts and embedded as a TrueType subset.
  *  - Every page has a fixed footer with the quote number, version, short hash, the P8 notice
  *    "Quotation, not a tax invoice" and "Page n of N".
- *  - Rows never split across pages; the totals and terms stay together after the last row, so a
- *    long quote paginates with its total on the last page. (No page-level lineHeight: it stops
- *    react-pdf from drawing fixed absolute elements such as the footer.)
+ *  - Rows never split across pages, and the totals block never splits, so the whole total sits on
+ *    one page after the last row. The scope and the terms (each up to 4000 characters) are flowing
+ *    text that continues onto further pages: react-pdf drops whatever does not fit in a
+ *    `wrap={false}` block taller than a page, which would silently cut contractual text (ADR-77).
+ *    Their headings keep at least a few lines of text with them (`minPresenceAhead`). (No
+ *    page-level lineHeight: it stops react-pdf from drawing fixed absolute elements such as the
+ *    footer.)
  *  - DEMO prints the "DEMO: not a valid offer" watermark on every page (plan §10).
  * No HTML engine is involved: there is no URL, file or script surface in this document.
  */
@@ -15,6 +19,9 @@ import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import type { QuoteRenderModel } from '@/server/services/quotes/render-model';
 
 export const PDF_FONT_FAMILY = 'Inter';
+
+/** A section heading is never the last thing on a page: at least this much (pt) follows it there. */
+const KEEP_WITH_HEADING = 36;
 
 const INK_1 = '#111318';
 const INK_2 = '#4A5060';
@@ -83,8 +90,10 @@ export function QuotePdf({ model }: { model: QuoteRenderModel }) {
           <Text>{model.recipient.name}</Text>
         </View>
 
-        <View style={s.section} wrap={false}>
-          <Text style={s.label}>Scope</Text>
+        <View style={s.section}>
+          <Text style={s.label} minPresenceAhead={KEEP_WITH_HEADING}>
+            Scope
+          </Text>
           <Text>{model.scopeText}</Text>
         </View>
         <View style={s.section} wrap={false}>
@@ -109,7 +118,7 @@ export function QuotePdf({ model }: { model: QuoteRenderModel }) {
           </View>
         ))}
 
-        {/* Totals and terms stay together, so the total is on the last page. */}
+        {/* The totals never split; the terms after them flow onto further pages when long. */}
         <View wrap={false}>
           <View style={s.totals}>
             <View style={s.totalRow}>
@@ -139,14 +148,16 @@ export function QuotePdf({ model }: { model: QuoteRenderModel }) {
               <Text>{t.total}</Text>
             </View>
           </View>
-
-          {model.sender.termsText ? (
-            <View style={s.section}>
-              <Text style={s.label}>Terms</Text>
-              <Text style={s.muted}>{model.sender.termsText}</Text>
-            </View>
-          ) : null}
         </View>
+
+        {model.sender.termsText ? (
+          <View style={s.section}>
+            <Text style={s.label} minPresenceAhead={KEEP_WITH_HEADING}>
+              Terms
+            </Text>
+            <Text style={s.muted}>{model.sender.termsText}</Text>
+          </View>
+        ) : null}
 
         <View style={s.footer} fixed>
           <Text>
