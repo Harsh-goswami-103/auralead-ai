@@ -8,13 +8,16 @@
  *    default; dark ink is used for light brands; a mid-tone brand that suits neither is darkened
  *    under white ink. `band2`, the gradient end, moves away from the ink, so contrast only rises.
  *  - `text` is the brand used as text, links, borders and the focus outline on white or on the
- *    `wash` tint, at least 4.6:1.
+ *    `wash` tint, at least 4.6:1: the brand darkened in OKLCH, hue kept (F14, T27,
+ *    `brandTextColor` in src/lib/branding/contrast.ts, which the branding page preview uses too).
  *  - `wash`, `soft` and `haze` are tints for surfaces and rules (non-text decoration).
  *  - `chip` and `line` are translucent overlays for chips and hairlines inside the band. They move
  *    the band away from the ink, so a chip's text keeps its contrast.
  * Pure and deterministic: hex in, hex out. The values reach the page only as a hashed style
  * block (see `quoteBrandCss`), never as an inline style attribute.
  */
+
+import { brandTextColor } from '@/lib/branding/contrast';
 
 type Rgb = readonly [number, number, number];
 
@@ -98,7 +101,7 @@ export function brandPalette(input: string): BrandPalette {
     band,
     band2: darkInk ? mix(band, WHITE, 0.35) : mix(band, BLACK, 0.32),
     ink,
-    text: untilContrast(brand, BLACK, 4.6, wash),
+    text: brandTextColor(brand, { against: wash, min: 4.6 }).color,
     wash,
     soft: mix(brand, WHITE, 0.8),
     haze: mix(brand, PAPER_CANVAS, 0.8),

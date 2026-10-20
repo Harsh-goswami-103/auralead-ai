@@ -11,6 +11,7 @@ import { PrismaClient, type Prisma } from '@/generated/prisma/client';
 import { FixedClock } from '@/lib/clock';
 import { buildUserContext, type AppCtx } from '@/server/auth/context';
 import { createSession, loadSession } from '@/server/auth/session';
+import { normalizeName } from '@/server/services/leads/normalize';
 import { seedId } from '../../../prisma/seed/ids';
 import { seedDemo } from '../../../prisma/seed/seed';
 import { createTestDb, type TestDb } from '../../support/db';
@@ -128,7 +129,7 @@ export async function insertLead(
     data: {
       workspaceId: opts.workspaceId ?? WS_A,
       displayName: name,
-      nameNormalized: name.toLowerCase(),
+      nameNormalized: normalizeName(name),
       phoneE164: `+9198100${String(leadSeq).padStart(5, '0')}`,
       alternatePhones: [],
       scoreReasons: [],
