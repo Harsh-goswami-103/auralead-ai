@@ -130,6 +130,8 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   'admin.userId': seedId('user', 'admin'),
   'employeeNoCapability.userId': seedId('user', 'neha'),
   'admin.unknownInviteId': 'invitematrixprobe00000000',
+  /** T26: a well-formed lead export id that does not exist. */
+  'leads.unknownExportId': 'exportmatrixprobe00000000',
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {
