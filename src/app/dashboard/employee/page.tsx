@@ -1,7 +1,11 @@
 /**
- * Operator panel home (T09, M1): the workspaces this employee is actively assigned to, with the
- * capabilities and discount cap each assignment grants. Read through the server context; the
- * browser supplies nothing but the session cookie.
+ * Operator panel home (T09, M1; assignment overview T28): the workspaces this employee is actively
+ * assigned to, with the capabilities and discount cap each assignment grants and, per workspace
+ * (06-design §11.2.2 "assigned workspaces with counts needing action, cross-workspace approval
+ * count, integration health summary per workspace"), the stored counts read through that
+ * workspace's own tenant-scoped context: approvals waiting, leads in the last 7 days, integration
+ * health and the active pipeline version, plus links to every workspace section. Read through the
+ * server context; the browser supplies nothing but the session cookie.
  *
  * Look (design spec §6): PageHeader in the operator hue; one spotlight card per assignment with the
  * panel hairline, a workspace tile, the real facts of the assignment (discount cap, number of
@@ -12,15 +16,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, BadgePercent, Building2, ClipboardCheck, FileText, KeyRound, MessagesSquare, Plug, Settings2, Users, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BadgePercent, Building2, ClipboardCheck, FileText, KeyRound, MessagesSquare, Plug, Settings2, ShieldAlert, Users, Workflow, type LucideIcon } from 'lucide-react';
+import { WORKSPACE_SECTIONS, workspaceSectionHref } from '@/components/integrations/sections';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { PageHeader } from '@/components/patterns/PageHeader';
+import { StatTile } from '@/components/patterns/StatTile';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import { Stagger, StaggerItem } from '@/components/visual/Reveal';
 import { SpotlightCard } from '@/components/visual/SpotlightCard';
 import { formatDate } from '@/lib/format/date';
+import { NotFoundError } from '@/lib/errors';
 import { getPageContext } from '@/server/auth/page-context';
+import { getWorkspaceOverview, type WorkspaceOverview } from '@/server/services/shell/employee-overview';
 import { loadEmployeeHome } from '@/server/services/shell/panel-home';
 
 export const metadata: Metadata = { title: 'Assignments' };
@@ -63,10 +71,36 @@ function groupCapabilities(capabilities: readonly string[]) {
   return CAPABILITY_AREAS.map((area) => ({ ...area, capabilities: capabilities.filter((c) => areaOf(c) === area.key) })).filter((g) => g.capabilities.length > 0);
 }
 
+/** One workspace's counts through its own `[ws]`-resolved context; null if the assignment just ended. */
+async function overviewFor(slug: string): Promise<WorkspaceOverview | null> {
+  try {
+    const scoped = await getPageContext({ workspaceSlug: slug });
+    return scoped ? await getWorkspaceOverview(scoped.ctx) : null;
+  } catch (error) {
+    if (error instanceof NotFoundError) return null;
+    throw error;
+  }
+}
+
+function integrationSummary(o: WorkspaceOverview, mode: 'demo' | 'live'): string {
+  const i = o.integrations;
+  const parts = [mode === 'demo' ? `${i.simulated} simulated` : `${i.connected} connected`];
+  if (i.attention > 0) parts.push(`${i.attention} need attention`);
+  parts.push(`${i.notConfigured} not configured`);
+  return parts.join(' · ');
+}
+
+const SECONDARY_SECTIONS = WORKSPACE_SECTIONS.filter((s) => s.segment !== 'leads' && s.segment !== 'approvals');
+
 export default async function EmployeeHomePage() {
   const page = await getPageContext();
   if (!page) redirect('/login');
   const home = await loadEmployeeHome(page.ctx);
+  const overviews = new Map(await Promise.all(home.assignments.map(async (a) => [a.slug, await overviewFor(a.slug)] as const)));
+  const waitingTotal = [...overviews.values()].reduce((n, o) => n + (o?.pendingApprovals ?? 0), 0);
+  const attentionTotal = [...overviews.values()].reduce((n, o) => n + (o?.integrations.attention ?? 0), 0);
+  const newLeadsTotal = [...overviews.values()].reduce((n, o) => n + (o?.newLeads7d ?? 0), 0);
+  const readable = [...overviews.values()].filter((o) => o !== null && o.pendingApprovals !== null).length;
   const count = home.assignments.length;
   const inactive = home.inactiveCount;
   // One primary link on the page: the current workspace's console, or the first one's.
@@ -92,6 +126,20 @@ export default async function EmployeeHomePage() {
           ) : null
         }
       />
+
+      {count > 0 ? (
+        <Stagger className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StaggerItem>
+            <StatTile label="Approvals waiting" value={waitingTotal} icon={<ClipboardCheck />} hint={`Across ${readable} ${readable === 1 ? 'workspace' : 'workspaces'} you can read`} href="/dashboard/employee/approvals" />
+          </StaggerItem>
+          <StaggerItem>
+            <StatTile label="New leads, last 7 days" value={newLeadsTotal} icon={<Users />} tone="neutral" hint={`In ${readable} ${readable === 1 ? 'workspace' : 'workspaces'} you can read`} />
+          </StaggerItem>
+          <StaggerItem className="col-span-2 sm:col-span-1">
+            <StatTile label="Integrations needing attention" value={attentionTotal} icon={<ShieldAlert />} tone={attentionTotal > 0 ? 'warning' : 'neutral'} hint="Verification required, limited, failed or revoked" />
+          </StaggerItem>
+        </Stagger>
+      ) : null}
 
       {count === 0 ? (
         <EmptyState
@@ -151,6 +199,8 @@ export default async function EmployeeHomePage() {
                   </div>
                 </div>
 
+                <WorkspaceFacts overview={overviews.get(a.slug) ?? null} mode={page.ctx.mode} slug={a.slug} />
+
                 <div className="flex flex-col gap-2.5">
                   <h3 className="text-xs font-medium tracking-[0.08em] text-fg-2 uppercase">What you can do here</h3>
                   {a.capabilities.length === 0 ? (
@@ -204,11 +254,59 @@ export default async function EmployeeHomePage() {
                     Approval queue<span className="sr-only"> for {a.name}</span>
                   </Link>
                 </div>
+                <nav aria-label={`More sections of ${a.name}`} className="-mt-2 flex flex-wrap gap-1">
+                  {SECONDARY_SECTIONS.map((section) => {
+                    const SectionIcon = section.icon;
+                    return (
+                      <Link key={section.segment} href={workspaceSectionHref(a.slug, section.segment)} className={buttonVariants({ variant: 'ghost', size: 'xs', className: 'text-fg-2' })}>
+                        <SectionIcon aria-hidden="true" />
+                        {section.label}
+                        <span className="sr-only"> for {a.name}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
               </SpotlightCard>
             </StaggerItem>
           ))}
         </Stagger>
       )}
     </div>
+  );
+}
+
+function WorkspaceFacts({ overview, mode, slug }: { overview: WorkspaceOverview | null; mode: 'demo' | 'live'; slug: string }) {
+  if (!overview) return null;
+  return (
+    <dl className="grid gap-2 sm:grid-cols-2">
+      <div className="flex flex-col rounded-lg border border-border-subtle bg-bg-2/50 px-3 py-2">
+        <dt className="text-xs text-fg-2">Approvals waiting</dt>
+        <dd className="tabular text-sm font-medium text-fg-1">{overview.pendingApprovals === null ? 'Not readable with your assignment' : overview.pendingApprovals}</dd>
+      </div>
+      <div className="flex flex-col rounded-lg border border-border-subtle bg-bg-2/50 px-3 py-2">
+        <dt className="text-xs text-fg-2">New leads, last 7 days</dt>
+        <dd className="tabular text-sm font-medium text-fg-1">{overview.newLeads7d === null ? 'Not readable with your assignment' : overview.newLeads7d}</dd>
+      </div>
+      <div className="flex flex-col rounded-lg border border-border-subtle bg-bg-2/50 px-3 py-2">
+        <dt className="flex items-center gap-1.5 text-xs text-fg-2">
+          <Plug aria-hidden="true" className="size-3.5" />
+          Integrations
+        </dt>
+        <dd className="text-sm text-fg-1">
+          <Link href={workspaceSectionHref(slug, 'integrations')} className="underline-offset-4 hover:underline">
+            {integrationSummary(overview, mode)}
+          </Link>
+        </dd>
+      </div>
+      <div className="flex flex-col rounded-lg border border-border-subtle bg-bg-2/50 px-3 py-2">
+        <dt className="flex items-center gap-1.5 text-xs text-fg-2">
+          <Workflow aria-hidden="true" className="size-3.5" />
+          Pipeline
+        </dt>
+        <dd className="text-sm text-fg-1">
+          {overview.pipeline ? `v${overview.pipeline.version}, ${overview.pipeline.approvalMode === 'HUMAN' ? 'human approval' : 'policy approval'}` : 'None active'}
+        </dd>
+      </div>
+    </dl>
   );
 }
