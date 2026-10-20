@@ -61,7 +61,10 @@ afterAll(async () => {
 describe('client panel Leads', () => {
   it('lists 50 of 51 leads with the next page link, the stage menus and the export action', async () => {
     await signInAs('owner');
-    const text = html(await UserLeadsPage({ searchParams: sp({}) }));
+    const page = await UserLeadsPage({ searchParams: sp({}) });
+    // No bulk selection in the client panel (bulk sends are the operator console's).
+    expect(renderToStaticMarkup(createElement(CsrfProvider as unknown as FC<{ token: string }>, { token: 'csrf' }, page as ReactElement))).not.toContain('type="checkbox"');
+    const text = html(page);
     expect(text).toContain('51 leads match');
     expect(text).toContain('50 on this page');
     expect(text).toContain('Next page');
@@ -117,7 +120,10 @@ describe('client panel Leads', () => {
 describe('operator console', () => {
   it('the lead console has the full leads area; the lead page has the stage control, consent and source', async () => {
     await signInAs('employee');
-    const text = html(await EmployeeLeadsPage({ params: Promise.resolve({ ws: 'smile-avenue-dental' }), searchParams: sp({ stage: 'REPLIED' }) }));
+    const page = await EmployeeLeadsPage({ params: Promise.resolve({ ws: 'smile-avenue-dental' }), searchParams: sp({ stage: 'REPLIED' }) });
+    // Bulk selection: one checkbox per row plus the page checkbox (the operator console only).
+    expect(renderToStaticMarkup(createElement(CsrfProvider as unknown as FC<{ token: string }>, { token: 'csrf' }, page as ReactElement))).toContain('aria-label="Select every lead on this page"');
+    const text = html(page);
     expect(text).toContain('Lead console');
     expect(text).toContain('25 leads match the search and filters');
     expect(text).toContain('Scoring');

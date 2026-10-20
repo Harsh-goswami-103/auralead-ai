@@ -9,6 +9,7 @@ import type { LeadsWorkspaceProps } from '@/components/leads/LeadsWorkspace';
 import { AppError } from '@/lib/errors';
 import type { LeadPageParams } from '@/lib/schemas/leads';
 import type { AppCtx } from '@/server/auth/context';
+import { loadBulkOptions } from '@/server/services/leads/bulk-options';
 import { listLeadExports } from '@/server/services/leads/export';
 import { leadRowDto, listLeads, loadLeadBoard, loadLeadsAccess, type LeadRow, type LeadsAccess } from '@/server/services/leads/list';
 
@@ -17,7 +18,7 @@ export type LeadsAreaData = { access: LeadsAccess; workspace: Omit<LeadsWorkspac
 export async function loadLeadsArea(
   ctx: AppCtx,
   params: LeadPageParams,
-  opts: { basePath: string; rowHref: (row: LeadRow) => string; workspaceSlug?: string; gates: { move: string; export: string } },
+  opts: { basePath: string; rowHref: (row: LeadRow) => string; workspaceSlug?: string; gates: { move: string; export: string }; bulk?: boolean },
 ): Promise<LeadsAreaData> {
   const access = await loadLeadsAccess(ctx);
   if (!access.canRead) return { access, workspace: null };
@@ -43,6 +44,7 @@ export async function loadLeadsArea(
   }
   const exports = access.canExport ? await listLeadExports(ctx) : [];
   const gate = (reason: string): Gate => ({ category: 'permission', reason });
+  const bulk = opts.bulk ? await loadBulkOptions(ctx) : null;
 
   return {
     access,
@@ -57,6 +59,13 @@ export async function loadLeadsArea(
       board: data.board,
       exports,
       cursorReset,
+      bulk: bulk
+        ? {
+            workspaceName: access.workspace.name,
+            templates: bulk.templates,
+            sendGate: bulk.canConfirm ? null : gate(`Bulk sends need ${bulk.missing.join(' and ')}, which your assignment does not include. A super admin can grant them from the people page.`),
+          }
+        : undefined,
     },
   };
 }

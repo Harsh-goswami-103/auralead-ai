@@ -11,6 +11,8 @@ import { EmptyState } from '@/components/patterns/EmptyState';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import type { Gate } from '@/components/patterns/GatedAction';
 import { hasLeadFilters, LEAD_SORT_LABELS, LEAD_SORTS, leadPageSearch, type BoardColumnDto, type CappedCountDto, type LeadExportDto, type LeadPageParams, type LeadRowDto, type LeadSort } from '@/lib/schemas/leads';
+import { BulkLeadsTable } from './BulkLeadsTable';
+import type { BulkTemplateOption } from './BulkSendPanel';
 import { LeadBoard } from './LeadBoard';
 import { LeadExportPanel } from './LeadExportPanel';
 import { LeadsTable } from './LeadsTable';
@@ -32,6 +34,8 @@ export type LeadsWorkspaceProps = {
   cursorReset: boolean;
   /** Shown instead of the list when the workspace has no lead at all. */
   emptyWorkspace: ReactNode | null;
+  /** Operator console: row selection and bulk send over the selection (needs workspaceSlug). */
+  bulk?: { workspaceName: string; templates: BulkTemplateOption[]; sendGate: Gate | null };
 };
 
 export function LeadsWorkspace(props: LeadsWorkspaceProps) {
@@ -58,21 +62,25 @@ export function LeadsWorkspace(props: LeadsWorkspaceProps) {
   } else if (props.list) {
     const list = props.list;
     const sortHrefs = Object.fromEntries(LEAD_SORTS.map((s) => [s, href(leadPageSearch(firstPage, { sort: s }))])) as Record<LeadSort, string>;
-    body = (
-      <LeadsTable
-        rows={list.rows}
-        total={list.total}
-        sort={params.sort}
-        timeZone={props.timeZone}
-        sortHrefs={sortHrefs}
-        prevHref={list.prevCursor ? href(leadPageSearch(listState, { cursor: list.prevCursor, dir: 'prev' })) : null}
-        nextHref={list.nextCursor ? href(leadPageSearch(listState, { cursor: list.nextCursor, dir: 'next' })) : null}
-        firstHref={params.cursor ? href(leadPageSearch(firstPage)) : null}
-        canMove={props.moveGate === null}
-        workspaceSlug={props.workspaceSlug}
-        caption={`Leads, ${LEAD_SORT_LABELS[params.sort].toLowerCase()}`}
-      />
-    );
+    const tableProps = {
+      rows: list.rows,
+      total: list.total,
+      sort: params.sort,
+      timeZone: props.timeZone,
+      sortHrefs,
+      prevHref: list.prevCursor ? href(leadPageSearch(listState, { cursor: list.prevCursor, dir: 'prev' })) : null,
+      nextHref: list.nextCursor ? href(leadPageSearch(listState, { cursor: list.nextCursor, dir: 'next' })) : null,
+      firstHref: params.cursor ? href(leadPageSearch(firstPage)) : null,
+      canMove: props.moveGate === null,
+      workspaceSlug: props.workspaceSlug,
+      caption: `Leads, ${LEAD_SORT_LABELS[params.sort].toLowerCase()}`,
+    };
+    body =
+      props.bulk && props.workspaceSlug ? (
+        <BulkLeadsTable {...tableProps} workspaceSlug={props.workspaceSlug} workspaceName={props.bulk.workspaceName} templates={props.bulk.templates} sendGate={props.bulk.sendGate} />
+      ) : (
+        <LeadsTable {...tableProps} />
+      );
   } else body = null;
 
   const total = props.board?.total ?? props.list?.total ?? null;

@@ -114,6 +114,7 @@ export default async function EmployeeLeadConsolePage({
         basePath: base,
         rowHref: (row) => `${base}/${encodeURIComponent(row.id)}`,
         workspaceSlug: data.workspace.slug,
+        bulk: true,
         gates: {
           move: 'Your assignment does not include leads.write, which moving leads needs. A super admin can grant it from the people page.',
           export: 'Your assignment does not include leads.export. A super admin can grant it from the people page.',
