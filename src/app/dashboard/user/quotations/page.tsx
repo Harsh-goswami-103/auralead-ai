@@ -2,19 +2,25 @@
  * Client Quotations list (T15; 06-design "User Quotations"): every quotation of the workspace,
  * newest activity first, with the status a reader should see (an approved or sent quote past its
  * validity reads Expired before the sweep runs), the current version, its persisted total and the
- * validity date. Read on the server through the tenant-scoped context. Filters are T27's.
+ * validity date. Read on the server through the tenant-scoped context.
  *
- * Aurora look (design spec §6-§7): PageHeader with the one primary action, a row of status counts
- * computed from the listed rows only (truthful: "in this list" when the list is capped), and a
- * neutral table (no colored cells, money in text-1) whose rows become cards below md with the total
- * kept visible; on a phone the whole card opens the quotation.
+ * Filters (T27): a plain GET form (works without JavaScript; the URL is shareable and Back works)
+ * with a search over the quote number and the lead's normalised name, the status a reader sees and
+ * "needs pricing review". The status chips are links that set the status filter; their counts
+ * cover every quotation matching the search, not just the listed rows (services/quotes/list.ts).
+ *
+ * Aurora look (design spec §6-§7): PageHeader with the one primary action, the filter bar, the
+ * status chips, and a neutral table (no colored cells, money in text-1) whose rows become cards
+ * below md with the total kept visible; on a phone the whole card opens the quotation.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { FilePlus2, FileText, TriangleAlert } from 'lucide-react';
+import { FilePlus2, FileText, Search, SearchX, TriangleAlert, X } from 'lucide-react';
 import { EmptyState } from '@/components/patterns/EmptyState';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { TONE_CLASSES } from '@/components/patterns/status-vocabulary';
 import { buttonVariants } from '@/components/ui/button';
@@ -26,7 +32,8 @@ import { formatDate } from '@/lib/format/date';
 import { formatINR } from '@/lib/money';
 import { getPageContext } from '@/server/auth/page-context';
 import { hasCapability } from '@/server/auth/guards';
-import { listQuotes, QUOTE_LIST_LIMIT } from '@/server/services/quotes/versioning';
+import { countQuotesByStatus, hasQuoteListFilters, listQuotesFiltered, parseQuoteListFilters, QUOTE_SEARCH_MAX, type QuoteListFilters } from '@/server/services/quotes/list';
+import { QUOTE_LIST_LIMIT } from '@/server/services/quotes/versioning';
 import { QUOTE_STATUS_VOCABULARY, QuoteStatusBadge } from './quote-status';
 
 export const metadata: Metadata = { title: 'Quotations' };
@@ -39,14 +46,70 @@ function CardLabel({ children }: { children: ReactNode }) {
   return <span className="block text-xs text-fg-3 md:hidden">{children}</span>;
 }
 
-export default async function QuotationsPage() {
+const BASE = '/dashboard/user/quotations';
+
+function hrefWith(filters: QuoteListFilters): string {
+  const params = new URLSearchParams();
+  if (filters.q) params.set('q', filters.q);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.needsReview) params.set('review', '1');
+  const query = params.toString();
+  return query ? `${BASE}?${query}` : BASE;
+}
+
+function FilterBar(props: { filters: QuoteListFilters }) {
+  const { filters } = props;
+  return (
+    <form method="get" action={BASE} role="search" aria-label="Filter quotations" className="flex flex-wrap items-end gap-3 rounded-xl border border-border-subtle bg-bg-1/80 p-3 sm:p-4">
+      <label className="flex min-w-0 flex-[1_1_16rem] flex-col gap-1.5 text-sm text-fg-1">
+        Search
+        <span className="relative">
+          <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
+          <Input type="search" name="q" defaultValue={filters.q ?? ''} maxLength={QUOTE_SEARCH_MAX} placeholder="Quote number or lead name" className="pl-9" />
+        </span>
+      </label>
+      <label className="flex flex-[0_1_12rem] flex-col gap-1.5 text-sm text-fg-1">
+        Status
+        <NativeSelect name="status" defaultValue={filters.status ?? ''}>
+          <option value="">All statuses</option>
+          {STATUS_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {QUOTE_STATUS_VOCABULARY[s].label}
+            </option>
+          ))}
+        </NativeSelect>
+      </label>
+      <label className="flex min-h-11 items-center gap-2 text-sm text-fg-1 lg:min-h-9">
+        <input type="checkbox" name="review" value="1" defaultChecked={filters.needsReview === true} className="size-4 accent-cyan" />
+        Needs pricing review
+      </label>
+      <div className="flex items-center gap-2">
+        <button type="submit" className={buttonVariants({ variant: 'secondary' })}>
+          Apply
+        </button>
+        {hasQuoteListFilters(filters) ? (
+          <Link href={BASE} className={buttonVariants({ variant: 'ghost' })}>
+            <X aria-hidden="true" />
+            Clear filters
+          </Link>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function QuotationsPage(props: { searchParams?: SearchParams } = {}) {
   const page = await getPageContext();
   if (!page) redirect('/login');
   const ctx = page.ctx;
-  const quotes = await listQuotes(ctx, {});
+  const filters = parseQuoteListFilters((await props.searchParams) ?? {});
+  const filtered = hasQuoteListFilters(filters);
+  const [quotes, statusCounts] = await Promise.all([listQuotesFiltered(ctx, filters), countQuotesByStatus(ctx, { q: filters.q, needsReview: filters.needsReview })]);
   const canCreate = hasCapability(ctx, 'quotes.edit');
-  const counts = new Map<QuoteStatus, number>();
-  for (const q of quotes) counts.set(q.effectiveStatus, (counts.get(q.effectiveStatus) ?? 0) + 1);
+  const counts = new Map<QuoteStatus, number>(STATUS_ORDER.filter((s) => statusCounts[s] > 0).map((s) => [s, statusCounts[s]]));
+  const anyQuote = Object.values(statusCounts).some((n) => n > 0) || filtered;
   const capped = quotes.length === QUOTE_LIST_LIMIT;
 
   return (
@@ -67,7 +130,20 @@ export default async function QuotationsPage() {
         }
       />
 
-      {quotes.length === 0 ? (
+      {anyQuote ? <FilterBar filters={filters} /> : null}
+
+      {quotes.length === 0 && filtered ? (
+        <EmptyState
+          icon={<SearchX aria-hidden="true" className="size-5" />}
+          title="No quotations match"
+          description="Nothing matches these filters. Search covers the quote number and the lead's name."
+          action={
+            <Link href={BASE} className={buttonVariants({ variant: 'outline' })}>
+              Clear filters
+            </Link>
+          }
+        />
+      ) : quotes.length === 0 ? (
         <EmptyState
           icon={<FileText aria-hidden="true" className="size-5" />}
           title="No quotations yet"
@@ -83,21 +159,42 @@ export default async function QuotationsPage() {
       ) : (
         <>
           <Reveal delay={0.1}>
-            <ul aria-label="Quotations by status" className="flex flex-wrap items-center gap-2">
+            <ul aria-label={filters.q || filters.needsReview ? 'Matching quotations by status' : 'Quotations by status'} className="flex flex-wrap items-center gap-2">
               {STATUS_ORDER.filter((s) => counts.has(s)).map((s) => {
                 const entry = QUOTE_STATUS_VOCABULARY[s];
                 const Icon = entry.icon;
+                const current = filters.status === s;
                 return (
-                  <li key={s} className={cn('inline-flex items-center gap-1.5 rounded-full border py-1 pr-1 pl-2.5 text-xs font-medium', TONE_CLASSES[entry.tone])}>
-                    <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-                    {entry.label}
-                    <span className="tabular rounded-full bg-bg-0/50 px-1.5 py-px text-fg-1">{counts.get(s)}</span>
+                  <li key={s}>
+                    <Link
+                      href={hrefWith({ ...filters, status: current ? undefined : s })}
+                      aria-current={current ? 'true' : undefined}
+                      className={cn(
+                        'inline-flex min-h-11 items-center gap-1.5 rounded-full border py-1 pr-1 pl-2.5 text-xs font-medium transition-[filter] duration-fast hover:brightness-110 lg:min-h-0',
+                        TONE_CLASSES[entry.tone],
+                        current && 'ring-2 ring-panel/70 ring-offset-2 ring-offset-bg-0',
+                      )}
+                    >
+                      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+                      {entry.label}
+                      <span className="tabular rounded-full bg-bg-0/50 px-1.5 py-px text-fg-1">{counts.get(s)}</span>
+                      {current ? <span className="sr-only"> (filter on; select to clear)</span> : null}
+                    </Link>
                   </li>
                 );
               })}
               <li className="text-xs text-fg-2">
-                {quotes.length} {quotes.length === 1 ? 'quotation' : 'quotations'}
-                {capped ? ' in this list (the latest)' : ''}
+                {filtered ? (
+                  <>
+                    {quotes.length} {quotes.length === 1 ? 'quotation matches' : 'quotations match'}
+                    {capped ? ' (the latest shown)' : ''}
+                  </>
+                ) : (
+                  <>
+                    {quotes.length} {quotes.length === 1 ? 'quotation' : 'quotations'}
+                    {capped ? ' in this list (the latest)' : ''}
+                  </>
+                )}
               </li>
             </ul>
           </Reveal>
@@ -105,7 +202,9 @@ export default async function QuotationsPage() {
           <Reveal variant="fade" delay={0.12} className="relative min-w-0 rounded-xl border border-border-subtle bg-bg-1/80 max-md:border-0 max-md:bg-transparent">
             <div className="relative md:overflow-x-auto">
               <table className="w-full text-left text-sm md:min-w-[44rem]">
-                <caption className="sr-only">Quotations, newest activity first{capped ? `, the latest ${QUOTE_LIST_LIMIT}` : ''}</caption>
+                <caption className="sr-only">
+                  {filtered ? 'Quotations matching the filters' : 'Quotations'}, newest activity first{capped ? `, the latest ${QUOTE_LIST_LIMIT}` : ''}
+                </caption>
                 <thead className="text-xs text-fg-2 max-md:sr-only">
                   <tr className="border-b border-border-subtle">
                     <th scope="col" className="px-4 py-3 font-medium">
