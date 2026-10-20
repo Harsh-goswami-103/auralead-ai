@@ -34,6 +34,7 @@ Slice gate before finishing any task: `npm run typecheck && npm run lint && npm 
 - Import boundaries (plan §3), enforced by ESLint and `tests/unit/arch/*`: `src/lib` is framework-free; services/adapters/jobs/security/pdf never import `next/*` or `server-only`; the DB layer only from `src/server`, `worker`, `prisma/seed`, `scripts`, `tests`; adapters never import services.
 - No `Date.now()` / argument-less `new Date()` in `src/server/**` or `worker/**`: use the injected clock.
 - UI: no empty handlers, no `dangerouslySetInnerHTML`, no TODO or "coming soon", glow utilities only in `src/components/visual/**`. Gate controls with `GatedAction` only for configuration, permission, mode or eligibility (plan §12).
+- UI v2 "Aurora" (ADR-66): colors only from tokens (`src/styles/tokens.css`), panel hue via `[data-panel]`; decorative effects and three.js only in `src/components/visual/**` (three only in `visual/aura`, behind `next/dynamic`); pages compose `PageHeader`, `SectionCard`, `StatTile`, `SourceChip`. No count-ups or invented numbers; status is icon + label; violet is AI only.
 - Money is BigInt paise; mutations go through `/api/app/*` and `/api/admin/*` route handlers, never Server Actions.
 - Stop web and worker before `prisma generate` or `migrate` (Windows file locks).
 - Tests first; no stubs, no skipped tests. Never fake a provider result.
