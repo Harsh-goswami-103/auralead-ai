@@ -26,6 +26,7 @@ import {
   fitScale,
   streamAnchor,
   type AuraPreset,
+  type AuraPresetConfig,
   type AuraStream,
   type AuraTier,
   type OrbitConfig,
@@ -80,22 +81,28 @@ function useDisposable(geometry: THREE.BufferGeometry) {
   useEffect(() => () => geometry.dispose(), [geometry]);
 }
 
-function AuraCore({ detail }: { detail: number }) {
+type CoreLook = AuraPresetConfig['core'];
+
+function AuraCore({ detail, look }: { detail: number; look: CoreLook }) {
+  const { amp, freq, flow, energy } = look;
   const meshRef = useRef<THREE.Mesh>(null);
   const matRef = useRef<TimedMaterial & { uniforms: { uPulse: Num } }>(null);
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uAmp: { value: 0.16 },
-      uFreq: { value: 1.05 },
+      uAmp: { value: amp },
+      uFreq: { value: freq },
+      uFlow: { value: flow },
+      uEnergy: { value: energy },
       uReveal: { value: 0 },
       uPulse: { value: 0 },
       uAura: { value: new THREE.Color(AURA_COLORS.aura) },
       uIce: { value: new THREE.Color(AURA_COLORS.ice) },
       uVolt: { value: new THREE.Color(AURA_COLORS.volt) },
       uFlare: { value: new THREE.Color(AURA_COLORS.flare) },
+      uZest: { value: new THREE.Color(AURA_COLORS.zest) },
     }),
-    [],
+    [amp, freq, flow, energy],
   );
   useShaderClock(matRef);
   useFrame(() => {
@@ -103,8 +110,10 @@ function AuraCore({ detail }: { detail: number }) {
     const mesh = meshRef.current;
     if (!m || !mesh) return;
     const t = m.uniforms.uTime.value;
-    m.uniforms.uPulse.value = 0.5 + 0.5 * Math.sin(t * 2.2);
-    mesh.rotation.y = t * 0.12;
+    /* The hero's hot centre beats (a quick swell, a slow fade); the calm look breathes. */
+    const beat = Math.pow(0.5 + 0.5 * Math.sin(t * 2.2), energy > 0 ? 3 : 1);
+    m.uniforms.uPulse.value = beat;
+    mesh.rotation.y = t * (0.12 + 0.06 * energy);
     mesh.scale.setScalar(THREE.MathUtils.lerp(0.86, 1, reveal(t)));
   });
   return (
@@ -220,7 +229,7 @@ function DashedStream({ stream }: { stream: AuraStream }) {
     const d = Math.min(dt, MAX_DT);
     clockRef.current += d;
     line.material.dashOffset -= d * 0.5;
-    line.material.opacity = 0.75 * reveal(clockRef.current);
+    line.material.opacity = 0.85 * reveal(clockRef.current);
   });
   /* `segments` is omitted on purpose: drei types it as number & boolean, so passing it fails tsc. */
   return (
@@ -230,7 +239,7 @@ function DashedStream({ stream }: { stream: AuraStream }) {
       mid={stream.mid}
       end={stream.to}
       color={stream.color}
-      lineWidth={1.6}
+      lineWidth={2}
       dashed
       dashSize={0.06}
       gapSize={0.1}
@@ -281,7 +290,7 @@ function LeadStreams({ perStream, seed }: { perStream: number; seed: number }) {
     return g;
   }, [perStream, seed]);
   useDisposable(geometry);
-  const uniforms = useMemo(() => ({ uTime: { value: 0 }, uPixelRatio: { value: 1 }, uSize: { value: 80 }, uReveal: { value: 0 } }), []);
+  const uniforms = useMemo(() => ({ uTime: { value: 0 }, uPixelRatio: { value: 1 }, uSize: { value: 96 }, uReveal: { value: 0 } }), []);
   useShaderClock(matRef);
   return (
     <group>
@@ -374,9 +383,9 @@ function AuraContent({ preset, tier, seed = 7 }: { preset: AuraPreset; tier: Aur
       {config.aurora ? <AuroraQuad /> : null}
       <group scale={fit}>
         <group position={config.core.position} scale={config.core.scale}>
-          <AuraCore detail={budget.detail} />
+          <AuraCore detail={budget.detail} look={config.core} />
           {AURA_HALOS.map((h) => (
-            <AuraHalo key={h.scale} scale={h.scale} power={h.power} intensity={h.intensity} a={h.colors[0]} b={h.colors[1]} />
+            <AuraHalo key={h.scale} scale={h.scale} power={h.power} intensity={h.intensity * config.haloGain} a={h.colors[0]} b={h.colors[1]} />
           ))}
           {AURA_ORBITS.map((o) => (
             <OrbitPoints

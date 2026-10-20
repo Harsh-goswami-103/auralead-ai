@@ -1,7 +1,8 @@
 /**
  * StatusBadge (06-design §11.6, F2): icon + label + mode chip, always. `simulated` is required so
  * no caller can render a status without saying whether it came from a simulator; the chip reads
- * "Simulated" (demo tone) or "Live". Server-renderable (no hooks).
+ * "Simulated" (demo tone) or "Live". Server-renderable (no hooks). Aurora look (design spec §6):
+ * rounded tone chip from TONE_CLASSES (12% tint, 35% border), the mode chip inset as a pill.
  */
 import type { IntegrationStatus, MessageStatus } from '@/lib/domain/enums';
 import { DEFAULT_TIMEZONE, formatDateTime } from '@/lib/format/date';
@@ -13,8 +14,8 @@ export function ModeChip({ simulated, className }: { simulated: boolean; classNa
     <span
       data-mode-chip={simulated ? 'simulated' : 'live'}
       className={cn(
-        'inline-flex items-center rounded-xs border px-1.5 text-[11px] leading-4 font-medium',
-        simulated ? 'border-demo/40 bg-demo/10 text-demo' : 'border-border-strong bg-bg-2 text-fg-2',
+        'inline-flex items-center rounded-full border px-1.5 text-[11px] leading-4 font-medium',
+        simulated ? 'border-demo/40 bg-demo/12 text-demo' : 'border-border-strong bg-bg-2 text-fg-2',
         className,
       )}
     >
@@ -33,7 +34,7 @@ function Badge({ entry, simulated, suffix, detail, className }: { entry: StatusE
         data-tone={entry.tone}
         role="img"
         aria-label={`${entry.label}${suffix ? ` ${suffix}` : ''}, ${modeText}`}
-        className={cn('inline-flex w-fit items-center gap-1.5 rounded-sm border py-0.5 pr-1 pl-2 text-xs font-medium', TONE_CLASSES[entry.tone])}
+        className={cn('inline-flex w-fit items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-2 text-xs font-medium', TONE_CLASSES[entry.tone])}
       >
         <Icon aria-hidden="true" className={cn('size-3.5 shrink-0', entry.spinning && 'motion-safe:animate-spin')} />
         <span data-status-label>{entry.label}</span>

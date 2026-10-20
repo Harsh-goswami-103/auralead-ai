@@ -62,18 +62,20 @@ float snoise(vec3 v) {
 }
 `;
 
-/* Core: noise-displaced icosphere; normals rebuilt from two displaced neighbours. */
+/* Core: noise-displaced icosphere; normals rebuilt from two displaced neighbours. uFlow scales the drift speed. */
 export const CORE_VERT = /* glsl */ `
 uniform float uTime;
 uniform float uAmp;
 uniform float uFreq;
+uniform float uFlow;
 uniform float uReveal;
 varying vec3 vNormalV;
 varying vec3 vViewPos;
 varying float vNoise;
 ${SNOISE3}
 float field(vec3 p) {
-  vec3 q = p * uFreq + vec3(0.0, uTime * 0.21, uTime * 0.13);
+  float t = uTime * uFlow;
+  vec3 q = p * uFreq + vec3(0.0, t * 0.21, t * 0.13);
   return snoise(q) * 0.78 + snoise(q * 1.93 + 7.3) * 0.22;
 }
 vec3 displace(vec3 p) {
@@ -98,28 +100,36 @@ void main() {
 `;
 
 /*
- * Body: aura with emissive crests and volt pooling in the valleys that face the camera (depth);
+ * Two looks share one program (no extra shader compile), blended by uEnergy (per preset).
+ * Calm (0): aura with emissive crests and volt pooling in the valleys that face the camera (depth);
  * ice draws the contour bands and the hot centre. A broad aura fresnel glows over the face; ice and
  * flare live only on the outer rim, where a travelling sweep runs aura -> ice -> flare. Flare takes
  * the tightest rim (the silhouette), replaces the ice rim instead of adding to it and stays below
  * clipping, so the hot-pink fringe keeps its hue and never washes over aura or volt into violet.
+ * Vivid (1, the landing hero): a key-lit aura body over deep volt valleys with ice crests; iso-bands
+ * that travel across the surface as thin white-hot lines inside soft glows colored by a zest -> aura
+ * -> ice sheen; bright veins on the crests; a hot centre that pulses; and a fringe that turns slowly
+ * around the silhouette: zest on one side, flare on the other, ice between them. Flare stays out of
+ * the body (it would meet the volt valleys) and dims the aura rim under it: pink over cyan or blue
+ * reads as the reserved AI violet.
  */
 export const CORE_FRAG = /* glsl */ `
 uniform float uTime;
 uniform float uPulse;
+uniform float uEnergy;
 uniform vec3 uAura;
 uniform vec3 uIce;
 uniform vec3 uVolt;
 uniform vec3 uFlare;
+uniform vec3 uZest;
 varying vec3 vNormalV;
 varying vec3 vViewPos;
 varying float vNoise;
-void main() {
-  vec3 N = normalize(vNormalV);
-  vec3 V = normalize(-vViewPos);
-  float facing = clamp(dot(N, V), 0.0, 1.0);
-  float fres = pow(1.0 - facing, 2.4);
-  float crest = clamp(vNoise * 0.5 + 0.5, 0.0, 1.0);
+vec3 sheen(float x) {
+  x = abs(fract(x) * 2.0 - 1.0);
+  return mix(mix(uZest, uAura, smoothstep(0.0, 0.45, x)), uIce, smoothstep(0.55, 1.0, x));
+}
+vec3 calmCore(float facing, float fres, float crest) {
   float depth = smoothstep(0.55, 0.9, facing);
   float pool = (1.0 - smoothstep(0.15, 0.6, crest)) * depth;
   vec3 body = mix(uAura, uVolt, pool);
@@ -131,8 +141,42 @@ void main() {
   float toFlare = smoothstep(0.52, 0.78, sweep);
   vec3 rim = mix(uAura, uIce, toIce) * pow(1.0 - facing, 4.5) * 2.6 * (1.0 - toFlare) + uFlare * pow(1.0 - facing, 6.0) * 1.35 * toFlare;
   vec3 inner = uIce * pow(facing, 12.0) * (0.14 + 0.2 * uPulse);
-  vec3 color = body * (0.07 + 0.4 * facing * facing) + uAura * glowCrest * 0.55 + mix(uAura, uIce, 0.55) * bands * 0.7 + inner
+  return body * (0.07 + 0.4 * facing * facing) + uAura * glowCrest * 0.55 + mix(uAura, uIce, 0.55) * bands * 0.7 + inner
     + uAura * fres * 2.0 * (1.0 - toIce) + rim;
+}
+vec3 vividCore(vec3 N, float facing, float crest) {
+  vec3 hot = mix(uIce, vec3(1.0), 0.45);
+  float ang = atan(N.y, N.x) + uTime * 0.2;
+  float zestW = smoothstep(0.1, 0.85, cos(ang - 3.6));
+  float flareW = smoothstep(0.2, 0.9, cos(ang - 0.45));
+  float edge = 1.0 - smoothstep(0.15, 0.75, facing);
+  float key = clamp(dot(N, normalize(vec3(-0.45, 0.55, 0.7))), 0.0, 1.0);
+  float valley = (1.0 - smoothstep(0.22, 0.58, crest)) * smoothstep(0.25, 0.8, facing);
+  vec3 body = mix(uAura, uVolt, valley);
+  body = mix(body, uIce, max(smoothstep(0.84, 1.0, crest) * 0.4, flareW * edge));
+  vec3 color = body * (0.03 + 0.34 * key * key + 0.12 * facing * (1.0 - valley));
+  float ph = vNoise * 2.1 - uTime * 0.3;
+  float f = fract(ph) - 0.5;
+  float face = 0.3 + 0.7 * facing;
+  float lit = 0.45 + 0.55 * step(0.5, fract(floor(ph) * 0.5));
+  color += uVolt * valley * 0.09;
+  color += sheen(floor(ph) * 0.31 + uTime * 0.035) * exp(-f * f * 36.0) * 0.46 * face * (1.0 - 0.75 * valley);
+  color += hot * exp(-f * f * 1600.0) * 0.9 * face * lit;
+  color += hot * pow(abs(sin(vNoise * 15.0 + uTime * 1.4)), 30.0) * smoothstep(0.62, 0.95, crest) * 0.55 * facing;
+  color += mix(hot, uAura, valley) * pow(facing, 8.0) * (0.16 + 0.55 * uPulse) * (1.0 - 0.5 * valley) + uAura * pow(facing, 3.0) * 0.12 * uPulse;
+  float rimT = pow(1.0 - facing, 4.0);
+  color += uAura * pow(1.0 - facing, 2.6) * 1.1 * (1.0 - 0.9 * flareW) * (1.0 - 0.6 * zestW);
+  color += mix(uIce, uZest, zestW) * rimT * 2.4 * (1.0 - flareW);
+  color += uFlare * pow(1.0 - facing, 4.2) * 2.6 * flareW;
+  return color;
+}
+void main() {
+  vec3 N = normalize(vNormalV);
+  vec3 V = normalize(-vViewPos);
+  float facing = clamp(dot(N, V), 0.0, 1.0);
+  float fres = pow(1.0 - facing, 2.4);
+  float crest = clamp(vNoise * 0.5 + 0.5, 0.0, 1.0);
+  vec3 color = uEnergy <= 0.0 ? calmCore(facing, fres, crest) : mix(calmCore(facing, fres, crest), vividCore(N, facing, crest), uEnergy);
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
 }
@@ -253,7 +297,7 @@ varying float vAlpha;
 void main() {
   float d = length(gl_PointCoord - 0.5);
   float core = smoothstep(0.18, 0.0, d);
-  float glow = smoothstep(0.5, 0.0, d) * 0.45;
+  float glow = smoothstep(0.5, 0.0, d) * 0.55;
   float a = (core + glow) * vAlpha;
   gl_FragColor = vec4((vColor + core * 0.6) * a, a);
   #include <colorspace_fragment>

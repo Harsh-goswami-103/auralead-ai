@@ -92,6 +92,15 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { token: fixture('invite.unknownToken') },
     calls: [{ method: 'GET', expect: all(200), note: 'the form renders; the token is checked on submit' }],
   },
+  {
+    path: '/',
+    file: 'src/app/(public)/page.tsx',
+    kind: 'page',
+    owner: 'T30',
+    access: 'public',
+    calls: [{ method: 'GET', expect: all(200) }],
+    crawlAs: ['anonymous'],
+  },
 
   // ---- Panel home pages (T09) -----------------------------------------------------------------
   {

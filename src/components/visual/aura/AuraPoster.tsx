@@ -92,6 +92,8 @@ function contourLoops(cx: number, cy: number, r: number, seed: number): { d: str
 }
 
 type PosterGeometry = {
+  /** The preset's core look: 0 calm, 1 vivid (the landing hero). */
+  energy: number;
   viewBox: string;
   core: { cx: number; cy: number; r: number };
   contours: { d: string; pool: boolean }[];
@@ -108,6 +110,7 @@ function buildGeometry(preset: AuraPreset): PosterGeometry {
   const r = config.core.scale;
   const streams = config.streams ? AURA_STREAMS : [];
   return {
+    energy: config.core.energy,
     viewBox: posterViewBox(preset).map(r3).join(' '),
     core: { cx: r3(cx), cy: r3(cy), r: r3(r) },
     contours: contourLoops(cx, cy, r, 11),
@@ -230,43 +233,171 @@ function AuroraLayer({ id }: { id: string }) {
   );
 }
 
+/* A clockwise arc on the core's rim between two angles (radians, SVG y-down). */
+function rimArc(core: PosterGeometry['core'], from: number, to: number, scale = 1): string {
+  const r = r3(core.r * scale);
+  const at = (a: number) => `${r3(core.cx + r * Math.cos(a))} ${r3(core.cy + r * Math.sin(a))}`;
+  return `M${at(from)}A${r} ${r} 0 ${to - from > Math.PI ? 1 : 0} 1 ${at(to)}`;
+}
+
+/* The calm core (auth, tile): volt-tinted centre, teal mid, bright aura -> ice rim, ice contours, flare rim glints. */
+function CalmCore({ id, geometry: g }: { id: string; geometry: PosterGeometry }) {
+  const { core } = g;
+  return (
+    <>
+      <defs>
+        {/* Body sampled from the WebGL frame: volt-tinted centre, teal mid, bright aura -> ice rim. */}
+        <radialGradient id={`${id}-core`} cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor="#4a7cc0" />
+          <stop offset="0.25" stopColor="#3a98bd" />
+          <stop offset="0.5" stopColor="#12879a" />
+          <stop offset="0.74" stopColor="#0d8f9f" />
+          <stop offset="0.86" stopColor="#05a8b7" />
+          <stop offset="0.93" stopColor={aura} />
+          <stop offset="0.975" stopColor="#8ff7ff" />
+          <stop offset="1" stopColor={aura} />
+        </radialGradient>
+        <clipPath id={`${id}-core-clip`}>
+          <circle cx={core.cx} cy={core.cy} r={core.r} />
+        </clipPath>
+        <filter id={`${id}-pool-blur`} x="-0.5" y="-0.5" width="2" height="2">
+          <feGaussianBlur stdDeviation="0.05" />
+        </filter>
+      </defs>
+      <circle cx={core.cx} cy={core.cy} r={core.r} fill={`url(#${id}-core)`} />
+      <g clipPath={`url(#${id}-core-clip)`}>
+        <g filter={`url(#${id}-pool-blur)`}>
+          {g.contours.map((c, i) => (c.pool ? <path key={i} d={c.d} fill={volt} opacity="0.55" /> : null))}
+        </g>
+        {g.contours.map((c, i) => (
+          <path key={i} d={c.d} fill="none" stroke={ice} strokeWidth="1.3" opacity="0.6" vectorEffect="non-scaling-stroke" />
+        ))}
+      </g>
+      <g fill="none" stroke={flare} strokeWidth="2.4" strokeLinecap="round">
+        <path d={rimArc(core, 0.55, 1.25)} vectorEffect="non-scaling-stroke" />
+        <path d={rimArc(core, -1.2, -0.85)} vectorEffect="non-scaling-stroke" />
+      </g>
+    </>
+  );
+}
+
+/* The displaced silhouette of the vivid core: a few low harmonics, like the shader's noise at rest. */
+const wobble = (a: number) => 1 + 0.034 * Math.sin(3 * a + 0.7) + 0.022 * Math.sin(5 * a + 2.1) + 0.012 * Math.sin(7 * a + 4.4);
+
+function wobblePoints(core: PosterGeometry['core'], from: number, to: number, scale = 1): Point[] {
+  const steps = Math.max(8, Math.round(((to - from) / (Math.PI * 2)) * 120));
+  return Array.from({ length: steps + 1 }, (_, i): Point => {
+    const a = from + ((to - from) * i) / steps;
+    const k = core.r * scale * wobble(a);
+    return [core.cx + Math.cos(a) * k, core.cy + Math.sin(a) * k];
+  });
+}
+
+/*
+ * The vivid hero core, matching CORE_FRAG at energy 1: deep volt valleys under an aura body, ice
+ * crests, contour bands in the zest -> aura -> ice sheen with white-hot lines, a hot centre, and the
+ * silhouette fringe: flare on the upper right (meeting only ice), zest on the lower left, ice between.
+ */
+function VividCore({ id, geometry: g }: { id: string; geometry: PosterGeometry }) {
+  const { core } = g;
+  const sheen = [ice, zest, aura, ice, aura, zest];
+  const outline = pathOf(wobblePoints(core, 0, Math.PI * 2), true);
+  const arc = (from: number, to: number, scale = 1) => pathOf(wobblePoints(core, from, to, scale));
+  return (
+    <>
+      <defs>
+        <radialGradient id={`${id}-core`} cx="0.44" cy="0.42" r="0.6">
+          <stop offset="0" stopColor="#3b78e6" />
+          <stop offset="0.3" stopColor="#2a73cf" />
+          <stop offset="0.55" stopColor="#0f8fb6" />
+          <stop offset="0.72" stopColor="#06a9c4" />
+          <stop offset="0.82" stopColor="#14cbe0" />
+          <stop offset="0.9" stopColor={ice} />
+          <stop offset="1" stopColor={aura} />
+        </radialGradient>
+        <radialGradient id={`${id}-hot`} cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.7" />
+          <stop offset="0.35" stopColor={ice} stopOpacity="0.28" />
+          <stop offset="1" stopColor={ice} stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id={`${id}-shade`} x1="0.2" y1="0.1" x2="0.85" y2="0.95">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.12" />
+          <stop offset="0.55" stopColor="#000000" stopOpacity="0" />
+          <stop offset="1" stopColor={bg} stopOpacity="0.35" />
+        </linearGradient>
+        <clipPath id={`${id}-core-clip`}>
+          <path d={outline} />
+        </clipPath>
+        <filter id={`${id}-pool-blur`} x="-0.5" y="-0.5" width="2" height="2">
+          <feGaussianBlur stdDeviation="0.06" />
+        </filter>
+        <filter id={`${id}-line-glow`} x="-0.5" y="-0.5" width="2" height="2">
+          <feGaussianBlur stdDeviation="0.025" />
+        </filter>
+        <filter id={`${id}-fringe-glow`} x="-0.5" y="-0.5" width="2" height="2">
+          <feGaussianBlur stdDeviation="0.04" />
+        </filter>
+      </defs>
+      <path d={outline} fill={`url(#${id}-core)`} />
+      <g clipPath={`url(#${id}-core-clip)`}>
+        <g filter={`url(#${id}-pool-blur)`}>
+          {g.contours.map((c, i) => (c.pool ? <path key={i} d={c.d} fill={volt} opacity="0.7" /> : null))}
+        </g>
+        <g filter={`url(#${id}-line-glow)`} fill="none" strokeWidth="5" opacity="0.55">
+          {g.contours.map((c, i) => (
+            <path key={i} d={c.d} stroke={sheen[i % sheen.length]} vectorEffect="non-scaling-stroke" />
+          ))}
+        </g>
+        {g.contours.map((c, i) => (
+          <path key={i} d={c.d} fill="none" stroke="#f4feff" strokeWidth={i % 2 === 0 ? 1.6 : 1.1} opacity="0.85" vectorEffect="non-scaling-stroke" />
+        ))}
+        <path d={outline} fill={`url(#${id}-shade)`} />
+        <circle cx={r3(core.cx - core.r * 0.08)} cy={r3(core.cy - core.r * 0.06)} r={r3(core.r * 0.55)} fill={`url(#${id}-hot)`} />
+      </g>
+      <g fill="none" strokeLinecap="round" filter={`url(#${id}-fringe-glow)`}>
+        <path d={outline} stroke={aura} strokeWidth="5" opacity="0.6" vectorEffect="non-scaling-stroke" />
+        <path d={arc(-1.45, 0.75, 0.985)} stroke={flare} strokeWidth="9" opacity="0.8" vectorEffect="non-scaling-stroke" />
+        <path d={arc(1.95, 3.45, 0.985)} stroke={zest} strokeWidth="9" opacity="0.7" vectorEffect="non-scaling-stroke" />
+      </g>
+      <g fill="none" strokeLinecap="round">
+        <path d={outline} stroke={ice} strokeWidth="1.4" opacity="0.9" vectorEffect="non-scaling-stroke" />
+        <path d={arc(-1.3, 0.6)} stroke={flare} strokeWidth="2.6" vectorEffect="non-scaling-stroke" />
+        <path d={arc(2.05, 3.35)} stroke={zest} strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
+      </g>
+    </>
+  );
+}
+
 export function AuraPoster({ preset, className }: { preset: AuraPreset; className?: string }) {
   const g = GEOMETRY[preset];
   const id = `aura-poster-${preset}`;
-  const { core } = g;
-  const flareArc = (from: number, to: number) =>
-    `M${r3(core.cx + core.r * Math.cos(from))} ${r3(core.cy + core.r * Math.sin(from))}A${core.r} ${core.r} 0 0 1 ${r3(core.cx + core.r * Math.cos(to))} ${r3(core.cy + core.r * Math.sin(to))}`;
   return (
     <svg className={className} aria-hidden="true" focusable="false" data-aura-poster={preset}>
       {preset === 'auth' ? <rect width="100%" height="100%" fill={bg} /> : null}
       {preset === 'auth' ? <AuroraLayer id={id} /> : null}
       <svg viewBox={g.viewBox} preserveAspectRatio="xMidYMid meet" width="100%" height="100%" overflow="visible">
         <defs>
-          {/* Halo falloff measured on the WebGL frame: aura at about 21% just outside the core, gone by 1.45 r. */}
+          {/* Halo falloff measured on the WebGL frame: aura at about 21% just outside the core, gone by 1.45 r;
+              the vivid hero core (haloGain 1.45) burns brighter, with an ice inner ring. */}
           <radialGradient id={`${id}-halo`}>
-            <stop offset="0.62" stopColor={aura} stopOpacity="0.42" />
-            <stop offset="0.7" stopColor={aura} stopOpacity="0.22" />
-            <stop offset="0.8" stopColor={volt} stopOpacity="0.12" />
-            <stop offset="0.9" stopColor={volt} stopOpacity="0.05" />
-            <stop offset="1" stopColor={volt} stopOpacity="0" />
+            {g.energy > 0 ? (
+              <>
+                <stop offset="0.6" stopColor={ice} stopOpacity="0.7" />
+                <stop offset="0.66" stopColor={aura} stopOpacity="0.42" />
+                <stop offset="0.76" stopColor={aura} stopOpacity="0.16" />
+                <stop offset="0.88" stopColor={volt} stopOpacity="0.07" />
+                <stop offset="1" stopColor={volt} stopOpacity="0" />
+              </>
+            ) : (
+              <>
+                <stop offset="0.62" stopColor={aura} stopOpacity="0.42" />
+                <stop offset="0.7" stopColor={aura} stopOpacity="0.22" />
+                <stop offset="0.8" stopColor={volt} stopOpacity="0.12" />
+                <stop offset="0.9" stopColor={volt} stopOpacity="0.05" />
+                <stop offset="1" stopColor={volt} stopOpacity="0" />
+              </>
+            )}
           </radialGradient>
-          {/* Body sampled from the WebGL frame: volt-tinted centre, teal mid, bright aura -> ice rim. */}
-          <radialGradient id={`${id}-core`} cx="0.5" cy="0.5" r="0.5">
-            <stop offset="0" stopColor="#4a7cc0" />
-            <stop offset="0.25" stopColor="#3a98bd" />
-            <stop offset="0.5" stopColor="#12879a" />
-            <stop offset="0.74" stopColor="#0d8f9f" />
-            <stop offset="0.86" stopColor="#05a8b7" />
-            <stop offset="0.93" stopColor={aura} />
-            <stop offset="0.975" stopColor="#8ff7ff" />
-            <stop offset="1" stopColor={aura} />
-          </radialGradient>
-          <clipPath id={`${id}-core-clip`}>
-            <circle cx={core.cx} cy={core.cy} r={core.r} />
-          </clipPath>
-          <filter id={`${id}-pool-blur`} x="-0.5" y="-0.5" width="2" height="2">
-            <feGaussianBlur stdDeviation="0.05" />
-          </filter>
           {g.nodes.map((n, i) => (
             <radialGradient key={i} id={`${id}-node-${i}`}>
               <stop offset="0.15" stopColor={n.color} stopOpacity="0.9" />
@@ -275,7 +406,7 @@ export function AuraPoster({ preset, className }: { preset: AuraPreset; classNam
             </radialGradient>
           ))}
         </defs>
-        <circle cx={core.cx} cy={core.cy} r={r3(core.r * 1.6)} fill={`url(#${id}-halo)`} />
+        <circle cx={g.core.cx} cy={g.core.cy} r={r3(g.core.r * 1.6)} fill={`url(#${id}-halo)`} />
         <g fill="none" strokeLinecap="round">
           {g.rings.map((ring, i) => (
             <path key={i} d={ring.back} stroke={ring.color} strokeWidth="1.8" strokeDasharray="0.1 4" opacity="0.32" vectorEffect="non-scaling-stroke" />
@@ -287,19 +418,7 @@ export function AuraPoster({ preset, className }: { preset: AuraPreset; classNam
         {g.dust.map((d, i) => (
           <circle key={i} cx={d.x} cy={d.y} r={d.r} fill={d.color} opacity={d.opacity} />
         ))}
-        <circle cx={core.cx} cy={core.cy} r={core.r} fill={`url(#${id}-core)`} />
-        <g clipPath={`url(#${id}-core-clip)`}>
-          <g filter={`url(#${id}-pool-blur)`}>
-            {g.contours.map((c, i) => (c.pool ? <path key={i} d={c.d} fill={volt} opacity="0.55" /> : null))}
-          </g>
-          {g.contours.map((c, i) => (
-            <path key={i} d={c.d} fill="none" stroke={ice} strokeWidth="1.3" opacity="0.6" vectorEffect="non-scaling-stroke" />
-          ))}
-        </g>
-        <g fill="none" stroke={flare} strokeWidth="2.4" strokeLinecap="round">
-          <path d={flareArc(0.55, 1.25)} vectorEffect="non-scaling-stroke" />
-          <path d={flareArc(-1.2, -0.85)} vectorEffect="non-scaling-stroke" />
-        </g>
+        {g.energy > 0 ? <VividCore id={id} geometry={g} /> : <CalmCore id={id} geometry={g} />}
         <g fill="none" strokeLinecap="round">
           {g.rings.map((ring, i) => (
             <path key={i} d={ring.front} stroke={ring.color} strokeWidth="1.8" strokeDasharray="0.1 4" opacity="0.5" vectorEffect="non-scaling-stroke" />
