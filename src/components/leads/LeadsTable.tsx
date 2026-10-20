@@ -16,7 +16,7 @@
  */
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type SortingState } from '@tanstack/react-table';
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type OnChangeFn, type RowSelectionState, type SortingState } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Mail, Phone } from 'lucide-react';
 import { SourceChip } from '@/components/patterns/SourceChip';
 import { ModeChip } from '@/components/patterns/StatusBadge';
@@ -71,13 +71,45 @@ export type LeadsTableProps = {
   canMove: boolean;
   workspaceSlug?: string;
   caption: string;
+  /**
+   * Row selection for bulk actions (operator console): TanStack's row-selection state keyed by lead
+   * id, so a selection survives paging. Without it the table has no checkbox column.
+   */
+  selection?: { state: RowSelectionState; onChange: OnChangeFn<RowSelectionState> };
 };
 
 export function LeadsTable(props: LeadsTableProps) {
   const router = useRouter();
   const sorting = sortingOf(props.sort);
 
-  const columns: ColumnDef<LeadRowDto>[] = [
+  const columns: ColumnDef<LeadRowDto>[] = [];
+  if (props.selection) {
+    columns.push({
+      id: 'select',
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          aria-label="Select every lead on this page"
+          checked={table.getIsAllPageRowsSelected()}
+          ref={(el) => {
+            if (el) el.indeterminate = !table.getIsAllPageRowsSelected() && table.getIsSomePageRowsSelected();
+          }}
+          onChange={table.getToggleAllPageRowsSelectedHandler()}
+          className="size-4 accent-aura"
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${row.original.displayName}`}
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          className="size-4 accent-aura"
+        />
+      ),
+    });
+  }
+  columns.push(
     {
       id: 'name',
       header: 'Lead',
@@ -135,7 +167,7 @@ export function LeadsTable(props: LeadsTableProps) {
       header: 'Added',
       cell: ({ row }) => <span className="tabular whitespace-nowrap text-fg-2">{formatDateTime(new Date(row.original.createdAt), props.timeZone)}</span>,
     },
-  ];
+  );
   if (props.canMove) {
     columns.push({
       id: 'actions',
@@ -156,7 +188,9 @@ export function LeadsTable(props: LeadsTableProps) {
     manualFiltering: true,
     manualPagination: true,
     enableSortingRemoval: false,
-    state: { sorting },
+    enableRowSelection: props.selection !== undefined,
+    onRowSelectionChange: props.selection?.onChange,
+    state: { sorting, rowSelection: props.selection?.state ?? {} },
   });
 
   return (
