@@ -362,6 +362,27 @@ describe('Meteors and Sparkles', () => {
     expect(second.container.innerHTML).toBe(markup);
   });
 
+  it('pause offscreen and in a hidden tab, like every other loop', () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const { container } = render(
+      <>
+        <Meteors count={3} />
+        <Sparkles count={3} />
+      </>,
+    );
+    const roots = [...container.querySelectorAll<HTMLElement>('[data-visual-motion]')];
+    expect(roots.map((root) => root.dataset.visualMotion)).toEqual(['meteors', 'sparkles']);
+    for (const root of roots) {
+      expect(root.querySelector(':scope > [data-pause-probe]')).not.toBeNull();
+      expect(root.getAttribute('data-paused')).toBe('true');
+    }
+    visibility.mockReturnValue('visible');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    for (const root of roots) expect(root.hasAttribute('data-paused')).toBe(false);
+  });
+
   it('use an integer-only PRNG that repeats per seed', () => {
     const a = mulberry32(42);
     const b = mulberry32(42);
@@ -385,6 +406,30 @@ describe('Marquee', () => {
     expect(copy.getAttribute('aria-hidden')).toBe('true');
     expect(copy.hasAttribute('inert')).toBe(true);
     expect(screen.getAllByRole('link', { name: 'Google Sheets' })).toHaveLength(1);
+  });
+
+  it('has one pause toggle beside the strip that freezes it with its own attribute (WCAG 2.2.2)', () => {
+    const { container } = render(
+      <Marquee>
+        <span>Google Sheets</span>
+      </Marquee>,
+    );
+    const root = container.querySelector('.visual-marquee') as HTMLElement;
+    const buttons = screen.getAllByRole('button', { name: 'Pause scrolling' });
+    expect(buttons).toHaveLength(1);
+    const button = buttons[0]!;
+    // Outside both tracks, so it is never copied into the inert duplicate or carried by the scroll.
+    expect(root.contains(button)).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(root.hasAttribute('data-user-paused')).toBe(true);
+    // Not data-paused: the offscreen observer rewrites that one whenever the strip scrolls into view.
+    expect(root.hasAttribute('data-paused')).toBe(false);
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(root.hasAttribute('data-user-paused')).toBe(false);
+    expect(visualCss.replace(/\s+/g, ' ')).toMatch(/\.visual-marquee\[data-user-paused\] \.visual-marquee__track \{ animation-play-state: paused; \}/);
   });
 });
 

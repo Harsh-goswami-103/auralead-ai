@@ -91,7 +91,7 @@ export function ModeControls(props: ModeControlsProps) {
       {props.humanTakeover ? (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-info/35 bg-[linear-gradient(100deg,color-mix(in_oklab,var(--info)_16%,transparent),color-mix(in_oklab,var(--info)_6%,transparent))] px-3 py-2.5"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-info/35 bg-info/12 px-3 py-2.5"
           data-takeover-banner
         >
           <p className="flex items-center gap-2.5 text-sm font-medium text-fg-1">

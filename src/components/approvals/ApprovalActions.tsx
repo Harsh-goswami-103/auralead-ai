@@ -172,7 +172,9 @@ export function ApprovalActions(props: ApprovalActionsProps) {
                   key={c.channel}
                   data-channel-usable={usable ? 'true' : 'false'}
                   className={cn(
-                    'flex min-h-10 cursor-pointer items-center gap-2 rounded-full border bg-bg-2 py-1.5 pr-3.5 pl-3 text-sm text-fg-1 transition-[border-color,background-color] duration-fast',
+                    'flex min-h-11 cursor-pointer items-center gap-2 rounded-full border bg-bg-2 py-1.5 pr-3.5 pl-3 text-sm text-fg-1 transition-[border-color,background-color] duration-fast',
+                    // 44px tall below 1024px (touch target), 40px on desktop.
+                    'lg:min-h-10',
                     // Keyboard focus rings the whole pill (the radio inside is small and round).
                     'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-aura has-[:focus-visible]:outline-solid',
                     usable

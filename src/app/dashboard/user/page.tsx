@@ -97,7 +97,7 @@ function Row(props: { label: string; icon: ReactNode; hue?: BrandHue; note?: Rea
 const TILE = 'h-full max-sm:[&>div>span]:hidden';
 
 const pricingLink = (
-  <Link href="/dashboard/user/pricing" className="group inline-flex min-h-9 items-center gap-1 text-sm font-medium text-cyan underline-offset-4 hover:underline">
+  <Link href="/dashboard/user/pricing" className="group inline-flex min-h-11 items-center gap-1 text-sm font-medium text-cyan underline-offset-4 hover:underline lg:min-h-9">
     Open Pricing
     <ArrowRight aria-hidden="true" className="size-3.5 transition-transform duration-fast motion-safe:group-hover:translate-x-0.5" />
   </Link>
@@ -158,7 +158,7 @@ export default async function UserHomePage() {
                   <span className="text-base font-medium text-fg-2"> / {home.services.length}</span>
                 </>
               }
-              hint={priced === home.services.length ? 'Every service has a price' : `${plural(home.services.length - priced, 'service needs', 'services need')} a price`}
+              hint={home.services.length === 0 ? 'No services yet' : priced === home.services.length ? 'Every service has a price' : `${plural(home.services.length - priced, 'service needs', 'services need')} a price`}
               icon={<Tags />}
               href="/dashboard/user/pricing"
               className={cn(TILE, HUE_TILE.aura)}

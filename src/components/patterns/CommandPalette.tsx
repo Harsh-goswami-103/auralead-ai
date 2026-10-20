@@ -11,9 +11,16 @@
  * useSyncExternalStore and a server snapshot, so hydration always agrees. A footer lists the
  * keys at md and up, where a keyboard is likely. Sign out is tinted toward danger, as in the
  * account menu and the More sheet, since it ends the session.
+ *
+ * Closing returns focus to where it was when the palette opened (the trigger, or the element
+ * that had focus when Ctrl/Cmd+K was pressed). The dialog has no Radix trigger, so Radix alone
+ * would drop focus to <body>. After a jump to another section, focus goes to the trigger, which
+ * stays in the top bar while the page changes.
  */
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { touchTarget } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
 import { CornerDownLeft, LogOut, Search } from 'lucide-react';
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { AuroraBackdrop } from '@/components/visual/AuroraBackdrop';
@@ -38,8 +45,16 @@ function Kbd({ children }: { children: ReactNode }) {
   );
 }
 
+/** The element that has focus now, if it is not just the page body. */
+function focusedElement(): HTMLElement | null {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active !== document.body ? active : null;
+}
+
 export function CommandPalette({ panel }: { panel: PanelKey }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const router = useRouter();
   const { signOut } = useSignOut();
   const apple = useApplePlatform();
@@ -49,14 +64,17 @@ export function CommandPalette({ panel }: { panel: PanelKey }) {
     function onKey(event: KeyboardEvent) {
       if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setOpen((o) => !o);
+        // Remember the focus only when opening: Ctrl/Cmd+K while open just closes the palette.
+        if (!open) returnFocusRef.current = focusedElement();
+        setOpen(!open);
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [open]);
 
   function go(href: string) {
+    returnFocusRef.current = triggerRef.current;
     setOpen(false);
     router.push(href);
   }
@@ -64,10 +82,17 @@ export function CommandPalette({ panel }: { panel: PanelKey }) {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          returnFocusRef.current = triggerRef.current;
+          setOpen(true);
+        }}
         aria-keyshortcuts="Control+K Meta+K"
-        className="group relative flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border-subtle bg-bg-2/70 px-2.5 text-fg-2 transition-colors duration-fast ease-enter hover:border-panel/45 hover:bg-bg-3 hover:text-fg-1 max-lg:before:absolute max-lg:before:-inset-1 md:pr-1.5 md:pl-3"
+        className={cn(
+          'group relative flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border-subtle bg-bg-2/70 px-2.5 text-fg-2 transition-colors duration-fast ease-enter hover:border-panel/45 hover:bg-bg-3 hover:text-fg-1 md:pr-1.5 md:pl-3',
+          touchTarget,
+        )}
       >
         <Search aria-hidden="true" className="size-4 transition-colors duration-fast group-hover:text-panel" />
         <span className="hidden md:inline">Jump to</span>
@@ -80,6 +105,12 @@ export function CommandPalette({ panel }: { panel: PanelKey }) {
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const target = returnFocusRef.current;
+          returnFocusRef.current = null;
+          (target?.isConnected ? target : triggerRef.current)?.focus();
+        }}
         title="Command palette"
         description={`Jump to a section of the ${definition.title.toLowerCase()}`}
         className="isolate border-border-strong shadow-overlay"

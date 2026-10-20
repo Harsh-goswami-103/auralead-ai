@@ -177,6 +177,17 @@
     -webkit-text-size-adjust: 100%;
     scrollbar-color: var(--border-strong) transparent;
   }
+  /* Panel pages (PanelShell's [data-panel] root): a control scrolled into view by focus or an anchor
+     stops clear of the sticky top bar, and below lg clear of the fixed bottom tab bar and the DEMO
+     role switcher above it, so it is never hidden behind them (WCAG 2.4.11). */
+  html:has([data-panel]) {
+    scroll-padding-top: calc(var(--topbar-h) + 0.5rem);
+  }
+  @media (width < 64rem) {
+    html:has([data-panel]) {
+      scroll-padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+    }
+  }
   body {
     background: var(--bg-0);
     color: var(--text-1);

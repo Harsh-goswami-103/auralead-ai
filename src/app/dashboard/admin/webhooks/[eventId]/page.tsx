@@ -24,6 +24,8 @@ import { Timeline } from '@/components/admin/Timeline';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { ModeChip } from '@/components/patterns/StatusBadge';
+import { touchTarget } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
 import type { JobStatus } from '@/lib/domain/enums';
 import { NotFoundError } from '@/lib/errors';
 import { formatDateTime } from '@/lib/format/date';
@@ -52,7 +54,7 @@ export default async function WebhookEventPage(props: { params: Promise<{ eventI
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/dashboard/admin/webhooks" className="inline-flex w-fit items-center gap-1.5 text-sm text-cyan underline-offset-4 hover:underline">
+      <Link href="/dashboard/admin/webhooks" className={cn('relative inline-flex w-fit items-center gap-1.5 text-sm text-cyan underline-offset-4 hover:underline', touchTarget)}>
         <ArrowLeft aria-hidden="true" className="size-4" />
         Webhooks
       </Link>
@@ -146,7 +148,7 @@ export default async function WebhookEventPage(props: { params: Promise<{ eventI
           <Timeline
             items={e.jobs.map((j) => {
               const jobStatus = JOB_STATUSES.includes(j.status as JobStatus) ? (j.status as JobStatus) : null;
-              const entry = jobStatus ? jobStatusEntry({ status: jobStatus, label: j.label, attempts: 0 }) : null;
+              const entry = jobStatus ? jobStatusEntry({ status: jobStatus, label: j.label, attempts: j.attempts }) : null;
               return {
                 key: j.id,
                 icon: <Workflow />,

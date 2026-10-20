@@ -2,8 +2,10 @@
  * 06-design F8, F19, F20: a confirm dialog states what will happen, repeats the workspace name
  * for tenant actions, runs the confirm action once (busy while pending), keeps the dialog open
  * with the error and reference when the action fails, and cancels without running anything.
+ * The workspace chip wraps rather than truncating, so a long name stays whole on a phone and
+ * cannot push the dialog's text and buttons past its edge.
  */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmDialog } from '@/components/patterns/ConfirmDialog';
 
@@ -30,6 +32,18 @@ describe('ConfirmDialog', () => {
     expect(dialog.textContent).toContain('Pause Diwali offer?');
     expect(dialog.textContent).toContain('Status changes from Active to Paused. This is audited.');
     expect(dialog.textContent).toContain('Workspace: Alpha Dental');
+  });
+
+  it('keeps the whole workspace name: the chip wraps and no grid track can widen the dialog', () => {
+    openDialog({ onConfirm: vi.fn(), workspaceName: 'Smile Avenue Dental Clinic', destructive: true });
+    const dialog = screen.getByRole('alertdialog');
+    const text = within(dialog).getByText('Workspace: Smile Avenue Dental Clinic', { selector: 'span' });
+    // A nowrap (truncate) line sets the auto grid tracks' min-content wider than a 360px dialog.
+    expect(text.className).not.toMatch(/\btruncate\b|whitespace-nowrap/);
+    expect(text.classList.contains('wrap-anywhere')).toBe(true);
+    expect(text.parentElement!.className).not.toMatch(/\bw-fit\b|\binline-flex\b/);
+    expect(dialog.classList.contains('grid-cols-[minmax(0,1fr)]')).toBe(true);
+    expect(text.closest('[data-slot="alert-dialog-header"]')!.classList.contains('grid-cols-[minmax(0,1fr)]')).toBe(true);
   });
 
   it('confirm runs the action once and closes on success', async () => {

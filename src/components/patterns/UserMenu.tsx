@@ -6,7 +6,8 @@
  *
  * Look (design spec §6): the initials avatar sits in a 2px ring of the panel gradient. The menu
  * opens on an identity card: the avatar, name, email, and a role chip with the panel-hue dot.
- * Sign out tints toward danger on hover, since it ends the session.
+ * Sign out tints toward danger on hover, since it ends the session. The trigger's name starts
+ * with the initials it shows, so speech input can say what it sees (WCAG 2.5.3).
  */
 import { useState } from 'react';
 import { LoaderCircle, LogOut } from 'lucide-react';
@@ -64,7 +65,7 @@ export function UserMenu({ user }: { user: MenuUser }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={`Account: ${user.name}`}
+        aria-label={`${initials(user.name)}, account: ${user.name}`}
         className="group relative flex size-9 shrink-0 items-center justify-center rounded-full transition-transform duration-fast ease-enter max-lg:before:absolute max-lg:before:-inset-1 motion-safe:hover:scale-105 data-[state=open]:scale-105"
       >
         <Avatar name={user.name} className="size-9" />

@@ -112,7 +112,7 @@ function JsonNode(props: { name: string | null; value: Json; depth: number; last
   const size = isArray ? `${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : `${entries.length} ${entries.length === 1 ? 'key' : 'keys'}`;
   return (
     <details open={depth < props.openDepth} className="[&[open]>summary_[data-json-chevron]]:rotate-90 [&[open]>summary_[data-json-preview]]:hidden">
-      <summary className={cn('-ml-5 flex w-fit max-w-full cursor-pointer list-none items-start rounded-sm pr-1 hover:bg-bg-2/70 [&::-webkit-details-marker]:hidden', line)}>
+      <summary className={cn('-ml-5 flex w-fit max-w-full cursor-pointer list-none items-start rounded-sm pr-1 hover:bg-bg-2/70 max-lg:min-h-11 max-lg:items-center [&::-webkit-details-marker]:hidden', line)}>
         <span aria-hidden="true" className="flex h-6 w-5 shrink-0 items-center justify-center text-fg-3">
           <ChevronRight data-json-chevron="" className="size-3.5 motion-safe:transition-transform motion-safe:duration-fast" />
         </span>

@@ -1,10 +1,11 @@
 /**
  * Takeover and resume (T22 over T21; R21, AT10 at the UI, 06-design F7, §11.3 "Takeover/resume")
  * against the built DEMO app and its worker. A customer asks for a person; the reply guard prepares
- * a suggestion for approval (the thread is in "Draft for approval" mode). The owner takes the thread
- * over through a confirmation: the banner "You are handling this thread. AI replies paused." and the
- * event row persist after a reload, the thread list marks it, and the next customer message gets no
- * AI suggestion. "Resume AI" restores the mode, also persisted.
+ * a reply for approval (the thread is in "Draft for approval" mode), marked "Automatic reply" since
+ * no model wrote it. The owner takes the thread over through a confirmation: the banner "You are
+ * handling this thread. AI replies paused." and the event row persist after a reload, the thread
+ * list marks it, and the next customer message gets no prepared reply. "Resume AI" restores the
+ * mode, also persisted.
  */
 import { expect, test } from '@playwright/test';
 import { resetAll, signIn, WORKER_WAIT } from '../support/panel-actions';
@@ -18,15 +19,17 @@ test.afterAll(async ({ request }) => {
   await resetAll(request);
 });
 
-test('take over, no AI suggestion while handled, resume', async ({ page }) => {
+test('take over, no prepared reply while handled, resume', async ({ page }) => {
   test.setTimeout(240_000);
   await signIn(page, 'Workspace owner');
   await openSimulatedThread(page, 'Can I talk to someone about the price?');
   await expect(page.locator('[data-ai-mode="DRAFT"]')).toHaveText('Draft for approval');
 
-  // The guard's suggestion waits for approval (the page re-reads itself while a reply is prepared).
-  const suggestions = page.getByText('AI suggestion · not sent');
+  // The guard's reply waits for approval (the page re-reads itself while a reply is prepared). It is
+  // fixed text, so it says "Automatic reply", as on Approvals, never "AI suggestion".
+  const suggestions = page.locator('[data-draft-marker]');
   await expect(suggestions).toHaveCount(1, WORKER_WAIT);
+  await expect(suggestions).toHaveText('Automatic reply · not sent');
 
   // Take over (confirmation names the workspace).
   await page.getByRole('button', { name: 'Take over' }).click();
@@ -40,12 +43,12 @@ test('take over, no AI suggestion while handled, resume', async ({ page }) => {
   await expect(page.locator('[data-thread-event="MODE"]').filter({ hasText: 'You took over this conversation' })).toBeVisible();
   await expect(page.locator('[data-thread][aria-current="page"]')).toContainText('You are handling');
 
-  // The customer writes again: the message arrives, and no AI suggestion is prepared for it.
+  // The customer writes again: the message arrives, and no reply is prepared for it.
   const second = 'Hello? Are you there?';
   await page.getByLabel('Customer text').fill(second);
   await page.getByRole('button', { name: 'Simulate customer message' }).click();
   await expect(page.locator('[data-direction="IN"]').filter({ hasText: second })).toBeVisible(WORKER_WAIT);
-  // Several refresh cycles later there is still exactly the first suggestion.
+  // Several refresh cycles later there is still exactly the first prepared reply.
   await page.waitForTimeout(8_000);
   await page.reload();
   await expect(suggestions).toHaveCount(1);

@@ -3,7 +3,8 @@
  * delivery, AI mode, window, what needs a person), while the conversation's narrow side column
  * (`compact`) shows the channel and window as quiet icon + text facts and keeps chips only for what
  * needs a person. Both keep the texts the e2e specs read on the current thread ("Free-form until
- * HH:MM IST", "You are handling"), the data attributes and aria-current on the open thread.
+ * HH:MM IST", "You are handling"), the data attributes and aria-current on the open thread. The list
+ * enters once as a whole, so a refresh that reorders rows replays nothing.
  */
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -78,6 +79,15 @@ describe('ThreadList', () => {
     expect(within(mail).getByText('Email')).toBeTruthy();
     expect(mail.textContent).not.toContain('Window closed');
     expect(within(mail).getByText('1 to approve')).toBeTruthy();
+  });
+
+  it('enters once as a list: no row carries an entrance that a reordering refresh could restart', () => {
+    render(<ThreadList rows={rows} timeZone="Asia/Kolkata" now={now} />);
+    const list = document.querySelector('[data-thread-list]') as HTMLElement;
+    // When a thread moves to the top, React re-inserts the unchanged rows above it; a CSS entrance on a
+    // row would replay on exactly those rows.
+    expect(list.querySelectorAll('[data-reveal]')).toHaveLength(0);
+    expect(list.parentElement?.hasAttribute('data-reveal')).toBe(true);
   });
 
   it('says when a WhatsApp window is closed, in words', () => {

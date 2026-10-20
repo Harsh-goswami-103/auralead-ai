@@ -180,7 +180,8 @@ export function ServiceDialog(props: { trigger: ReactNode; service: CatalogServi
       }}
     >
       <DialogTrigger asChild>{props.trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-xl">
+      {/* The footer sticks to the bottom of this scroller: the bottom scroll padding (footer, 113px stacked or 69px from sm, plus a two-line hint) keeps a focused field and its hint clear of it. */}
+      <DialogContent className="scroll-pb-40 sm:max-w-xl sm:scroll-pb-28">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <IconChip>{creating ? <Plus aria-hidden="true" /> : <Pencil aria-hidden="true" />}</IconChip>

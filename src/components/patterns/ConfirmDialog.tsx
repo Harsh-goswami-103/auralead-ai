@@ -10,7 +10,9 @@
  * A non-destructive dialog keeps the panel hairline, and its confirm is the primary gradient
  * button. A destructive dialog swaps the hairline for a flat danger strip, shows a warning tile
  * beside the title, and uses the danger button. The workspace is a chip whose text stays
- * "Workspace: <name>". While pending, the confirm shows a spinner and its name becomes
+ * "Workspace: <name>". The chip wraps instead of truncating (F8 needs the whole name) and breaks
+ * a long unspaced name; with the single minmax(0,1fr) columns no content can widen the dialog
+ * past a phone screen. While pending, the confirm shows a spinner and its name becomes
  * pendingLabel. Radix unmounts the dialog on close (no Motion exit).
  */
 import { useRef, useState, type ReactNode } from 'react';
@@ -73,22 +75,22 @@ export function ConfirmDialog(props: {
       }}
     >
       <AlertDialogTrigger asChild>{props.trigger}</AlertDialogTrigger>
-      <AlertDialogContent className={cn(props.destructive && '[--grad-hairline:linear-gradient(var(--danger),var(--danger))]')}>
+      <AlertDialogContent className={cn('grid-cols-[minmax(0,1fr)]', props.destructive && '[--grad-hairline:linear-gradient(var(--danger),var(--danger))]')}>
         <div className="flex items-start gap-4">
           {props.destructive ? (
             <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-danger/14 text-danger ring-1 ring-danger/35 ring-inset">
               <TriangleAlert className="size-5" />
             </span>
           ) : null}
-          <AlertDialogHeader className="min-w-0 flex-1">
+          <AlertDialogHeader className="min-w-0 flex-1 grid-cols-[minmax(0,1fr)]">
             <AlertDialogTitle>{props.title}</AlertDialogTitle>
             <AlertDialogDescription className="text-fg-2">{props.description}</AlertDialogDescription>
             {props.workspaceName ? (
-              <p className="mt-1 inline-flex w-fit max-w-full items-center gap-1.5 rounded-full border border-border-strong bg-bg-2 py-0.5 pr-2.5 pl-1 text-sm font-medium text-fg-1">
+              <p className="mt-1 flex max-w-full min-w-0 items-center gap-1.5 rounded-xl border border-border-strong bg-bg-2 py-0.5 pr-2.5 pl-1 text-sm font-medium text-fg-1">
                 <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full bg-panel/14 text-panel">
                   <Building2 className="size-3" />
                 </span>
-                <span className="truncate">Workspace: {props.workspaceName}</span>
+                <span className="min-w-0 wrap-anywhere">Workspace: {props.workspaceName}</span>
               </p>
             ) : null}
           </AlertDialogHeader>

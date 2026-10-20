@@ -93,6 +93,10 @@ export function QuoteSharePanel(props: QuoteSharePanelProps) {
       return;
     }
     setCreated({ url: res.data.url, expiresAt: res.data.share.expiresAt });
+    // Focus stays on the button, so say it: the link box mounts silently and the token is shown once.
+    const message = 'Share link created. It is shown once: copy it now.';
+    setNotice(message);
+    toast.success(message);
     router.refresh();
   }
 

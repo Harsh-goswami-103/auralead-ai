@@ -16,6 +16,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ShieldCheck } from 'lucide-react';
+import { touchTarget } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
 import type { PanelChrome } from '@/server/services/shell/panel-chrome';
 import { AuroraBackdrop } from '@/components/visual/AuroraBackdrop';
 import { PageTransition } from '@/components/visual/PageTransition';
@@ -49,14 +51,15 @@ export function PanelShell(props: { panel: PanelKey; chrome: PanelChrome; csrfTo
         />
         <header className="surface-glass sticky top-0 z-30 border-b border-border-subtle">
           <div className="flex h-14 items-center gap-2.5 px-4 sm:gap-3 lg:px-6">
+            {/* The name starts with the visible lockup ("AuraLead Client panel"), so speech input can say what it sees (WCAG 2.5.3). */}
             <Link
               href={definition.home}
-              className="group flex shrink-0 items-center gap-2.5 rounded-lg"
-              aria-label={`AuraLead AI, ${definition.title} home`}
+              className={cn('group relative flex shrink-0 items-center gap-2.5 rounded-lg', touchTarget)}
+              aria-label={`AuraLead ${definition.title} home`}
             >
               <ProductMark className="size-8 transition-transform duration-fast ease-enter motion-safe:group-hover:-rotate-6" />
               <span className="hidden flex-col sm:flex">
-                <span className="font-display text-md leading-5 font-semibold tracking-tight text-fg-1">AuraLead</span>
+                <span className="font-display text-md leading-5 font-semibold tracking-tight text-fg-1">AuraLead</span>{' '}
                 <span className="flex items-center gap-1.5 text-[10px] leading-3 font-semibold tracking-[0.16em] text-fg-2 uppercase">
                   <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-panel" />
                   {definition.title}

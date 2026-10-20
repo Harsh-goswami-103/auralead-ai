@@ -74,10 +74,12 @@ export function DraftActions(props: {
   const csrfToken = useCsrfToken();
   const [failure, setFailure] = useState<Failure>(null);
   const [waitingSince, setWaitingSince] = useState<string | null | undefined>(undefined);
+  const [requestNo, setRequestNo] = useState(0);
 
   // After a draft request: re-read until the worker's new draft is on the page; if it is late, say so.
+  // Every request starts a fresh schedule, even when `waiting` stays true from an earlier one.
   const waiting = waitingSince !== undefined && props.latestDraftId === waitingSince;
-  const { exhausted } = usePolling(waiting, () => router.refresh(), DRAFT_WAIT_SCHEDULE);
+  const { exhausted } = usePolling(waiting, () => router.refresh(), DRAFT_WAIT_SCHEDULE, requestNo);
 
   async function generate(local: boolean) {
     setFailure(null);
@@ -88,6 +90,7 @@ export function DraftActions(props: {
     }
     toast.success(local ? 'Local template draft requested.' : 'Draft requested.', { description: 'The worker is writing it now.' });
     setWaitingSince(props.latestDraftId);
+    setRequestNo((n) => n + 1);
     router.refresh();
   }
 
@@ -148,7 +151,7 @@ export function DraftActions(props: {
           {exhausted ? (
             <>
               <Clock aria-hidden="true" className="size-4 shrink-0 text-warning" />
-              The worker has not written the draft yet. It appears here when ready.
+              The worker has not written the draft yet. Reload the page to check again.
             </>
           ) : (
             <>

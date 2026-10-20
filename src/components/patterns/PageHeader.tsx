@@ -31,7 +31,7 @@ export function PageHeader(props: {
             {props.eyebrow}
           </Reveal>
         ) : null}
-        <Reveal as="h1" variant="focus" delay={0.04} className="text-gradient w-fit max-w-full font-display text-2xl font-semibold text-balance sm:text-3xl">
+        <Reveal as="h1" variant="focus" delay={0.04} className="text-gradient w-fit max-w-full [overflow-wrap:anywhere] font-display text-2xl font-semibold text-balance sm:text-3xl">
           {props.title}
         </Reveal>
         {props.description ? (

@@ -2,7 +2,7 @@
  * One conversation (T22; 06-design §11.2 "User Inbox" second and third fold, §11.8 breakpoints).
  * At 1280 px and above three panes: threads, the conversation, the lead context; below that the
  * conversation alone with a link back to the list. The thread shows every message with its delivery
- * state and events, the AI mode and takeover controls, AI suggestions with approve-and-send and
+ * state and events, the AI mode and takeover controls, prepared replies with approve-and-send and
  * reject, and the composer whose eligibility line comes from the server ("Final check happens at
  * send"). Another workspace's conversation is 404. The page re-reads itself while a send is in
  * flight or a reply is being prepared: a send is pending, or the customer wrote last within the
@@ -32,6 +32,7 @@ import { SourceChip } from '@/components/patterns/SourceChip';
 import { ModeChip } from '@/components/patterns/StatusBadge';
 import { Reveal } from '@/components/visual/Reveal';
 import { NotFoundError } from '@/lib/errors';
+import { generatorInfo } from '@/lib/schemas/lead-console';
 import { getPageContext } from '@/server/auth/page-context';
 import { hasCapability } from '@/server/auth/guards';
 import { getRuntime } from '@/server/boot';
@@ -93,7 +94,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ c
         workspaceName={thread.workspace.name}
         kind="OUTBOUND_MESSAGE"
         status="PENDING"
-        label={m.generatorLabel === 'human' ? 'Draft reply' : 'AI suggestion'}
+        label={generatorInfo(m.generatorLabel).kind === 'ai' ? 'AI suggestion' : 'Draft reply'}
         versionNo={null}
         isCurrent
         pdfReady
@@ -114,7 +115,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ c
       </aside>
 
       <section aria-labelledby="thread-heading" className="flex min-w-0 flex-col gap-4">
-        <Link href="/dashboard/user/inbox" className="group inline-flex min-h-9 w-fit items-center gap-1 text-sm text-fg-2 hover:text-fg-1 xl:hidden">
+        <Link href="/dashboard/user/inbox" className="group inline-flex min-h-11 w-fit items-center gap-1 text-sm text-fg-2 hover:text-fg-1 lg:min-h-9 xl:hidden">
           <ArrowLeft aria-hidden="true" className="size-4 transition-transform duration-fast motion-safe:group-hover:-translate-x-0.5" />
           All conversations
         </Link>
@@ -217,7 +218,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ c
             <ul className="flex flex-col gap-2 text-sm">
               {thread.quotes.map((q) => (
                 <li key={q.id} className="flex flex-wrap items-center justify-between gap-2">
-                  <Link href={`/dashboard/user/quotations/${q.id}`} className="inline-flex items-center gap-1.5 font-medium text-cyan underline-offset-4 hover:underline">
+                  <Link href={`/dashboard/user/quotations/${q.id}`} className="inline-flex items-center gap-1.5 font-medium text-cyan underline-offset-4 hover:underline max-lg:min-h-11">
                     <FileText aria-hidden="true" className="size-3.5" />
                     {q.number} v{q.versionNo}
                   </Link>

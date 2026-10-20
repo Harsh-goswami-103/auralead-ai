@@ -488,7 +488,7 @@ export function PricingWorkspace({ overview }: { overview: PricingOverviewDto })
               key={value}
               value={value}
               data-tab={value}
-              className="group relative isolate inline-flex min-h-9 shrink-0 snap-start items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium text-fg-2 transition-colors duration-fast hover:text-fg-1 data-[state=active]:text-fg-1"
+              className="group relative isolate inline-flex min-h-11 shrink-0 snap-start lg:min-h-9 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium text-fg-2 transition-colors duration-fast hover:text-fg-1 data-[state=active]:text-fg-1"
             >
               {tab === value ? (
                 <motion.span layoutId="pricing-tab-pill" transition={spring.smooth} aria-hidden="true" className="absolute inset-0 -z-10 rounded-full bg-panel/14 ring-1 ring-panel/40 ring-inset" />

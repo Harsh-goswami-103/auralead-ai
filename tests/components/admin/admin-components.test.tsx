@@ -5,7 +5,8 @@
  * reads as paused) with icon + label chips, as a list or as switch cards; the status vocabulary
  * keeps the server's labels and never relies on color; the metric tile stays a valid
  * `dl > div > dt + dd` group; the scroll fade shows only while more content is below; section
- * titles keep the heading's name to its text; the lifecycle rail names every step in text.
+ * titles keep the heading's name to its text; the lifecycle rail names every step in text and
+ * draws progress only between reached steps; the filter selects follow the applied filters.
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +19,7 @@ import {
   formatAge,
   jobStatusEntry,
 } from '@/components/admin/admin-vocabulary';
+import { FilterForm, type FilterField } from '@/components/admin/FilterForm';
 import { InlineEmpty } from '@/components/admin/InlineEmpty';
 import { JobLifecycle } from '@/components/admin/JobLifecycle';
 import { JsonView } from '@/components/admin/JsonView';
@@ -77,6 +79,8 @@ describe('JsonView', () => {
     expect(details.map((d) => d.open)).toEqual([true, true, false, false]);
     const deep = details[2]!;
     expect(within(deep.querySelector('summary')!).getByText('1 key')).toBeTruthy();
+    // Each disclosure is a 44px touch target below lg (spec §0.5).
+    for (const summary of container.querySelectorAll('summary')) expect(summary.classList.contains('max-lg:min-h-11')).toBe(true);
   });
 
   it('copies the exact pretty-printed JSON', async () => {
@@ -263,5 +267,46 @@ describe('JobLifecycle', () => {
     const steps = within(screen.getByRole('list', { name: 'Job lifecycle' })).getAllByRole('listitem');
     expect(steps[1]!.textContent).toContain('Not reached');
     expect(steps[2]!.textContent).toContain('Cancelled');
+  });
+
+  it('draws the progress rail only between two reached steps', () => {
+    const rails = () => Array.from(screen.getByRole('list', { name: 'Job lifecycle' }).querySelectorAll('[data-reached]')).map((el) => el.getAttribute('data-reached'));
+    // Cancelled before it ever ran: Running was skipped, so neither rail shows progress.
+    render(
+      <JobLifecycle job={{ status: 'CANCELLED', entry: jobStatusEntry({ status: 'CANCELLED', label: 'Cancelled', attempts: 0 }), createdAt: at, runAt: at, startedAt: null, finishedAt: at }} />,
+    );
+    expect(rails()).toEqual(['false', 'false']);
+    cleanup();
+    render(
+      <JobLifecycle job={{ status: 'SUCCEEDED', entry: jobStatusEntry({ status: 'SUCCEEDED', label: 'Succeeded', attempts: 1 }), createdAt: at, runAt: at, startedAt: at, finishedAt: at }} />,
+    );
+    expect(rails()).toEqual(['true', 'true']);
+  });
+});
+
+describe('FilterForm', () => {
+  const fields = (status: string): FilterField[] => [
+    { name: 'status', label: 'Status', value: status, options: [{ value: 'SUCCEEDED', label: 'Succeeded' }, { value: 'DEAD', label: 'Dead' }] },
+    { name: 'type', label: 'Type', value: '', options: [{ value: 'ai.draft', label: 'ai.draft' }] },
+  ];
+  const select = (name: string) => screen.getByLabelText(name) as HTMLSelectElement;
+
+  it('shows the applied filter after a soft navigation re-renders it with new values', () => {
+    // A legend link or tile applies a status: the mounted form must not keep showing "All".
+    const { rerender } = render(<FilterForm fields={fields('')} clearHref={null} />);
+    expect(select('Status').value).toBe('');
+    rerender(<FilterForm fields={fields('SUCCEEDED')} clearHref="/dashboard/admin/jobs" />);
+    expect(select('Status').value).toBe('SUCCEEDED');
+    // "Clear filters" drops it again.
+    rerender(<FilterForm fields={fields('')} clearHref={null} />);
+    expect(select('Status').value).toBe('');
+  });
+
+  it("keeps a choice the admin has not submitted yet while the applied filters stay the same", () => {
+    const { rerender } = render(<FilterForm fields={fields('DEAD')} clearHref="/dashboard/admin/jobs" />);
+    fireEvent.change(select('Type'), { target: { value: 'ai.draft' } });
+    rerender(<FilterForm fields={fields('DEAD')} clearHref="/dashboard/admin/jobs" />);
+    expect(select('Type').value).toBe('ai.draft');
+    expect(select('Status').value).toBe('DEAD');
   });
 });

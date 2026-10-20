@@ -126,7 +126,16 @@ export function BottomTabs({ panel }: { panel: PanelKey }) {
               </span>
               More
             </SheetTrigger>
-            <SheetContent side="bottom" className="rounded-t-2xl">
+            <SheetContent
+              side="bottom"
+              className="rounded-t-2xl"
+              onOpenAutoFocus={(e) => {
+                // Radix skips links when it picks the first focusable, which would land on "Sign out".
+                e.preventDefault();
+                const root = e.currentTarget as HTMLElement;
+                (root.querySelector<HTMLElement>('a[aria-current="page"]') ?? root.querySelector<HTMLElement>('a[href]'))?.focus();
+              }}
+            >
               <span aria-hidden="true" className="mx-auto -mb-2 mt-2 h-1.5 w-10 shrink-0 rounded-full bg-border-strong" />
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">

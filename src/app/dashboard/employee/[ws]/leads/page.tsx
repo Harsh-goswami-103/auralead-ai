@@ -186,7 +186,7 @@ export default async function EmployeeLeadConsolePage({ params }: { params: Prom
                       <tr key={l.id} className="transition-colors duration-fast hover:bg-bg-2/60">
                         <td className="min-w-[11rem] py-2.5 pr-3 pl-4 text-fg-1 sm:pl-5">
                           <span className="flex flex-wrap items-center gap-2">
-                            <Link href={`/dashboard/employee/${data.workspace.slug}/leads/${l.id}`} className="font-medium text-cyan underline-offset-4 hover:underline">
+                            <Link href={`/dashboard/employee/${data.workspace.slug}/leads/${l.id}`} className="inline-flex items-center font-medium text-cyan underline-offset-4 hover:underline max-lg:min-h-11">
                               {l.displayName}
                             </Link>
                             {l.simulated ? <ModeChip simulated /> : null}
@@ -201,7 +201,7 @@ export default async function EmployeeLeadConsolePage({ params }: { params: Prom
                           ) : (
                             <span className="flex items-center gap-2.5">
                               <span className="tabular w-[4.25rem] text-fg-1">{`${l.score} / 100`}</span>
-                              <ScoreMeter value={l.score} />
+                              <ScoreMeter value={l.score} animate={false} />
                             </span>
                           )}
                         </td>

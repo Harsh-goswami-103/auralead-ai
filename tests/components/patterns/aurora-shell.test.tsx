@@ -9,7 +9,8 @@
  * - PanelPageSkeleton is one busy status region. PanelRouteError shows an h1, the digest and a
  *   retry, and never the raw error message.
  * - The DEMO persona buttons' names start with the persona label (the e2e contract, /^Workspace
- *   owner/), and the floating switcher is not rendered on /login.
+ *   owner/), and the floating switcher is not rendered on /login. Its popover is a dialog named by
+ *   its "Demo identities" heading.
  * - CredentialForm marks fields invalid only when the server rejected them, not on a network
  *   failure (shared report, credential-form.tsx).
  */
@@ -161,6 +162,29 @@ describe('DEMO personas', () => {
     nav.pathname = '/login';
     const login = render(<RoleSwitcher />);
     expect(login.container.querySelector('[data-demo-role-switcher]')).toBeNull();
+  });
+
+  it('names the open switcher popover by its "Demo identities" heading', async () => {
+    // Radix Popper measures its anchor; jsdom has no ResizeObserver.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {
+          return undefined;
+        }
+        unobserve() {
+          return undefined;
+        }
+        disconnect() {
+          return undefined;
+        }
+      },
+    );
+    nav.pathname = '/dashboard/employee';
+    render(<RoleSwitcher />);
+    fireEvent.click(screen.getByRole('button', { name: /^Demo role/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Demo identities' });
+    expect(within(dialog).getByRole('button', { name: /^Workspace owner/ })).toBeTruthy();
   });
 });
 

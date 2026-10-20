@@ -2,8 +2,10 @@
  * ScoreMeter (design spec §6 "Scores render as a gradient meter, value text always visible"): the
  * bar beside a score's text, never instead of it. The fill is a fit ramp (volt-hi to aura to zest,
  * no status hues: the score is fit, not good or bad) laid across the whole track, so a 30 and a 90
- * end on different colors. It slides in once from the left on first paint (CSS, so it also works
- * in server components and never replays on refresh) and rests full under reduced motion.
+ * end on different colors. It slides in once from the left on first paint in chart time (450ms,
+ * like ScoreRing; CSS, so it also works in server components and never replays on refresh) and
+ * rests full under reduced motion. `animate={false}` for table rows (spec: tables get one
+ * container fade, no per-row motion).
  * Decorative: aria-hidden, the caller renders the "NN / 100" text. Server-safe.
  */
 import type { CSSProperties } from 'react';
@@ -17,7 +19,7 @@ export function clampScore(value: number | null): number {
   return Math.min(100, Math.max(0, value));
 }
 
-export function ScoreMeter(props: { value: number | null; className?: string; size?: 'sm' | 'md' }) {
+export function ScoreMeter(props: { value: number | null; className?: string; size?: 'sm' | 'md'; animate?: boolean }) {
   const pct = clampScore(props.value);
   const fill: CSSProperties = {
     width: `${pct}%`,
@@ -34,7 +36,10 @@ export function ScoreMeter(props: { value: number | null; className?: string; si
       {pct > 0 ? (
         <span
           style={fill}
-          className="absolute inset-y-0 left-0 rounded-full ease-emphasized motion-safe:animate-in motion-safe:duration-700 motion-safe:slide-in-from-left"
+          className={cn(
+            'absolute inset-y-0 left-0 rounded-full',
+            (props.animate ?? true) && 'ease-emphasized motion-safe:animate-in motion-safe:duration-chart motion-safe:slide-in-from-left',
+          )}
         />
       ) : null}
     </span>

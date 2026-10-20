@@ -2,17 +2,25 @@
  * Lead detail actions: the page has one primary action (GlowFrame). "Create quote from proposal"
  * leads while no quotation waits for approval; once a draft quotation can be approved, its
  * "Approve vN" leads and the create button steps down to outline. Names, gates and requests are
- * unchanged either way.
+ * unchanged either way. After "Generate draft" the page re-reads itself until the new draft is on
+ * it; when the worker is late it says so without promising an update, and a second request after
+ * that polls again.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CsrfProvider } from '@/components/patterns/csrf';
 import { DraftActions, QuoteApproveAction } from '@/app/dashboard/employee/[ws]/leads/[leadId]/lead-actions';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }) }));
+const refresh = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh, push: vi.fn(), replace: vi.fn() }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  refresh.mockReset();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 const draftProps = {
   leadId: 'lead_1',
@@ -64,5 +72,52 @@ describe('lead detail primary action', () => {
     const approve = screen.getByRole('button', { name: 'Approve v1' });
     expect(approve.getAttribute('aria-disabled')).toBe('true');
     expect(approve.closest('[data-glow-frame]')).toBeNull();
+  });
+});
+
+describe('waiting for a requested draft', () => {
+  const accepted = () => new Response(JSON.stringify({ jobId: 'job_1' }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  async function clickGenerate() {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }));
+    });
+  }
+
+  it('a second request after the wait ran out starts polling again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const fetchMock = vi.fn(async () => accepted());
+    vi.stubGlobal('fetch', fetchMock);
+    const { rerender } = renderWithCsrf(<DraftActions {...draftProps} proposalDraftId={null} />);
+
+    await clickGenerate();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status').textContent).toContain('Waiting for the worker to write the draft');
+    // The request's own refresh, then every 2 s for 30 s and every 5 s for a minute.
+    act(() => vi.advanceTimersByTime(30_000 + 60_000));
+    expect(refresh).toHaveBeenCalledTimes(1 + 15 + 12);
+    act(() => vi.advanceTimersByTime(120_000));
+    expect(refresh).toHaveBeenCalledTimes(28);
+    const late = screen.getByRole('status').textContent;
+    expect(late).toContain('The worker has not written the draft yet. Reload the page to check again.');
+    expect(late).not.toContain('appears here when ready');
+
+    // Same latest draft on the page, so the wait never ended; the new request still starts afresh.
+    await clickGenerate();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(29);
+    expect(screen.getByRole('status').textContent).toContain('Waiting for the worker to write the draft');
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(refresh).toHaveBeenCalledTimes(30);
+
+    // The worker's draft arrives: the note goes and polling stops.
+    rerender(
+      <CsrfProvider token="csrf-leads">
+        <DraftActions {...draftProps} proposalDraftId={null} latestDraftId="draft_2" />
+      </CsrfProvider>,
+    );
+    expect(screen.queryByRole('status')).toBeNull();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(refresh).toHaveBeenCalledTimes(30);
   });
 });

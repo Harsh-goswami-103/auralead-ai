@@ -116,7 +116,8 @@ export default async function AdminWebhooksPage(props: { searchParams: Promise<S
           />
         ) : (
           <>
-            <ScrollRegion label="Webhook events table" wrapperClassName="-mx-4 hidden border-y border-border-subtle md:block sm:-mx-5" className="max-h-[min(80vh,52rem)] overflow-auto">
+            {/* Scroll padding clears the sticky header row (top) and the fade (bottom), so a focused row link is never hidden under them. */}
+            <ScrollRegion label="Webhook events table" wrapperClassName="-mx-4 hidden border-y border-border-subtle md:block sm:-mx-5" className="max-h-[min(80vh,52rem)] overflow-auto scroll-pt-12 scroll-pb-12">
               <table className="w-full min-w-[52rem] text-left text-sm">
                 <thead className="text-xs text-fg-2">
                   <tr>

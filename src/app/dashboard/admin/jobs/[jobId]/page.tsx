@@ -27,6 +27,7 @@ import { GatedAction } from '@/components/patterns/GatedAction';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { SourceChip } from '@/components/patterns/SourceChip';
+import { touchTarget } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import type { JobAttemptOutcome } from '@/lib/domain/enums';
 import { formatDateTime } from '@/lib/format/date';
@@ -108,7 +109,7 @@ export default async function JobInspectorPage(props: { params: Promise<{ jobId:
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/dashboard/admin/jobs" className="inline-flex w-fit items-center gap-1.5 text-sm text-cyan underline-offset-4 hover:underline">
+      <Link href="/dashboard/admin/jobs" className={cn('relative inline-flex w-fit items-center gap-1.5 text-sm text-cyan underline-offset-4 hover:underline', touchTarget)}>
         <ArrowLeft aria-hidden="true" className="size-4" />
         Jobs and queue
       </Link>
@@ -130,7 +131,8 @@ export default async function JobInspectorPage(props: { params: Promise<{ jobId:
         }
         actions={
           hasActions ? (
-            <div role="group" aria-label="Job actions" className="flex flex-wrap items-start gap-2">
+            // Capped so a gated Retry's reason wraps instead of widening the shrink-0 actions slot and clipping the title.
+            <div role="group" aria-label="Job actions" className="flex max-w-xs flex-wrap items-start gap-2 sm:max-w-72">
               {actions.cancel ? (
                 <AdminAction
                   mode={mode}
@@ -168,7 +170,7 @@ export default async function JobInspectorPage(props: { params: Promise<{ jobId:
                     successMessage="Retry queued."
                   />
                 ) : (
-                  <GatedAction label="Retry" variant="outline" gate={{ category: 'eligibility', reason: actions.retry.reason }} className="max-w-xs" />
+                  <GatedAction label="Retry" variant="outline" gate={{ category: 'eligibility', reason: actions.retry.reason }} />
                 )
               ) : null}
             </div>

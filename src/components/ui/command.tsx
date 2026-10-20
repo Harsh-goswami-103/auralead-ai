@@ -42,16 +42,20 @@ function CommandDialog({
   children,
   className,
   showCloseButton = true,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  /** Where focus goes on close. A palette opened from a shortcut has no Radix trigger to return to. */
+  onCloseAutoFocus?: React.ComponentProps<typeof DialogContent>["onCloseAutoFocus"]
 }) {
   return (
     <Dialog {...props}>
       <DialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "overflow-hidden bg-(--glass-bg) p-0 backdrop-blur-(--glass-blur)",
           showCloseButton && "[&_[data-slot=command-input-wrapper]]:pr-12",

@@ -17,7 +17,7 @@ import { useRouter } from 'next/navigation';
 import { FileSpreadsheet, FlaskConical, Loader2, MapPin, Megaphone, Play, RefreshCw } from 'lucide-react';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { toast } from 'sonner';
-import { usePolling } from '@/components/leads/use-polling';
+import { usePolling, WORKER_POLL_SCHEDULE } from '@/components/leads/use-polling';
 import { postJson } from '@/components/patterns/api-client';
 import { useCsrfToken } from '@/components/patterns/csrf';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
@@ -75,7 +75,9 @@ export function SimulationPanel({ workspaceSlug, gate, pending }: { workspaceSlu
   const countId = useId();
   const [count, setCount] = useState(3);
   const blocked: Gate | null = gate.allowed ? null : { category: gate.category, reason: gate.reason };
-  const { exhausted } = usePolling(pending, () => router.refresh());
+  const [runNo, setRunNo] = useState(0);
+  // Each accepted run starts a fresh schedule, even when `pending` stayed true past an earlier one.
+  const { exhausted } = usePolling(pending, () => router.refresh(), WORKER_POLL_SCHEDULE, runNo);
 
   async function run(source: SimulationSource) {
     const res = await postJson<SimulateResponse>(`/api/demo/simulate/${source}`, { workspaceSlug, count }, csrfToken);
@@ -87,6 +89,7 @@ export function SimulationPanel({ workspaceSlug, gate, pending }: { workspaceSlu
     toast.success(`${SIMULATION_SOURCE_LABELS[source]}: ${res.data.records} simulated ${res.data.records === 1 ? 'record' : 'records'} received.`, {
       description: accepted > 0 ? 'The worker is normalizing and de-duplicating them now.' : 'Already received earlier; nothing new was created.',
     });
+    setRunNo((n) => n + 1);
     router.refresh();
   }
 

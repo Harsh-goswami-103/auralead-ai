@@ -78,6 +78,14 @@ describe('ModeControls', () => {
     expect(screen.getByRole('button', { name: 'Take over' }).getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('the takeover banner is a flat info tint: status hues never sit in a gradient', () => {
+    renderControls({ humanTakeover: true });
+    const banner = document.querySelector('[data-takeover-banner]') as HTMLElement;
+    expect(banner.textContent).toContain('You are handling this thread. AI replies paused.');
+    expect(banner.className).toContain('bg-info/12');
+    expect(banner.className).not.toContain('gradient');
+  });
+
   it('an ungated mode opens a confirmation naming the workspace', () => {
     renderControls();
     fireEvent.click(screen.getByRole('button', { name: 'Off' }));
