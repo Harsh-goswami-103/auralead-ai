@@ -88,9 +88,12 @@ export async function redeemInvite(db: PrismaClient, input: RedeemInviteInput, d
   if (name.length === 0) throw new ValidationError({ code: 'NAME_REQUIRED', userMessage: 'Enter your name.' });
 
   return withTx(db, async (tx) => {
+    // Claim with the time of the claim: the password hash above took real time, and an invite retired
+    // meanwhile (its expiry was set to the newer issue time) must lose.
+    const claimedAt = deps.clock.now();
     const claimed = await tx.invite.updateMany({
-      where: { id: invite.id, redeemedAt: null, expiresAt: { gt: now } },
-      data: { redeemedAt: now },
+      where: { id: invite.id, redeemedAt: null, expiresAt: { gt: claimedAt } },
+      data: { redeemedAt: claimedAt },
     });
     if (claimed.count !== 1) throw new NotFoundError();
     if (invite.createdBy === OPERATOR_INVITER && invite.globalRole === 'SUPER_ADMIN') {

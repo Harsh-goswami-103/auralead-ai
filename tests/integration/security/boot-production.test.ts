@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { BootError, bootFromEnv } from '@/server/boot';
 import { testEnv } from '../auth/support';
 
-const live = (extra: Record<string, string>) => bootFromEnv(testEnv('live', extra));
+/** A correctly deployed LIVE instance: HTTPS behind exactly one TLS-terminating proxy. */
+const live = (extra: Record<string, string>) => bootFromEnv(testEnv('live', { TRUSTED_PROXY_HOPS: '1', ...extra }));
 
 describe('LIVE origin and cookie checks', () => {
   it('accepts an HTTPS origin', () => {
@@ -39,6 +40,20 @@ describe('LIVE origin and cookie checks', () => {
   it('warns when the insecure-cookie flag is set behind HTTPS in LIVE', () => {
     const { warnings } = live({ APP_ORIGIN: 'https://app.auralead.example', AUTH_COOKIE_INSECURE_DEV: '1' });
     expect(warnings.join('\n')).toMatch(/AUTH_COOKIE_INSECURE_DEV/);
+  });
+
+  it('refuses an HTTPS origin with TRUSTED_PROXY_HOPS=0: behind a TLS proxy every client would share one rate-limit bucket', () => {
+    const run = () => bootFromEnv(testEnv('live', { APP_ORIGIN: 'https://app.auralead.example', TRUSTED_PROXY_HOPS: '0' }));
+    expect(run).toThrow(BootError);
+    try {
+      run();
+    } catch (error) {
+      expect((error as BootError).issues.join('\n')).toMatch(/TRUSTED_PROXY_HOPS/);
+    }
+  });
+
+  it('does not require proxy hops on localhost (no proxy in front of a local LIVE run)', () => {
+    expect(() => bootFromEnv(testEnv('live', { APP_ORIGIN: 'http://localhost:3000', TRUSTED_PROXY_HOPS: '0' }))).not.toThrow();
   });
 
   it('does not apply to DEMO', () => {

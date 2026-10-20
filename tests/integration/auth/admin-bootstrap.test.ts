@@ -75,7 +75,7 @@ describe('bootstrapAdmin', () => {
     await expect(redeemInvite(db, { token: second.token, name: 'Second', password: PASSWORD }, deps)).resolves.toBeDefined();
   });
 
-  it('an operator invite cannot be redeemed once an administrator exists (first redemption wins)', async () => {
+  it('an operator invite stops working once any administrator exists', async () => {
     const invite = await bootstrapAdmin(db, { email: 'late@example.test', recover: false }, deps);
     await db.user.create({ data: { email: 'root@example.test', name: 'Root', globalRole: 'SUPER_ADMIN', passwordHash: 'x' } });
     await expect(redeemInvite(db, { token: invite.token, name: 'Late', password: PASSWORD }, deps)).rejects.toMatchObject({ status: 404 });

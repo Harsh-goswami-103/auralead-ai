@@ -14,7 +14,9 @@ const repoRoot = () => process.env.E2E_REPO_ROOT ?? process.cwd();
 const KEY_SHAPES: Array<[string, RegExp]> = [
   ['Anthropic key', /\bsk-ant-[A-Za-z0-9_-]{10,}/],
   ['OpenAI key', /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}/],
-  ['Resend key', /\bre_[A-Za-z0-9]{20,}/],
+  // Resend keys are re_<id>_<secret>; an older shape had no second underscore.
+  ['Resend key', /\bre_[A-Za-z0-9]{6,}_[A-Za-z0-9]{16,}/],
+  ['Resend key (plain)', /\bre_[A-Za-z0-9]{24,}/],
   ['Meta access token', /\bEAA[A-Za-z0-9]{30,}/],
   ['Google API key', /\bAIza[0-9A-Za-z_-]{35}/],
   ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],

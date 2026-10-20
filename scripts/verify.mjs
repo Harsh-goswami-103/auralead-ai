@@ -18,24 +18,22 @@
  * Children are started with process.execPath and the tools' own entry points, never npm.cmd.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveNpmCli } from './npm-cli.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bin = (...parts) => path.join(root, 'node_modules', ...parts);
-const npmCli =
-  process.env.npm_execpath && process.env.npm_execpath.endsWith('.js')
-    ? process.env.npm_execpath
-    : path.join(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+const npmCli = resolveNpmCli();
 
 export const STEPS = [
   { id: 'typecheck', title: 'TypeScript', args: [bin('typescript', 'bin', 'tsc'), '--noEmit'] },
   { id: 'lint', title: 'ESLint', args: [bin('eslint', 'bin', 'eslint.js'), '.'] },
   { id: 'test', title: 'Vitest (unit, integration, components)', args: [bin('vitest', 'vitest.mjs'), 'run'], env: { TZ: 'America/New_York' } },
   { id: 'audit', title: 'npm audit (production dependencies, high and above)', args: [npmCli, 'audit', '--omit=dev', '--audit-level=high'] },
-  { id: 'e2e', title: 'Playwright (builds, starts built app + worker, smoke and panel projects)', args: [bin('@playwright/test', 'cli.js'), 'test'] },
-  { id: 'fresh', title: 'Fresh copy: npm ci, setup, build, start (AT1)', args: [bin('@playwright/test', 'cli.js'), 'test', '--config', 'playwright.fresh.config.ts'] },
+  { id: 'e2e', title: 'Playwright (builds, starts built app + worker, smoke and panel projects)', args: [bin('@playwright/test', 'cli.js'), 'test'], env: { E2E_SKIP_BUILD: '0' } },
+  { id: 'fresh', title: 'Fresh copy: npm ci, setup, build, start (AT1)', args: [bin('@playwright/test', 'cli.js'), 'test', '--config', 'playwright.fresh.config.ts'], env: { E2E_SKIP_BUILD: '0' } },
 ];
 
 function parseArgs(argv) {
@@ -124,6 +122,11 @@ async function main() {
     results.push({ id: step.id, title: step.title, status: passed ? 'PASSED' : 'FAILED', exitCode: outcome.code, seconds: Math.round(outcome.ms / 1000) });
   }
 
+  if (!results.some((r) => r.status === 'PASSED' || r.status === 'FAILED')) {
+    console.error('\nNo step ran (check --only / --skip). Nothing was verified.');
+    failed = true;
+  }
+
   const matrix = printMatrix();
   if (matrix.problems.length > 0) failed = true;
 
@@ -141,4 +144,12 @@ async function main() {
   process.exitCode = failed ? 1 : 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+// Compare real paths so a symlinked or junctioned checkout still runs main().
+const invokedDirectly = (() => {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+if (invokedDirectly) await main();
