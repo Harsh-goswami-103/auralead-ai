@@ -18,6 +18,13 @@ import { revokeUserSessions, type SessionUser } from './session';
 
 export const INVITE_TTL_MS = 72 * 3_600_000;
 
+/**
+ * `Invite.createdBy` of a link issued from the server shell by `npm run admin:bootstrap` (ADR-68).
+ * Such a link only creates the first administrator: once an active real SUPER_ADMIN exists it no
+ * longer redeems, so a forgotten bootstrap link cannot add a second one.
+ */
+export const OPERATOR_INVITER = 'system:operator';
+
 export type CreateInviteInput = {
   email: string;
   globalRole: GlobalRole;
@@ -86,6 +93,10 @@ export async function redeemInvite(db: PrismaClient, input: RedeemInviteInput, d
       data: { redeemedAt: now },
     });
     if (claimed.count !== 1) throw new NotFoundError();
+    if (invite.createdBy === OPERATOR_INVITER && invite.globalRole === 'SUPER_ADMIN') {
+      const admins = await tx.user.count({ where: { globalRole: 'SUPER_ADMIN', status: 'ACTIVE', isDemo: false } });
+      if (admins > 0) throw new NotFoundError();
+    }
 
     let user: SessionUser;
     if (!existing) {

@@ -93,6 +93,15 @@ export const ROUTES: readonly RouteEntry[] = [
     calls: [{ method: 'GET', expect: all(200), note: 'the form renders; the token is checked on submit' }],
   },
   {
+    path: '/reset/[token]',
+    file: 'src/app/(auth)/reset/[token]/page.tsx',
+    kind: 'page',
+    owner: 'T06',
+    access: 'public',
+    params: { token: fixture('invite.unknownToken') },
+    calls: [{ method: 'GET', expect: all(200), note: 'the form renders; the token is checked on submit (ADR-67)' }],
+  },
+  {
     path: '/',
     file: 'src/app/(public)/page.tsx',
     kind: 'page',
@@ -205,6 +214,21 @@ export const ROUTES: readonly RouteEntry[] = [
         body: { token: fixture('invite.unknownToken'), name: 'Matrix Probe', password: fixture('password.wrong') },
         expect: all(404),
         note: 'never-issued token',
+      },
+    ],
+  },
+  {
+    path: '/api/app/auth/reset',
+    file: 'src/app/api/app/auth/reset/route.ts',
+    kind: 'api',
+    owner: 'T06',
+    access: 'public',
+    calls: [
+      {
+        method: 'POST',
+        body: { token: fixture('invite.unknownToken'), password: fixture('password.wrong') },
+        expect: all(404),
+        note: 'never-issued token (ADR-67)',
       },
     ],
   },
