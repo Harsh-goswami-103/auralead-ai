@@ -27,7 +27,9 @@ export function FilterForm(props: { fields: FilterField[]; clearHref: string | n
           <label htmlFor={field.name} className="text-xs font-medium text-fg-2">
             {field.label}
           </label>
-          <NativeSelect id={field.name} name={field.name} defaultValue={field.value} wrapperClassName="w-full sm:w-56">
+          {/* Keyed by the applied value: React ignores a new defaultValue on a mounted select, and a soft
+              navigation (legend, tile, Clear filters) keeps this form mounted, so it would show a stale filter. */}
+          <NativeSelect key={`${field.name}=${field.value}`} id={field.name} name={field.name} defaultValue={field.value} wrapperClassName="w-full sm:w-56">
             <option value="">All</option>
             {field.options.map((o) => (
               <option key={o.value} value={o.value}>

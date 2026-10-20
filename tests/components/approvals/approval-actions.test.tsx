@@ -196,6 +196,15 @@ describe('ApprovalActions', () => {
     expect(pill.className).not.toMatch(/transition-colors|transition-all/);
   });
 
+  it('channel pills are 44px touch targets below 1024px', () => {
+    renderActions();
+    for (const name of [/Email/, /WhatsApp/]) {
+      const pill = screen.getByRole('radio', { name }).closest('label') as HTMLElement;
+      expect(pill.className).toMatch(/(^| )min-h-11( |$)/);
+      expect(pill.className).toMatch(/(^| )lg:min-h-10( |$)/);
+    }
+  });
+
   it('without approvals.decide every decision is gated by permission', async () => {
     renderActions({ permissions: { canDecide: false, canSend: false } });
     for (const name of ['Approve v2', 'Approve and send by email', 'Reject']) {

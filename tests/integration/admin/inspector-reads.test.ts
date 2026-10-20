@@ -70,6 +70,11 @@ describe('inspector reads', () => {
     expect(row).toBeDefined();
     const detail = await getWebhookEventDetail(admin, row!.id);
     expect(detail.jobs.map((j) => j.type)).toContain('webhook.process');
+    // The page tells a failed job waiting to retry from a scheduled one by its attempts.
+    for (const j of detail.jobs) {
+      const stored = await h.db.job.findUniqueOrThrow({ where: { id: j.id }, select: { attempts: true } });
+      expect(j.attempts).toBe(stored.attempts);
+    }
     const text = JSON.stringify(detail);
     expect(text).not.toContain('Saturday');
     expect(text).not.toContain(lead.phoneE164!);

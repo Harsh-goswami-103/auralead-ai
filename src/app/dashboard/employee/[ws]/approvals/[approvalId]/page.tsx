@@ -31,6 +31,7 @@ import { reviewReasonText } from '@/components/leads/lead-vocabulary';
 import { ToneChip } from '@/components/leads/ToneChip';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { ModeChip } from '@/components/patterns/StatusBadge';
+import { touchTarget } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import { AuroraBackdrop } from '@/components/visual/AuroraBackdrop';
 import { Reveal } from '@/components/visual/Reveal';
@@ -94,7 +95,7 @@ export default async function ApprovalItemPage({ params }: { params: Promise<{ w
   return (
     <div className="flex flex-col gap-6">
       {inFlight ? <AutoRefresh intervalMs={3_000} /> : null}
-      <Link href={queueHref} className="group inline-flex w-fit items-center gap-1.5 text-sm text-fg-2 hover:text-fg-1">
+      <Link href={queueHref} className={cn('group relative inline-flex w-fit items-center gap-1.5 text-sm text-fg-2 hover:text-fg-1', touchTarget)}>
         <ArrowLeft aria-hidden="true" className="size-4 transition-transform duration-fast motion-safe:group-hover:-translate-x-0.5" />
         {detail.workspace.name} queue
       </Link>

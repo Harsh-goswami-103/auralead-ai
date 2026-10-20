@@ -523,8 +523,10 @@
   .visual-marquee[data-reverse] .visual-marquee__track {
     animation-direction: reverse;
   }
+  /* Paused by hover, keyboard focus inside, or the pause button (MarqueePauseButton). */
   .visual-marquee[data-pause-on-hover]:hover .visual-marquee__track,
-  .visual-marquee:focus-within .visual-marquee__track {
+  .visual-marquee:focus-within .visual-marquee__track,
+  .visual-marquee[data-user-paused] .visual-marquee__track {
     animation-play-state: paused;
   }
 

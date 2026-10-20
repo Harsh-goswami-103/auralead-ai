@@ -27,7 +27,7 @@ import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { SourceChip } from '@/components/patterns/SourceChip';
 import { ModeChip } from '@/components/patterns/StatusBadge';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonVariants, touchTarget } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import { Reveal, Stagger, StaggerItem } from '@/components/visual/Reveal';
 import { ShimmerText } from '@/components/visual/ShimmerText';
@@ -249,7 +249,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={consoleHref} className="group inline-flex w-fit items-center gap-1.5 text-sm text-fg-2 hover:text-fg-1">
+      <Link href={consoleHref} className={cn('group relative inline-flex w-fit items-center gap-1.5 text-sm text-fg-2 hover:text-fg-1', touchTarget)}>
         <ArrowLeft aria-hidden="true" className="size-4 transition-transform duration-fast motion-safe:group-hover:-translate-x-0.5" />
         Lead console
       </Link>

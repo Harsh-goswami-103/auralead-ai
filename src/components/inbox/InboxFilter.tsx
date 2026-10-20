@@ -29,7 +29,7 @@ export function InboxFilter(props: { current: InboxFilterKey; counts: { all: num
                 href={t.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'relative isolate inline-flex min-h-9 items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-fast',
+                  'relative isolate inline-flex min-h-11 items-center gap-2 rounded-full lg:min-h-9 px-3.5 py-1.5 text-sm font-medium transition-colors duration-fast',
                   active ? 'text-fg-1' : 'text-fg-2 hover:text-fg-1',
                 )}
               >

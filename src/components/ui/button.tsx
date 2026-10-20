@@ -11,7 +11,10 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 import { cn } from "@/components/ui/cn"
 
-/** Invisible hit area of at least 44x44px below lg (spec §0.5). The element must be positioned. */
+/**
+ * Invisible hit area of at least 44x44px below lg (spec §0.5), shared by every small control that is
+ * not a Button. The element must be positioned (`relative`), or the hit area spans its ancestor.
+ */
 const touchTarget =
   "max-lg:before:absolute max-lg:before:top-1/2 max-lg:before:left-1/2 max-lg:before:size-full max-lg:before:min-h-11 max-lg:before:min-w-11 max-lg:before:-translate-x-1/2 max-lg:before:-translate-y-1/2"
 
@@ -72,4 +75,4 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants, touchTarget }

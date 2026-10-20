@@ -62,6 +62,17 @@ describe('StageChip and ScoreMeter', () => {
     rerender(<ScoreMeter value={140} />);
     expect(((container.querySelector('[data-score-meter]') as HTMLElement).firstElementChild as HTMLElement).style.width).toBe('100%');
   });
+
+  it('the meter enters in chart time (450ms, like ScoreRing), and not at all in a table row', () => {
+    const { container, rerender } = render(<ScoreMeter value={72} />);
+    const fill = () => (container.querySelector('[data-score-meter]') as HTMLElement).firstElementChild as HTMLElement;
+    expect(fill().className).toContain('motion-safe:animate-in');
+    expect(fill().className).toContain('motion-safe:duration-chart');
+    expect(fill().className).not.toMatch(/duration-(700|\d{3,})/);
+    rerender(<ScoreMeter value={72} animate={false} />);
+    expect(fill().className).not.toMatch(/animate-in|slide-in/);
+    expect(fill().style.width).toBe('72%');
+  });
 });
 
 describe('review reasons', () => {

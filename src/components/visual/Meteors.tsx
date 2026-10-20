@@ -4,9 +4,11 @@
  * THIRD_PARTY_NOTICES.md), re-implemented without Math.random or effects: lanes, delays and
  * speeds come from a seeded mulberry32 sequence, so the server render, the client and tests agree.
  * Fill a `relative overflow-hidden` parent. Under reduced motion they rest as a faint starfield.
+ * Like every loop, they pause offscreen and in a hidden tab (PauseOffscreen). Server-safe.
  */
 import type { CSSProperties } from 'react';
 import { cn } from '@/components/ui/cn';
+import { PauseOffscreen } from './PauseOffscreen';
 import { between, mulberry32 } from './prng';
 
 const COLORS = ['var(--ice)', 'var(--aura)', 'var(--ice)', 'var(--zest)'] as const;
@@ -42,6 +44,7 @@ export function Meteors(props: { count?: number; className?: string; seed?: numb
           }
         />
       ))}
+      <PauseOffscreen />
     </div>
   );
 }

@@ -10,12 +10,15 @@
  * the demo hatch. In the menu each workspace has a monogram tile, a plan pill, and a check on the
  * current one. The chip is a flex item of the top bar's middle slot: it is as wide as its content
  * (it no longer stretches across the bar) and shrinks with the name truncated, never into the
- * buttons beside it.
+ * buttons beside it. The switch trigger is named by what it shows ("Workspace: <name> <plan>
+ * <mode>. Switch workspace", the plan only where it is visible), so the visible words are always
+ * part of the name (WCAG 2.5.3), and it has the 44px hit area below lg.
  */
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Building2, Check, ChevronsUpDown, LoaderCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { touchTarget } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import {
   DropdownMenu,
@@ -51,8 +54,8 @@ function ChipBody({ ws, placeholder }: { ws: ChipWorkspace | null; placeholder: 
       </span>
       {ws ? (
         <>
-          <span className="truncate font-medium text-fg-1">{ws.name}</span>
-          <span className="hidden shrink-0 text-xs text-fg-2 md:inline">{ws.planLabel}</span>
+          <span className="truncate font-medium text-fg-1">{ws.name}</span>{' '}
+          <span className="hidden shrink-0 text-xs text-fg-2 md:inline">{ws.planLabel}</span>{' '}
           <ModePill mode={ws.mode} />
         </>
       ) : (
@@ -113,10 +116,14 @@ export function WorkspaceChip(props: { current: ChipWorkspace | null; workspaces
     <DropdownMenu>
       <DropdownMenuTrigger
         data-workspace-chip
-        aria-label={current ? `Workspace: ${current.name}, ${current.planLabel}, ${current.mode === 'DEMO' ? 'Demo' : 'Live'}. Switch workspace` : 'Choose a workspace'}
-        className="group flex h-9 max-w-[min(24rem,100%)] min-w-0 items-center gap-2 rounded-lg border border-border-subtle bg-bg-2/80 pr-2 pl-1 transition-colors duration-fast ease-enter hover:border-panel/45 hover:bg-bg-3 data-[state=open]:border-panel/45 data-[state=open]:bg-bg-3"
+        className={cn(
+          'group relative flex h-9 max-w-[min(24rem,100%)] min-w-0 items-center gap-2 rounded-lg border border-border-subtle bg-bg-2/80 pr-2 pl-1 transition-colors duration-fast ease-enter hover:border-panel/45 hover:bg-bg-3 data-[state=open]:border-panel/45 data-[state=open]:bg-bg-3',
+          touchTarget,
+        )}
       >
+        {current ? <span className="sr-only">Workspace:</span> : null}{' '}
         <ChipBody ws={current} placeholder={placeholder} />
+        {current ? <span className="sr-only">. Switch workspace</span> : null}
         <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-fg-3 transition-colors duration-fast group-hover:text-fg-2" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[min(20rem,calc(100vw-2rem))] p-1.5">

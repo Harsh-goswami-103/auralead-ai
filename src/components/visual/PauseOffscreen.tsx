@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * A zero-size client island that lets a server-rendered loop (AuroraBackdrop, Marquee, OrbitRing)
- * pause itself offscreen: drop it inside the looping element and it observes its parent with
- * useInViewPause's observer. Renders a hidden span and nothing else.
+ * A zero-size client island that lets a server-rendered loop (AuroraBackdrop, Marquee, OrbitRing,
+ * Meteors, Sparkles) pause itself offscreen: drop it inside the looping element and it observes
+ * its parent with useInViewPause's observer. Renders a hidden span and nothing else.
  */
 import { useEffect, useRef } from 'react';
 import { observePause } from './use-in-view-pause';

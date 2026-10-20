@@ -190,7 +190,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/dashboard/user/quotations" className="group inline-flex min-h-9 w-fit items-center gap-1 text-sm text-fg-2 hover:text-fg-1">
+      <Link href="/dashboard/user/quotations" className="group inline-flex min-h-11 w-fit items-center gap-1 text-sm text-fg-2 hover:text-fg-1 lg:min-h-9">
         <ArrowLeft aria-hidden="true" className="size-4 transition-transform duration-fast motion-safe:group-hover:-translate-x-0.5" />
         All quotations
       </Link>

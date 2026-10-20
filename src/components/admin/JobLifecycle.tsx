@@ -68,7 +68,8 @@ export function JobLifecycle(props: { job: { status: JobStatus; entry: StatusEnt
                 ? 'bg-panel/14 text-panel ring-1 ring-panel/45'
                 : 'bg-bg-2 text-fg-3 ring-1 ring-border-strong';
           const next = list[i + 1];
-          const reached = next !== undefined && next.state !== 'upcoming' && next.state !== 'skipped';
+          // Both ends must be reached: a skipped Running step must not draw progress on to the outcome.
+          const reached = next !== undefined && (step.state === 'done' || step.state === 'current') && next.state !== 'upcoming' && next.state !== 'skipped';
           const arrive = 0.05 + i * STEP * 2;
           return (
             <li key={step.key} aria-current={step.state === 'current' ? 'step' : undefined} className="relative flex min-w-0 flex-col gap-2.5">
@@ -79,7 +80,7 @@ export function JobLifecycle(props: { job: { status: JobStatus; entry: StatusEnt
                   </span>
                 </Reveal>
                 {next ? (
-                  <span aria-hidden="true" className="block h-0.5 flex-1 overflow-hidden rounded-full bg-border-strong">
+                  <span aria-hidden="true" data-reached={reached} className="block h-0.5 flex-1 overflow-hidden rounded-full bg-border-strong">
                     {reached ? <RailDraw delay={arrive + STEP * 0.4} seconds={STEP * 1.4} className="[background-image:var(--panel-grad)]" /> : null}
                   </span>
                 ) : null}

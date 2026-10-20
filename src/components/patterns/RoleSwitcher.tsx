@@ -14,10 +14,11 @@
  *
  * The floating trigger is a solid pill. On panel routes below 1024px it sits above the bottom
  * tab bar and the iOS safe area. On /login it is not rendered, because the card there already
- * lists the same personas (with this module's marker).
+ * lists the same personas (with this module's marker). The popover is a dialog named by its
+ * "Demo identities" heading.
  */
 import { usePathname } from 'next/navigation';
-import { useState, type CSSProperties } from 'react';
+import { useId, useState, type CSSProperties } from 'react';
 import { ArrowRight, Building2, Check, ChevronUp, Headset, LoaderCircle, ShieldCheck, Users, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
@@ -154,6 +155,7 @@ function ErrorLine({ error }: { error: SwitchError | null }) {
 export function RoleSwitcher() {
   const pathname = usePathname();
   const { pending, error, switchTo } = useSwitch();
+  const titleId = useId();
   const active = activePersona(pathname);
   if (pathname === '/login') return null;
   const onPanel = pathname?.startsWith('/dashboard/') || pathname === '/dashboard';
@@ -178,8 +180,8 @@ export function RoleSwitcher() {
             <ChevronUp aria-hidden="true" className="text-fg-3 transition-transform duration-fast group-data-[state=open]:rotate-180" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" side="top" sideOffset={8} className="w-[min(20rem,calc(100vw-2rem))] p-2">
-          <p className="flex items-center gap-2 px-2 pt-1 text-[11px] font-semibold tracking-[0.14em] text-fg-2 uppercase">
+        <PopoverContent align="end" side="top" sideOffset={8} aria-labelledby={titleId} className="w-[min(20rem,calc(100vw-2rem))] p-2">
+          <p id={titleId} className="flex items-center gap-2 px-2 pt-1 text-[11px] font-semibold tracking-[0.14em] text-fg-2 uppercase">
             <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-demo" />
             Demo identities
           </p>

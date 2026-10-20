@@ -80,7 +80,7 @@ export type WebhookDetail = WebhookRow & {
   payloadRedacted: unknown;
   result: unknown;
   processingPurgedAt: Date | null;
-  jobs: Array<{ id: string; type: string; status: string; label: string; createdAt: Date }>;
+  jobs: Array<{ id: string; type: string; status: string; label: string; attempts: number; createdAt: Date }>;
 };
 
 export async function getWebhookEventDetail(ctx: AppCtx, eventId: string): Promise<WebhookDetail> {
@@ -90,11 +90,11 @@ export async function getWebhookEventDetail(ctx: AppCtx, eventId: string): Promi
   const workspace = e.workspaceId ? await prisma.workspace.findUnique({ where: { id: e.workspaceId }, select: { id: true, slug: true, name: true } }) : null;
   // Jobs that processed this event name its id in their payload (ids only, plan §4.3); payload JSON
   // is never filtered in SQL, so the event's workspace jobs are matched here.
-  const candidates = await prisma.job.findMany({ where: { workspaceId: e.workspaceId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 2000, select: { id: true, type: true, status: true, runAt: true, deadReason: true, cancelRequestedAt: true, createdAt: true, payload: true } });
+  const candidates = await prisma.job.findMany({ where: { workspaceId: e.workspaceId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 2000, select: { id: true, type: true, status: true, attempts: true, runAt: true, deadReason: true, cancelRequestedAt: true, createdAt: true, payload: true } });
   const now = ctx.clock.now();
   const jobs = candidates
     .filter((j) => Object.values((j.payload ?? {}) as Record<string, unknown>).includes(e.id))
-    .map((j) => ({ id: j.id, type: j.type, status: j.status, label: jobLabel(j, now), createdAt: j.createdAt }));
+    .map((j) => ({ id: j.id, type: j.type, status: j.status, label: jobLabel(j, now), attempts: j.attempts, createdAt: j.createdAt }));
   return {
     id: e.id,
     provider: e.provider,

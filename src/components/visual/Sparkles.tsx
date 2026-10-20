@@ -3,9 +3,11 @@
  * (zest, aura, flare, ice). Positions, sizes and timing come from a seeded mulberry32 sequence,
  * so markup is identical on the server, the client and in tests; the twinkle is a CSS opacity +
  * transform keyframe. Fill a `relative` parent. Under reduced motion they rest mid-twinkle.
+ * Like every loop, they pause offscreen and in a hidden tab (PauseOffscreen). Server-safe.
  */
 import type { CSSProperties } from 'react';
 import { cn } from '@/components/ui/cn';
+import { PauseOffscreen } from './PauseOffscreen';
 import { between, mulberry32 } from './prng';
 
 const COLORS = ['var(--zest)', 'var(--aura)', 'var(--ice)', 'var(--flare)', 'var(--aura)'] as const;
@@ -41,6 +43,7 @@ export function Sparkles(props: { count?: number; className?: string; seed?: num
           }
         />
       ))}
+      <PauseOffscreen />
     </div>
   );
 }

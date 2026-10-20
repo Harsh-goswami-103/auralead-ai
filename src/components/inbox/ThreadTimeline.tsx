@@ -2,9 +2,11 @@
  * One conversation, oldest first (T22; 06-design §11.2 "Thread view", F6): customer messages on the
  * left, the business's on the right, each outbound message with its delivery badge (mode chip
  * always, "Unknown (provider timeout)" for an ambiguous send) and the note that explains a
- * non-delivery ("AI reply cancelled by takeover", a blocked reason, a deferral). AI-prepared replies
- * are marked as suggestions and carry their approval actions; events (takeover, resume, mode
- * changes, escalations, call requests) sit between the messages. Server-rendered.
+ * non-delivery ("AI reply cancelled by takeover", a blocked reason, a deferral). A prepared reply
+ * that waits for approval says who wrote it in the shared generator vocabulary (lead-console.ts):
+ * "AI suggestion" only for a model provider, otherwise "Local template", "Automatic reply" or
+ * "System text", as on the Approvals page; it carries its approval actions. Events (takeover,
+ * resume, mode changes, escalations, call requests) sit between the messages. Server-rendered.
  *
  * Aurora look (design spec §6 "Chat bubbles"): outbound bubbles in the aura tint (bg-aura/12,
  * border-aura/25) with a tucked corner, inbound bubbles on bg-2 beside the customer's initials, a
@@ -12,13 +14,14 @@
  * centred pills toned by kind with their icon and words. Each item rises in on first paint; a
  * refresh keeps the same nodes (keyed by id), so only newly arrived items animate.
  */
-import { CalendarClock, FileText, Hand, PhoneCall, ShieldAlert, Sparkles } from 'lucide-react';
+import { Bot, CalendarClock, CircleHelp, Cog, FileText, Hand, PhoneCall, ShieldAlert, Sparkles, Wand2, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { InitialsAvatar } from '@/components/client/InitialsAvatar';
 import { DeliveryStatusBadge, ModeChip } from '@/components/patterns/StatusBadge';
 import { TONE_CLASSES } from '@/components/patterns/status-vocabulary';
 import { cn } from '@/components/ui/cn';
 import { Reveal } from '@/components/visual/Reveal';
+import { generatorInfo, type GeneratorKind } from '@/lib/schemas/lead-console';
 import type { ThreadEvent, ThreadMessage } from '@/server/services/messaging/inbox';
 import { formatClockTime, formatDayMonth, formatShortDateTime } from './format';
 
@@ -26,6 +29,8 @@ type Item = { at: Date; key: string; node: ReactNode };
 
 const EVENT_ICONS = { MODE: Hand, ESCALATION: ShieldAlert, CALL_REQUEST: PhoneCall, REVIEW: ShieldAlert } as const;
 const EVENT_TONES = { MODE: TONE_CLASSES.info, ESCALATION: TONE_CLASSES.warning, CALL_REQUEST: TONE_CLASSES.warning, REVIEW: TONE_CLASSES.warning } as const;
+/** The draft marker's icon per generator kind (the same icons as GeneratorChip); a person's own draft has none. */
+const DRAFT_ICONS: Readonly<Partial<Record<GeneratorKind, LucideIcon>>> = { ai: Sparkles, template: Wand2, automatic: Bot, system: Cog, other: CircleHelp };
 
 export function ThreadTimeline(props: { messages: ThreadMessage[]; events: ThreadEvent[]; timeZone: string; draftActions: (m: ThreadMessage) => ReactNode; leadName?: string }) {
   const items: Item[] = [
@@ -79,7 +84,8 @@ export function ThreadTimeline(props: { messages: ThreadMessage[]; events: Threa
 
 function MessageBubble({ m, timeZone, actions, leadName }: { m: ThreadMessage; timeZone: string; actions: ReactNode; leadName?: string }) {
   const outbound = m.direction === 'OUT';
-  const suggestion = outbound && m.status === 'DRAFT' && m.generatorLabel !== 'human' && m.generatorLabel !== null;
+  const generator = generatorInfo(m.generatorLabel);
+  const DraftIcon = outbound && m.status === 'DRAFT' ? DRAFT_ICONS[generator.kind] : undefined;
   const notSent = m.status === 'DRAFT';
   return (
     <li className="flex" data-message={m.id} data-direction={m.direction} data-status={m.status}>
@@ -94,10 +100,10 @@ function MessageBubble({ m, timeZone, actions, leadName }: { m: ThreadMessage; t
               (m.status === 'NOT_SENT' || m.status === 'FAILED') && 'opacity-80',
             )}
           >
-            {suggestion ? (
-              <span className="flex items-center gap-1.5 text-xs font-medium text-fg-2">
-                <Sparkles aria-hidden="true" className="size-3.5" />
-                AI suggestion · not sent
+            {DraftIcon ? (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-fg-2" data-draft-marker={generator.kind}>
+                <DraftIcon aria-hidden="true" className="size-3.5" />
+                {generator.kind === 'ai' ? 'AI suggestion' : generator.short} · not sent
               </span>
             ) : null}
             {m.quickReplyLabel ? <span className="text-sm font-medium text-fg-1">{m.quickReplyLabel}</span> : null}
