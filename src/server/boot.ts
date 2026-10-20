@@ -31,7 +31,9 @@ export class BootError extends Error {
   }
 }
 
-export type BootCheckConfig = Pick<AppConfig, 'mode' | 'testControl' | 'secrets' | 'paths'>;
+export type BootCheckConfig = Pick<AppConfig, 'mode' | 'testControl' | 'secrets' | 'paths' | 'appOrigin' | 'authCookieInsecureDev'>;
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 export function checkBoot(config: BootCheckConfig): { warnings: string[] } {
   const issues: string[] = [];
@@ -44,8 +46,21 @@ export function checkBoot(config: BootCheckConfig): { warnings: string[] } {
   if (!config.secrets.suppressionPepper) missing.push('SUPPRESSION_PEPPER');
   if (!config.secrets.credentials) missing.push('CREDENTIALS_KEYRING');
   if (missing.length > 0) issues.push(`${missing.join(', ')}: required; run \`npm run setup\` to generate them into .env`);
+
+  const warnings = [...config.paths.warnings];
+  if (config.mode === 'live') {
+    // The session cookie is `__Host-` prefixed and Secure: browsers store it only over HTTPS or on loopback.
+    const origin = new URL(config.appOrigin);
+    const secureContext = origin.protocol === 'https:' || LOOPBACK_HOSTS.has(origin.hostname);
+    if (!secureContext && !config.authCookieInsecureDev) {
+      issues.push('APP_ORIGIN: LIVE must be served over https (the session cookie is Secure); for a plain-HTTP development host set AUTH_COOKIE_INSECURE_DEV=1');
+    }
+    if (config.authCookieInsecureDev) {
+      warnings.push('AUTH_COOKIE_INSECURE_DEV=1 in LIVE: the session cookie is not Secure and has no __Host- prefix; use only on a trusted development network');
+    }
+  }
   if (issues.length > 0) throw new BootError(issues);
-  return { warnings: [...config.paths.warnings] };
+  return { warnings };
 }
 
 /** Parses and checks the environment; every problem is reported as one BootError. */

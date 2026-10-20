@@ -30,7 +30,7 @@ export default function LoginPage() {
     <AuthFrame
       title="Sign in"
       description="Accounts are created by invitation from your administrator."
-      footnote="Five failed attempts lock the account for 15 minutes."
+      footnote="Five failed attempts lock the account for 15 minutes. Lost your password? Ask your administrator for a reset link."
     >
       <CredentialForm
         action="/api/app/auth/login"

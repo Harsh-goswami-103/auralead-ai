@@ -32,7 +32,8 @@
     "pipeline:resume": "tsx scripts/pipeline-resume.ts",
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts",
-    "lead:erase": "tsx scripts/lead-erase.ts"
+    "lead:erase": "tsx scripts/lead-erase.ts",
+    "admin:bootstrap": "tsx scripts/admin-bootstrap.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.134.0",

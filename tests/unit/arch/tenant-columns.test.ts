@@ -12,7 +12,7 @@ import { NULLABLE_TENANT_MODELS, TENANT_MODELS } from '@/server/db/scoped';
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 
 /** Models that are the tenant itself or are platform-wide (identity, sessions, singletons). */
-const IDENTITY_ALLOWLIST = new Set(['Workspace', 'User', 'Session', 'SystemSetting', 'TestClock', 'WorkerHeartbeat']);
+const IDENTITY_ALLOWLIST = new Set(['Workspace', 'User', 'Session', 'PasswordReset', 'SystemSetting', 'TestClock', 'WorkerHeartbeat']);
 /** Models whose workspaceId is nullable by design (system rows, platform invites, unrouted webhooks). */
 const NULLABLE_ALLOWLIST = new Set(['Job', 'JobAttempt', 'AuditEvent', 'WebhookEvent', 'WebhookRejection', 'Invite']);
 
