@@ -100,4 +100,21 @@ describe('SimulationPanel', () => {
     vi.advanceTimersByTime(10_000);
     expect(refresh).toHaveBeenCalledTimes(2);
   });
+
+  it('a run after the schedule ran out (events still queued) polls again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ records: 1, events: [{ outcome: 'ACCEPTED' }] }), { status: 200 }));
+    renderPanel({ allowed: true }, true);
+    act(() => vi.advanceTimersByTime(20_000 + 60_000 + 180_000));
+    expect(refresh).toHaveBeenCalledTimes(40);
+    expect(screen.getByRole('status').textContent).toContain('The worker has not processed the queued events yet.');
+
+    await act(async () => {
+      fireEvent.click(within(card('Google Sheets form row')).getByRole('button', { name: 'Simulate' }));
+    });
+    expect(refresh).toHaveBeenCalledTimes(41);
+    expect(screen.getByRole('status').textContent).toContain('The worker is processing queued events.');
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(refresh).toHaveBeenCalledTimes(42);
+  });
 });

@@ -112,6 +112,17 @@ describe('PricingWorkspace', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('below 1024px the section tabs are 44px targets, and the service dialog keeps focus clear of its sticky footer', () => {
+    renderPage();
+    for (const tab of screen.getAllByRole('tab')) expect(tab.className).toMatch(/(^| )min-h-11( |$).* lg:min-h-9/);
+    fireEvent.click(screen.getByRole('button', { name: 'Add service' }));
+    // Focus scrolling honours scroll-padding, so a tabbed-to field never lands under the Cancel/Save footer.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toMatch(/(^| )scroll-pb-40( |$)/);
+    expect(dialog.className).toContain('sm:scroll-pb-28');
+    expect(dialog.querySelector('[data-slot="dialog-footer"]')!.className).toContain('sticky');
+  });
+
   it('invalid input is caught on the field before any request', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Add service' }));

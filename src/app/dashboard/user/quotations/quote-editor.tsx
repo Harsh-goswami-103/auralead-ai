@@ -7,12 +7,21 @@
  * is saved, applies the discount limits and tax, and stores the totals. Discounts are typed as a
  * percentage or rupees and sent as basis points or paise. Any server refusal is shown with its
  * reference; nothing is reported as saved until the server confirms it.
+ *
+ * Aurora look (design spec §6): each line is a card that rises in when added (CSS entrance, static
+ * under reduced motion; no exit animation, so a removed line is gone at once), with a short visible
+ * "Quantity" label whose accessible name still names the service. The list-price estimate is a
+ * static summary line (no count-up). Selects use the shared NativeSelect. Creating a quotation is
+ * the page's one primary action (GlowFrame); in revise mode the page's Approve keeps that role.
  */
 import { useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { BadgePercent, Calculator, ListPlus, Plus, Trash2 } from 'lucide-react';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { GlowFrame } from '@/components/visual/GlowFrame';
+import { Reveal } from '@/components/visual/Reveal';
 import { formatINR, parseRupeesToPaise, paiseToRupeeString } from '@/lib/money';
 import { bpsToPercentString, parsePercentToBps } from '@/lib/schemas/pricing';
 import { QUOTE_TEXT_LIMITS, QUOTE_VALIDITY_DAYS, type DISCOUNT_KINDS } from '@/lib/schemas/quotes';
@@ -49,8 +58,7 @@ export type EditorMode =
 
 type Row = { key: number; serviceId: string; qty: string; name?: string; unitLabel?: string };
 
-const selectClass =
-  'h-9 w-full rounded-md border border-input bg-input/30 px-3 text-sm text-fg-1 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
+const range = (min: number, max: number) => `${min.toLocaleString('en-IN')} to ${max.toLocaleString('en-IN')}`;
 
 function discountText(kind: DiscountKind, value: string): string {
   if (kind === 'PERCENT_BPS') return bpsToPercentString(Number(value));
@@ -147,52 +155,84 @@ export function QuoteEditor(props: { catalog: QuoteEditorCatalogDto; mode: Edito
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <fieldset className="flex flex-col gap-3">
-        <legend className="mb-1 text-sm font-medium text-fg-1">Services</legend>
-        {rows.length === 0 ? <p className="text-sm text-fg-2">No services yet. Add one from the price list below.</p> : null}
+    <div className="flex flex-col gap-6">
+      <fieldset className="flex min-w-0 flex-col gap-3">
+        <legend className="mb-2 flex items-center gap-2 text-sm font-medium text-fg-1">
+          <ListPlus aria-hidden="true" className="size-4 text-panel" />
+          Services
+        </legend>
+        {rows.length === 0 ? <p className="rounded-lg border border-dashed border-border-strong px-3 py-3 text-sm text-fg-2">No services yet. Add one from the price list below.</p> : null}
         <ul className="flex flex-col gap-2">
           {rows.map((r) => {
             const s = byId.get(r.serviceId);
             const name = s?.name ?? r.name ?? 'Service';
             return (
-              <li key={r.key} className="grid grid-cols-[1fr_auto_auto] items-end gap-2 rounded-md border border-border-subtle bg-bg-2 p-3 sm:grid-cols-[1fr_8rem_9rem_auto]">
-                <div className="col-span-3 flex flex-col sm:col-span-1">
+              <Reveal
+                as="li"
+                key={r.key}
+                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-end gap-x-3 gap-y-2 rounded-xl border border-border-subtle bg-bg-2/60 p-3 transition-colors duration-fast hover:border-border-strong sm:grid-cols-[minmax(0,1fr)_6.5rem_8.5rem_auto]"
+              >
+                <div className="col-span-3 flex min-w-0 flex-col gap-0.5 self-center sm:col-span-1">
                   <span className="text-sm font-medium text-fg-1">{name}</span>
                   <span className="text-xs text-fg-2">
-                    {s ? `${formatINR(BigInt(s.unitPricePaise))} per ${s.unitLabel}, ${s.minQty} to ${s.maxQty}` : 'Not in the current price list; the server keeps it for review if it has no price.'}
+                    {s ? `${formatINR(BigInt(s.unitPricePaise))} per ${s.unitLabel}, ${range(s.minQty, s.maxQty)}` : 'Not in the current price list; the server keeps it for review if it has no price.'}
                   </span>
                 </div>
-                <TextField name={`qty-${r.key}`} label={`Quantity of ${name}`} value={r.qty} inputMode="numeric" error={errors[`qty-${r.key}`]} onChange={(v) => setRows((prev) => prev.map((x) => (x.key === r.key ? { ...x, qty: v } : x)))} />
-                <p className="pb-2 text-right text-sm text-fg-2 tabular">{s && /^\d{1,5}$/.test(r.qty) ? formatINR(BigInt(s.unitPricePaise) * BigInt(r.qty)) : ''}</p>
-                <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${name}`} onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}>
+                <TextField
+                  name={`qty-${r.key}`}
+                  label={
+                    <>
+                      Quantity<span className="sr-only"> of {name}</span>
+                    </>
+                  }
+                  value={r.qty}
+                  inputMode="numeric"
+                  error={errors[`qty-${r.key}`]}
+                  onChange={(v) => setRows((prev) => prev.map((x) => (x.key === r.key ? { ...x, qty: v } : x)))}
+                  className="max-sm:max-w-32"
+                />
+                <p className="flex flex-col items-end gap-0.5 pb-2 text-right">
+                  <span className="text-xs text-fg-3">Amount</span>
+                  <span className="tabular text-sm font-semibold text-fg-1">{s && /^\d{1,5}$/.test(r.qty) ? formatINR(BigInt(s.unitPricePaise) * BigInt(r.qty)) : ''}</span>
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${name}`}
+                  className="text-fg-2 hover:bg-danger/10 hover:text-danger"
+                  onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
+                >
                   <Trash2 aria-hidden="true" />
                 </Button>
-              </li>
+              </Reveal>
             );
           })}
         </ul>
         {errors.items ? <p className="text-xs text-danger">{errors.items}</p> : null}
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex min-w-60 flex-1 flex-col gap-1.5">
+        <div className="flex max-w-2xl flex-wrap items-end gap-2">
+          <div className="flex min-w-0 flex-1 basis-60 flex-col gap-1.5">
             <Label htmlFor="quote-add-service" className="text-fg-1">
               Add a service
             </Label>
-            <select id="quote-add-service" className={selectClass} value={adding} onChange={(e) => setAdding(e.target.value)}>
+            <NativeSelect id="quote-add-service" wrapperClassName="w-full" value={adding} onChange={(e) => setAdding(e.target.value)}>
               <option value="">Choose from price list {catalog.activePricingVersion ? `v${catalog.activePricingVersion.version}` : ''}</option>
               {remaining.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({formatINR(BigInt(s.unitPricePaise))} per {s.unitLabel})
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
-          <Button type="button" variant="outline" onClick={addLine} aria-disabled={adding === '' || undefined}>
+          <Button type="button" variant="outline" onClick={addLine} aria-disabled={adding === '' || undefined} className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
             <Plus aria-hidden="true" />
             Add
           </Button>
         </div>
-        <p className="text-xs text-fg-2">List price before discount and tax: {formatINR(listEstimate)}. The server prices the quote from the price list when you save.</p>
+        <p className="flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-1/60 px-3 py-2 text-xs text-fg-2">
+          <Calculator aria-hidden="true" className="mt-px size-3.5 shrink-0 text-panel" />
+          <span>List price before discount and tax: {formatINR(listEstimate)}. The server prices the quote from the price list when you save.</span>
+        </p>
       </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -200,9 +240,9 @@ export function QuoteEditor(props: { catalog: QuoteEditorCatalogDto; mode: Edito
           <Label htmlFor="quote-discount-kind" className="text-fg-1">
             Discount
           </Label>
-          <select
+          <NativeSelect
             id="quote-discount-kind"
-            className={selectClass}
+            wrapperClassName="w-full"
             value={discountKind}
             onChange={(e) => {
               setDiscountKind(e.target.value as DiscountKind);
@@ -212,9 +252,12 @@ export function QuoteEditor(props: { catalog: QuoteEditorCatalogDto; mode: Edito
             <option value="NONE">No discount</option>
             <option value="PERCENT_BPS">Percentage of subtotal</option>
             <option value="FLAT_PAISE">Flat amount (₹)</option>
-          </select>
-          <p className="text-xs text-fg-2">
-            Limit for these services: {bpsToPercentString(limitBps)}%{capBps !== null ? `. Your own limit: ${bpsToPercentString(capBps)}%.` : '.'}
+          </NativeSelect>
+          <p className="flex items-start gap-1.5 text-xs text-fg-2">
+            <BadgePercent aria-hidden="true" className="mt-px size-3.5 shrink-0 text-zest" />
+            <span>
+              Limit for these services: {bpsToPercentString(limitBps)}%{capBps !== null ? `. Your own limit: ${bpsToPercentString(capBps)}%.` : '.'}
+            </span>
           </p>
         </div>
         {discountKind !== 'NONE' ? (
@@ -227,19 +270,20 @@ export function QuoteEditor(props: { catalog: QuoteEditorCatalogDto; mode: Edito
             prefix={discountKind === 'FLAT_PAISE' ? '₹' : undefined}
             error={errors.discount}
             onChange={setDiscount}
+            fieldClassName="max-w-48"
           />
         ) : null}
       </div>
 
       <TextField name="scopeText" label="Scope of work" multiline value={scopeText} error={errors.scopeText} hint={`Up to ${QUOTE_TEXT_LIMITS.scope} characters. Printed on the quotation.`} onChange={setScope} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
         <TextField name="timelineText" label="Timeline" value={timelineText} error={errors.timelineText} onChange={setTimeline} />
-        <TextField name="validityDays" label="Valid for" suffix="days" inputMode="numeric" value={validity} error={errors.validity} hint="The quotation and its links lapse after this." onChange={setValidity} />
+        <TextField name="validityDays" label="Valid for" suffix="days" inputMode="numeric" value={validity} error={errors.validity} hint="The quotation and its links lapse after this." onChange={setValidity} fieldClassName="max-w-32" className="sm:max-w-72" />
       </div>
 
       {newerPriceList && mode.kind === 'revise' ? (
-        <label className="flex items-start gap-2 text-sm text-fg-1">
-          <input type="checkbox" className="mt-1 size-4 accent-[var(--accent)]" checked={reprice} onChange={(e) => setReprice(e.target.checked)} />
+        <label className="flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-2/40 px-3 py-2.5 text-sm text-fg-1">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={reprice} onChange={(e) => setReprice(e.target.checked)} />
           <span>
             Use the current price list (v{catalog.activePricingVersion!.version}) instead of the one this quote was priced with{mode.pricingVersionNo !== null ? ` (v${mode.pricingVersionNo})` : ''}.
           </span>
@@ -247,8 +291,14 @@ export function QuoteEditor(props: { catalog: QuoteEditorCatalogDto; mode: Edito
       ) : null}
 
       {failure ? <FormAlert message={failure.message} reference={failure.reference} /> : null}
-      <div>
-        <GatedAction label={props.submitLabel} pendingLabel="Saving..." gate={props.gate} onAction={submit} />
+      <div className="flex flex-wrap items-center gap-3 border-t border-border-subtle pt-4">
+        {mode.kind === 'create' && props.gate === null ? (
+          <GlowFrame>
+            <GatedAction label={props.submitLabel} pendingLabel="Saving..." gate={null} onAction={submit} />
+          </GlowFrame>
+        ) : (
+          <GatedAction label={props.submitLabel} pendingLabel="Saving..." gate={props.gate} onAction={submit} />
+        )}
       </div>
     </div>
   );

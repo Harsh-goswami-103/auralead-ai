@@ -23,6 +23,7 @@
  */
 import type { ApprovalKind, ApprovalStatus, Channel, DispatchState, MessageKind, MessageStatus, Prisma, QuoteStatus } from '@/generated/prisma/client';
 import { ConflictError, DomainRuleError, NotFoundError, QuoteVersionConflictError, ValidationError } from '@/lib/errors';
+import { truncateAtWord } from '@/lib/format/text';
 import { parsePaise } from '@/lib/money';
 import type { AppCtx } from '@/server/auth/context';
 import { hasCapability, requireCapability, requireWorkspace } from '@/server/auth/guards';
@@ -177,7 +178,7 @@ async function buildItems(ctx: AppCtx, rows: ApprovalRow[]): Promise<ApprovalQue
             id: message.id,
             channel: message.channel,
             kind: message.kind,
-            preview: (message.body ?? message.subject ?? '').slice(0, 160),
+            preview: truncateAtWord(message.body ?? message.subject ?? '', 160),
             subject: message.subject,
             generatorLabel: message.generatorLabel,
             status: message.status,

@@ -1,3 +1,8 @@
+/**
+ * Card (shadcn new-york, restyled for "Aurora", design spec §5): bg-1 at 80% with a subtle border,
+ * no shadow (elevation comes from borders and surface steps). Titles use the display face.
+ * Panel pages prefer patterns/SectionCard, which adds the header row and the optional hairline.
+ */
 import * as React from "react"
 import { cn } from "@/components/ui/cn"
 
@@ -6,7 +11,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
+        "flex min-w-0 flex-col gap-6 rounded-xl border border-border-subtle bg-bg-1/80 py-6 text-fg-1",
         className
       )}
       {...props}
@@ -31,7 +36,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("leading-none font-semibold", className)}
+      className={cn("font-display leading-tight font-semibold text-fg-1", className)}
       {...props}
     />
   )
@@ -41,7 +46,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-fg-2", className)}
       {...props}
     />
   )

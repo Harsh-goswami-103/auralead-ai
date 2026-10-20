@@ -16,7 +16,7 @@ export default async function UserPanelLayout({ children }: { children: ReactNod
   const page = await getPageContext();
   if (!page) redirect('/login');
   if (page.session.user.globalRole !== 'USER') notFound();
-  const chrome = await loadPanelChrome(page.ctx, page.session, { envOutboundPaused: getRuntime().config.outboundPaused });
+  const chrome = await loadPanelChrome(page.ctx, page.session, { envOutboundPaused: getRuntime().config.outboundPaused, outboundLockFile: getRuntime().config.paths.outboundLockFile });
   return (
     <PanelShell panel="user" chrome={chrome} csrfToken={page.csrfToken}>
       {children}

@@ -6,8 +6,9 @@
  *    the quote settings.
  *  - EMPLOYEE: the actor's active assignments (capabilities, discount cap), filtered by the
  *    actor's own user id through the base client, exactly like the panel chrome.
- *  - SUPER_ADMIN: platform counts and worker liveness only. Tenant records stay behind the
- *    audited adminContext (later admin pages).
+ *  - SUPER_ADMIN: platform counts, worker liveness and the global outbound pause (read through
+ *    readOutboundPause, the same model as the jobs page, so a hand-made outbound.lock shows here
+ *    too). Tenant records stay behind the audited adminContext (later admin pages).
  * Each loader refuses another role with a 404 (A6).
  */
 import type { Capability } from '@/lib/domain/enums';
@@ -16,6 +17,7 @@ import { NotFoundError } from '@/lib/errors';
 import { baseClientOf, type AppCtx } from '@/server/auth/context';
 import { requireRole, requireWorkspace } from '@/server/auth/guards';
 import { dbMode } from '@/server/auth/session';
+import { readOutboundPause, type OutboundPauseState } from '@/server/services/admin/outbound-pause';
 
 /** Plan M3 queue health: a heartbeat older than this means "Worker not running". */
 export const WORKER_STALE_AFTER_MS = 30_000;
@@ -131,11 +133,18 @@ export type AdminHome = {
   workspaces: { total: number; active: number; suspended: number; automationPaused: number };
   people: { owners: number; members: number; employees: number; superAdmins: number; disabled: number };
   activeAssignments: number;
+  /** Any of the three switches holds outbound delivery (admin switch, outbound.lock, OUTBOUND_PAUSED). */
   outboundPaused: boolean;
+  /**
+   * The full pause state, read exactly like the jobs page (readOutboundPause), so the two pages can
+   * never disagree. Null only when the caller passed no lock file path; then `outboundPaused` reads
+   * the admin switch and the env flag alone.
+   */
+  outbound: OutboundPauseState | null;
   worker: { workerId: string; lastBeatAt: Date; running: boolean; currentJobId: string | null } | null;
 };
 
-export async function loadAdminHome(ctx: AppCtx, opts: { envOutboundPaused?: boolean } = {}): Promise<AdminHome> {
+export async function loadAdminHome(ctx: AppCtx, opts: { envOutboundPaused?: boolean; lockFile?: string } = {}): Promise<AdminHome> {
   requireRole(ctx, 'SUPER_ADMIN');
   const prisma = baseClientOf(ctx);
   const mode = dbMode(ctx.mode);
@@ -157,7 +166,9 @@ export async function loadAdminHome(ctx: AppCtx, opts: { envOutboundPaused?: boo
     prisma.user.count({ where: { status: 'DISABLED', ...userScope } }),
   ]);
   const activeAssignments = await prisma.employeeAssignment.count({ where: { active: true, ...inMode } });
-  const setting = await prisma.systemSetting.findUnique({ where: { id: 1 }, select: { outboundPaused: true } });
+  const envPaused = opts.envOutboundPaused ?? false;
+  const outbound = opts.lockFile === undefined ? null : await readOutboundPause(prisma, { lockFile: opts.lockFile, envPaused });
+  const setting = outbound ? null : await prisma.systemSetting.findUnique({ where: { id: 1 }, select: { outboundPaused: true } });
   const beat = await prisma.workerHeartbeat.findFirst({ where: { mode }, orderBy: { lastBeatAt: 'desc' } });
   const now = ctx.clock.now().getTime();
 
@@ -165,7 +176,8 @@ export async function loadAdminHome(ctx: AppCtx, opts: { envOutboundPaused?: boo
     workspaces: { total, active, suspended, automationPaused },
     people: { owners: ownerRows.length, members, employees, superAdmins, disabled },
     activeAssignments,
-    outboundPaused: (opts.envOutboundPaused ?? false) || (setting?.outboundPaused ?? false),
+    outboundPaused: outbound ? outbound.paused : envPaused || (setting?.outboundPaused ?? false),
+    outbound,
     worker: beat
       ? { workerId: beat.workerId, lastBeatAt: beat.lastBeatAt, running: now - beat.lastBeatAt.getTime() <= WORKER_STALE_AFTER_MS, currentJobId: beat.currentJobId }
       : null,

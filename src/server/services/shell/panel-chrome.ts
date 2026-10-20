@@ -11,6 +11,7 @@
 import type { LoadedSession } from '@/server/auth/session';
 import { dbMode } from '@/server/auth/session';
 import { baseClientOf, type AppCtx } from '@/server/auth/context';
+import { readOutboundLock } from '@/server/services/admin/outbound-pause';
 
 export type ChromeWorkspace = { slug: string; name: string; planLabel: string; mode: 'DEMO' | 'LIVE' };
 
@@ -21,7 +22,11 @@ export type PanelChrome = {
   workspace: ChromeWorkspace | null;
   /** Ordered by name, then slug. */
   switchable: ChromeWorkspace[];
-  /** Global kill switch: SystemSetting.outboundPaused or OUTBOUND_PAUSED=1. */
+  /**
+   * Global kill switch, the same three sources dispatch preflight honours (readOutboundPause):
+   * SystemSetting.outboundPaused, OUTBOUND_PAUSED=1, or an outbound.lock file (a restore, or an
+   * operator by hand).
+   */
   outboundPaused: boolean;
   /** The resolved workspace's automation pause. */
   automationPaused: boolean;
@@ -29,7 +34,11 @@ export type PanelChrome = {
 
 const workspaceSelect = { slug: true, name: true, planLabel: true, mode: true, automationPaused: true } as const;
 
-export async function loadPanelChrome(ctx: AppCtx, session: LoadedSession, opts: { envOutboundPaused: boolean }): Promise<PanelChrome> {
+export async function loadPanelChrome(
+  ctx: AppCtx,
+  session: LoadedSession,
+  opts: { envOutboundPaused: boolean; outboundLockFile: string },
+): Promise<PanelChrome> {
   const prisma = baseClientOf(ctx);
   const mode = dbMode(ctx.mode);
   const { user } = session;
@@ -58,7 +67,7 @@ export async function loadPanelChrome(ctx: AppCtx, session: LoadedSession, opts:
     user: { name: user.name, email: user.email, role: user.globalRole, isDemo: user.isDemo },
     workspace: current ? { slug: current.slug, name: current.name, planLabel: current.planLabel, mode: current.mode } : null,
     switchable,
-    outboundPaused: opts.envOutboundPaused || (setting?.outboundPaused ?? false),
+    outboundPaused: opts.envOutboundPaused || (setting?.outboundPaused ?? false) || readOutboundLock(opts.outboundLockFile).present,
     automationPaused: current?.automationPaused ?? false,
   };
 }

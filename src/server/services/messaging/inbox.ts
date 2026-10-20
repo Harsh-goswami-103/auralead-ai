@@ -25,6 +25,7 @@
 import type { Channel, ConversationAiMode, DispatchState, MessageDirection, MessageKind, MessageStatus, Prisma, SendIntent } from '@/generated/prisma/client';
 import type { AppConfig } from '@/lib/config';
 import { DomainRuleError, NotFoundError, ValidationError } from '@/lib/errors';
+import { truncateAtWord } from '@/lib/format/text';
 import { idempotencyKey } from '@/lib/ids';
 import type { AppCtx } from '@/server/auth/context';
 import { hasCapability, requireCapability, requireWorkspace } from '@/server/auth/guards';
@@ -70,8 +71,8 @@ function quickReplyOf(variables: Prisma.JsonValue | null): string | null {
 function previewOf(m: { body: string | null; subject: string | null; kind: MessageKind; variables: Prisma.JsonValue | null; direction: MessageDirection }): string {
   const quick = m.direction === 'IN' ? quickReplyOf(m.variables) : null;
   if (quick) return QUICK_REPLY_LABELS[quick] ?? 'Tapped a button';
-  if (m.body) return m.body.slice(0, 140);
-  if (m.subject) return m.subject.slice(0, 140);
+  if (m.body) return truncateAtWord(m.body, 140);
+  if (m.subject) return truncateAtWord(m.subject, 140);
   if (m.kind === 'TEMPLATE') return 'Template message';
   if (m.kind === 'DOCUMENT') return 'Quotation PDF';
   return 'Message';

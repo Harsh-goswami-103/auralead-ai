@@ -7,6 +7,7 @@
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import { CsrfProvider } from '@/components/patterns/csrf';
 import { QuoteSharePanel, type QuoteSharePanelProps } from '@/components/approvals/QuoteSharePanel';
 
@@ -66,6 +67,15 @@ describe('QuoteSharePanel', () => {
     expect(writeText).toHaveBeenCalledWith('http://localhost:3000/quote/tok123');
     expect(calls()[1]).toEqual({ url: '/api/app/quotes/q1/mark-sent', body: { expectedVersion: 1, via: 'COPY_LINK' } });
     expect(screen.getByRole('status').textContent).toContain('marked as sent');
+  });
+
+  it('creating a link is announced, since focus stays on the button and the link is shown once', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { share: { id: 's1', state: 'ACTIVE', expiresAt: '2026-10-31T00:00:00.000Z' }, url: 'http://localhost:3000/quote/tok123' }));
+    vi.mocked(toast.success).mockClear();
+    renderPanel();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Create share link' })));
+    expect(toast.success).toHaveBeenCalledWith('Share link created. It is shown once: copy it now.');
+    expect(screen.getByRole('status').textContent).toContain('Share link created.');
   });
 
   it('a failed copy does not mark the quote sent and says how to proceed', async () => {

@@ -120,6 +120,91 @@ describe('ApprovalActions', () => {
     expect(calls()[0]).toEqual({ url: '/api/app/approvals/appr_2/send', body: { workspaceSlug: 'smile-avenue-dental' } });
   });
 
+  it('starts on the first usable channel and never pre-selects an unavailable one', () => {
+    renderActions({
+      channels: [
+        { channel: 'EMAIL', gate: { category: 'eligibility', reason: 'No email opt-in or enabled B2B attestation.' }, templates: [], deferredLabels: [] },
+        { channel: 'WHATSAPP', gate: null, templates: [{ id: 't1', name: 'quote_ready', language: 'en' }], deferredLabels: [] },
+      ],
+    });
+    expect((screen.getByRole('radio', { name: /WhatsApp/ }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('radio', { name: /Email/ }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('with no usable channel nothing is selected and the send explains why, once', () => {
+    renderActions({
+      channels: [
+        { channel: 'EMAIL', gate: { category: 'eligibility', reason: 'No email opt-in or enabled B2B attestation.' }, templates: [], deferredLabels: [] },
+        { channel: 'WHATSAPP', gate: { category: 'configuration', reason: 'No approved WhatsApp template is synced.' }, templates: [], deferredLabels: [] },
+      ],
+    });
+    for (const radio of screen.getAllByRole('radio')) expect((radio as HTMLInputElement).checked).toBe(false);
+    const send = screen.getByRole('button', { name: 'Approve and send' });
+    expect(send.getAttribute('aria-disabled')).toBe('true');
+    expect(send.getAttribute('data-gate-category')).toBe('eligibility');
+    // The unavailable hint is readable text (text-2), not the low-contrast text-3 of the old pill.
+    const hints = screen.getAllByText('(unavailable)');
+    expect(hints).toHaveLength(2);
+    for (const hint of hints) expect(hint.className).toContain('text-fg-2');
+    // The channels' own reasons are the page's eligibility list; the component does not repeat them.
+    expect(screen.queryByText('No approved WhatsApp template is synced.')).toBeNull();
+    // Choosing a channel shows that channel's reason on the send control.
+    fireEvent.click(screen.getByRole('radio', { name: /WhatsApp/ }));
+    expect(screen.getByRole('button', { name: 'Approve and send on WhatsApp' }).getAttribute('data-gate-category')).toBe('configuration');
+    expect(screen.getAllByText('No approved WhatsApp template is synced.')).toHaveLength(1);
+  });
+
+  it('sending an already approved quotation says "queued", not "approved and queued"', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { approvalId: 'appr_1', messageId: 'm1', attemptId: 'a1', jobId: 'j1', created: true }));
+    renderActions({ status: 'APPROVED' });
+    expect(screen.queryByRole('button', { name: /^Approve v/ })).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send by email' })));
+    expect(toastSuccess).toHaveBeenCalledWith('Q-0003 v2 queued by email.');
+    expect(screen.getByRole('status').textContent).toBe('Q-0003 v2 queued by email.');
+  });
+
+  it('one primary action: the send when it can run; Approve leads when only the send is blocked', () => {
+    renderActions();
+    const send = screen.getByRole('button', { name: 'Approve and send by email' });
+    const approve = screen.getByRole('button', { name: 'Approve v2' });
+    expect(send.closest('[data-glow-frame]')).not.toBeNull();
+    expect(approve.closest('[data-glow-frame]')).toBeNull();
+    cleanup();
+
+    renderActions({
+      channels: [
+        { channel: 'EMAIL', gate: { category: 'eligibility', reason: 'No email opt-in or enabled B2B attestation.' }, templates: [], deferredLabels: [] },
+        { channel: 'WHATSAPP', gate: { category: 'configuration', reason: 'No approved WhatsApp template is synced.' }, templates: [], deferredLabels: [] },
+      ],
+    });
+    const blockedSend = screen.getByRole('button', { name: 'Approve and send' });
+    const leading = screen.getByRole('button', { name: 'Approve v2' });
+    expect(leading.closest('[data-glow-frame]')).not.toBeNull();
+    expect(leading.getAttribute('aria-disabled')).toBeNull();
+    expect(blockedSend.closest('[data-glow-frame]')).toBeNull();
+    // Approve comes first in reading and tab order; the blocked send follows with its reason.
+    expect(leading.compareDocumentPosition(blockedSend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelectorAll('[data-glow-frame]')).toHaveLength(1);
+  });
+
+  it('keyboard focus on a channel radio rings the whole pill', () => {
+    renderActions();
+    const pill = screen.getByRole('radio', { name: /Email/ }).closest('label') as HTMLElement;
+    expect(pill.className).toContain('has-[:focus-visible]:outline-2');
+    expect(pill.className).toContain('has-[:focus-visible]:outline-aura');
+    // Only border and background animate, so the outline does not fade in from the text color.
+    expect(pill.className).not.toMatch(/transition-colors|transition-all/);
+  });
+
+  it('channel pills are 44px touch targets below 1024px', () => {
+    renderActions();
+    for (const name of [/Email/, /WhatsApp/]) {
+      const pill = screen.getByRole('radio', { name }).closest('label') as HTMLElement;
+      expect(pill.className).toMatch(/(^| )min-h-11( |$)/);
+      expect(pill.className).toMatch(/(^| )lg:min-h-10( |$)/);
+    }
+  });
+
   it('without approvals.decide every decision is gated by permission', async () => {
     renderActions({ permissions: { canDecide: false, canSend: false } });
     for (const name of ['Approve v2', 'Approve and send by email', 'Reject']) {

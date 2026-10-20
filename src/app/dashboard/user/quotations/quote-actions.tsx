@@ -6,12 +6,16 @@
  * (confirmation naming the workspace). Each control is shown only where the state machine allows
  * the move; when the move is allowed but blocked, GatedAction says why (permission, or eligibility:
  * pricing review, validity passed). The server re-checks everything and its answer is shown.
+ * Approve is the view's one primary action (GlowFrame) while it can run; the revise editor opens
+ * in a card with the panel hairline.
  */
 import { useState } from 'react';
-import { CircleCheck, PencilLine, XCircle } from 'lucide-react';
+import { CircleCheck, PencilLine, X, XCircle } from 'lucide-react';
+import { IconChip } from '@/components/patterns/IconChip';
 import { ConfirmDialog } from '@/components/patterns/ConfirmDialog';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { Button } from '@/components/ui/button';
+import { GlowFrame } from '@/components/visual/GlowFrame';
 import type { QuoteStatus } from '@/lib/domain/enums';
 import type { QuoteEditorCatalogDto } from '@/server/services/quotes/versioning';
 import { canTransition } from '@/server/services/quotes/state-machine';
@@ -65,7 +69,15 @@ export function QuoteActions(props: QuoteActionsProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start gap-3">
-        {canApproveState ? <GatedAction label={`Approve v${props.versionNo}`} pendingLabel="Approving..." icon={<CircleCheck aria-hidden="true" />} gate={approveGate} onAction={approve} /> : null}
+        {canApproveState ? (
+          approveGate === null ? (
+            <GlowFrame>
+              <GatedAction label={`Approve v${props.versionNo}`} pendingLabel="Approving..." icon={<CircleCheck aria-hidden="true" />} gate={null} onAction={approve} />
+            </GlowFrame>
+          ) : (
+            <GatedAction label={`Approve v${props.versionNo}`} pendingLabel="Approving..." icon={<CircleCheck aria-hidden="true" />} gate={approveGate} onAction={approve} />
+          )
+        ) : null}
         {canRevise && !revising ? (
           <GatedAction
             label={status === 'DRAFT' ? 'Edit (new version)' : 'Revise'}
@@ -99,18 +111,26 @@ export function QuoteActions(props: QuoteActionsProps) {
               }}
             />
           ) : (
-            <GatedAction label="Cancel quotation" variant="outline" gate={NO_EDIT} onAction={() => setRevising(false)} />
+            <GatedAction label="Cancel quotation" variant="outline" gate={NO_EDIT} />
           )
         ) : null}
       </div>
       {failure ? <FormAlert message={failure.message} reference={failure.reference} /> : null}
       {revising ? (
-        <section aria-labelledby="revise-heading" className="flex flex-col gap-4 rounded-lg border border-border-strong bg-bg-1 p-4">
+        <section
+          aria-labelledby="revise-heading"
+          className="relative flex min-w-0 flex-col gap-4 rounded-xl border border-border-strong bg-bg-1/90 p-4 motion-safe:animate-reveal-rise sm:p-5"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-3 -top-px h-0.5 rounded-full [background-image:var(--grad-hairline)]" />
           <div className="flex items-center justify-between gap-2">
-            <h2 id="revise-heading" className="text-lg font-semibold text-fg-1">
+            <h2 id="revise-heading" className="flex items-center gap-2.5 font-display text-lg font-semibold text-fg-1">
+              <IconChip hue="volt">
+                <PencilLine />
+              </IconChip>
               {status === 'DRAFT' ? `Edit v${props.versionNo}` : `Revise v${props.versionNo}`}
             </h2>
             <Button variant="ghost" onClick={() => setRevising(false)}>
+              <X aria-hidden="true" />
               Close
             </Button>
           </div>

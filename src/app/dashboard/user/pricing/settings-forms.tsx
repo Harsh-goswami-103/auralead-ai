@@ -6,8 +6,14 @@
  * posts only its own fields to /api/app/pricing/settings; the server validates the merged result.
  * Without `pricing.override` the values are shown read-only and the save control is gated by
  * permission (plan §12).
+ *
+ * A save runs once at a time whether it starts from the button or from Enter in a field (the form's
+ * submit), so two quick Enters cannot post twice. The tax choice is a pair of radio cards: the chosen
+ * card takes the panel hue with a check, and keyboard focus on the radio rings the whole card.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { CircleCheck } from 'lucide-react';
+import { days as daysLabel } from '@/components/client/labels';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { cn } from '@/components/ui/cn';
 import { bpsToPercentString, GSTIN_PATTERN, parsePercentToBps } from '@/lib/schemas/pricing';
@@ -28,12 +34,23 @@ function SaveRow(props: { gate: Gate | null; label: string; onSave: () => Promis
 function useSettingsSave() {
   const mutate = usePricingMutation();
   const [failure, setFailure] = useState<Failure>(null);
+  const running = useRef(false);
   async function save(body: Record<string, unknown>, message: string) {
     setFailure(null);
     const outcome = await mutate(`/api/app/pricing/settings`, body, () => message);
     if (!outcome.ok) setFailure({ message: outcome.message, reference: outcome.reference });
   }
-  return { failure, save };
+  /** Runs one save flow at a time (button and Enter share it). */
+  async function guarded(run: () => Promise<void>) {
+    if (running.current) return;
+    running.current = true;
+    try {
+      await run();
+    } finally {
+      running.current = false;
+    }
+  }
+  return { failure, save, guarded };
 }
 
 export function TaxForm({ settings, gate }: { settings: PricingSettingsDto; gate: Gate | null }) {
@@ -42,10 +59,11 @@ export function TaxForm({ settings, gate }: { settings: PricingSettingsDto; gate
   const [rate, setRate] = useState(settings.taxBps === null ? '' : bpsToPercentString(settings.taxBps));
   const [gstin, setGstin] = useState(settings.gstin ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
-  const { failure, save } = useSettingsSave();
+  const { failure, save, guarded } = useSettingsSave();
   const readOnly = gate !== null;
 
-  async function onSave() {
+  const onSave = () => guarded(saveTax);
+  async function saveTax() {
     if (gate !== null) return;
     const next: FieldErrors = {};
     const bps = parsePercentToBps(rate);
@@ -70,8 +88,8 @@ export function TaxForm({ settings, gate }: { settings: PricingSettingsDto; gate
         void onSave();
       }}
     >
-      <fieldset className="flex flex-col gap-2" disabled={readOnly}>
-        <legend className="mb-2 text-sm font-medium text-fg-1">Tax on quotes</legend>
+      <fieldset className="grid gap-2 sm:grid-cols-2" disabled={readOnly}>
+        <legend className="mb-2 text-sm font-medium text-fg-1 sm:col-span-2">Tax on quotes</legend>
         {(
           [
             ['NONE', 'No tax', 'Quotes show no tax line.'],
@@ -81,16 +99,17 @@ export function TaxForm({ settings, gate }: { settings: PricingSettingsDto; gate
           <label
             key={value}
             className={cn(
-              'flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3',
-              mode === value ? 'border-cyan/60 bg-bg-2' : 'border-border-subtle bg-bg-1',
+              'relative flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-[background-color,border-color] duration-fast has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-cyan',
+              mode === value ? 'border-panel/55 bg-[linear-gradient(110deg,color-mix(in_oklab,var(--panel-hue)_12%,transparent),transparent_70%)]' : 'border-border-subtle bg-bg-1 hover:border-border-strong hover:bg-bg-2/60',
               readOnly && 'cursor-default',
             )}
           >
-            <input type="radio" name="taxMode" value={value} checked={mode === value} onChange={() => setMode(value)} className="mt-1 accent-cyan" />
-            <span className="flex flex-col">
+            <input type="radio" name="taxMode" value={value} checked={mode === value} onChange={() => setMode(value)} className="mt-1 size-4 accent-cyan focus-visible:outline-none" />
+            <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-medium text-fg-1">{title}</span>
               <span className="text-sm text-fg-2">{detail}</span>
             </span>
+            {mode === value ? <CircleCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-panel motion-safe:animate-reveal-focus" /> : null}
           </label>
         ))}
       </fieldset>
@@ -119,9 +138,10 @@ export function TaxForm({ settings, gate }: { settings: PricingSettingsDto; gate
 export function DiscountLimitForm({ settings, gate }: { settings: PricingSettingsDto; gate: Gate | null }) {
   const [limit, setLimit] = useState(bpsToPercentString(settings.maxDiscountBps));
   const [error, setError] = useState<string | undefined>();
-  const { failure, save } = useSettingsSave();
+  const { failure, save, guarded } = useSettingsSave();
 
-  async function onSave() {
+  const onSave = () => guarded(saveLimit);
+  async function saveLimit() {
     if (gate !== null) return;
     const bps = parsePercentToBps(limit);
     if (bps === null || bps > 10_000) {
@@ -151,7 +171,7 @@ export function DiscountLimitForm({ settings, gate }: { settings: PricingSetting
         error={error}
         readOnly={gate !== null}
         hint="Nobody can discount a quote beyond this. A service limit below it applies to quotes that include that service; operators may have a lower personal limit."
-        className="sm:max-w-sm"
+        fieldClassName="max-w-40"
       />
       {failure ? <FormAlert message={failure.message} reference={failure.reference} /> : null}
       <SaveRow gate={gate} label="Save discount limit" onSave={onSave} />
@@ -162,9 +182,10 @@ export function DiscountLimitForm({ settings, gate }: { settings: PricingSetting
 export function ValidityForm({ settings, gate }: { settings: PricingSettingsDto; gate: Gate | null }) {
   const [days, setDays] = useState(String(settings.quoteValidityDays));
   const [error, setError] = useState<string | undefined>();
-  const { failure, save } = useSettingsSave();
+  const { failure, save, guarded } = useSettingsSave();
 
-  async function onSave() {
+  const onSave = () => guarded(saveValidity);
+  async function saveValidity() {
     if (gate !== null) return;
     const n = /^\d{1,3}$/.test(days.trim()) ? Number(days.trim()) : NaN;
     if (!(n >= 1 && n <= 365)) {
@@ -172,7 +193,7 @@ export function ValidityForm({ settings, gate }: { settings: PricingSettingsDto;
       return;
     }
     setError(undefined);
-    await save({ quoteValidityDays: n }, `New quotes are valid for ${n} days.`);
+    await save({ quoteValidityDays: n }, `New quotes are valid for ${daysLabel(n)}.`);
   }
 
   return (
@@ -194,7 +215,7 @@ export function ValidityForm({ settings, gate }: { settings: PricingSettingsDto;
         error={error}
         readOnly={gate !== null}
         hint="A quote expires this many days after it is issued. Issued quotes keep their date."
-        className="sm:max-w-xs"
+        fieldClassName="max-w-40"
       />
       {failure ? <FormAlert message={failure.message} reference={failure.reference} /> : null}
       <SaveRow gate={gate} label="Save validity" onSave={onSave} />

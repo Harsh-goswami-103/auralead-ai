@@ -9,7 +9,7 @@ Plan: [`implementation-plan.md`](implementation-plan.md) (milestones §11, check
 | M1 Foundation | T01-T09 | Done, exit gate green | 2026-10-16 |
 | M2 Core lead-to-quote slice | T10-T17 | Done, exit gate green | 2026-10-16 |
 | M3 Messaging | T18-T24 | Done, code gate green | 2026-10-16 |
-| M4 Panels and visual | T25-T31 | Next | |
+| M4 Panels and visual | T25-T31 | In progress: UI v2 redesign and T30 landing landed early (ADR-66) | 2026-10-20 |
 | M5 Integrations | T32-T36 | Not started | |
 | M6 Hardening, docs, verify | T37-T39 | Not started | |
 
@@ -87,10 +87,43 @@ The verifier fixed one bug: when outbound was paused, a send that was also ineli
 
 Checklist §15: 32 more rows fully ticked (R1, R6, R18, R21, R23-R25, R28, R29, R40, R45, AT9-AT12, O1-O3, O5, P3, P4, P11, P13, P15, P20, E3-E6, E8, E9, E11); M3 parts of R4, R22, R27, R31-R33, R42, AT8, AT13, P1, P2, E7 ticked `[~]`.
 
+## UI v2 "Aurora" redesign (owner request, 2026-10-20; ADR-66)
+
+What exists:
+- Palette v2 and the visual foundation:
+  - Tokens and Tailwind theme with per-panel signature hues (client aura, operator zest, admin flare).
+  - Restyled shadcn primitives: gradient primary with visible focus, NativeSelect, Textarea, animated dialogs and sheets, toned toasts.
+  - Motion presets.
+  - `src/components/visual/**`: aurora backdrops, comet border, border beam, spotlight and tilt cards, reveal and stagger, animated beams, marquee with a pause button, meteors and sparkles; every effect has a reduced-motion resting frame and pauses offscreen.
+  - Shared patterns: `PageHeader`, `SectionCard`, `StatTile`, `SourceChip`.
+- Procedural 3D aura (R3F) in `src/components/visual/aura/**`: the landing hero, the /login and /invite backdrop, and the command-center tile at >= 1440 px. It renders an SSR poster first, loads through `next/dynamic` after idle, has a visual budget, and falls back to the poster on context loss.
+- Landing `/` (T30, built early): hero, labelled pipeline diagram, feature bento, ROI calculator, principles strip. Not yet built: `visual-budget.spec.ts` and the panel previews.
+- Branded not-found, root `error` and `global-error`, per-panel error boundaries, and the app icon.
+- Every panel page redesigned on the shared patterns.
+- UI bugs fixed, from the audit and from the adversarial review (32 findings, each confirmed by two verifiers):
+  - 390 px overflow on the client home and pricing;
+  - hidden focus;
+  - raw codes shown to people;
+  - AI labels on template text;
+  - endless refresh loops;
+  - the pause banner ignoring `outbound.lock`;
+  - WCAG touch targets, label-in-name and focus return;
+  - public quote alignment and no-JS issues.
+
+Gate, run 2026-10-20 (Linux container):
+| Check | Result |
+|---|---|
+| `npm run typecheck` / `npm run lint` | exit 0 / exit 0 |
+| `npm run test` | 190 files, 2017 tests passed (270 new). 6 failures, the same as before the redesign and specific to this container: `with-tx-retry` x4 (SQLite busy timing), `spike/teardown` (Windows process tree), `seed/determinism` (the generated `.env` pins `NEXT_PUBLIC_APP_MODE`) |
+| Page crawl (48 views: every reachable page at 1440 and 390, three personas) | 0 console errors, 0 page errors, 0 horizontal overflow (before: 2 overflowing pages and a favicon 404 on every page) |
+| axe WCAG 2.0/2.1 A+AA (12 scans) | 0 violations |
+| Playwright on production builds (DEMO + LIVE) | 16/16: smoke and w1440 (smoke, approvals, inbox takeover and window boundary, public quote states, manual share, lead-to-PDF slice); `visual/webgl-fallback.spec.ts` 6/6 across reduced-motion, no-webgl, w390, w768, w1440 and w1920 (poster only where the budget is off, WebGL mounted elsewhere) |
+| three.js isolation (build output) | the three chunk is referenced only by the dynamic-import manifests of `/`, `/login`, `/invite/[token]` and `/dashboard/user` (tile); no route loads it initially, and the operator and admin panels never reference it |
+
 ## Unresolved / carried forward
 
-- `npm run test:e2e` runs only the smoke project with content so far; the visual projects get specs in T30-T31.
-- `RoleSwitcher` has no Landing or Docs entries until `/` (T30) and `/docs` (T37) exist.
+- `npm run test:e2e`: specs exist for smoke, the panel flows and `visual/webgl-fallback`; the rest of the visual projects (responsive, a11y, states) get specs in T31. In this Linux container Playwright 1.64's own browser build is not installed; the run above used the preinstalled Chromium through a throwaway config with `launchOptions.executablePath`.
+- `RoleSwitcher` has no Landing or Docs entries; `/` now exists (ADR-66), `/docs` arrives in T37.
 - `npm audit`: 9 high advisories, all in transitive dev tooling (eslint plugin `braces`, prisma's `deepmerge-ts`/`mysql2`); the only offered fix is a downgrade. Re-check at T38.
 - npm warns about peer ranges for nested ESLint plugins declaring `eslint ^9`; lint works and every lint fixture passes.
 - Preview-feature caveat (ADR-47): never call `findUnique`/`upsert` on the partial-unique keys of PricingVersion or Suppression; use `findFirst` with the predicate.

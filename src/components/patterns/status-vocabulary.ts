@@ -58,12 +58,16 @@ export const DELIVERY_STATUS_VOCABULARY: Readonly<Record<MessageStatus, StatusEn
   NOT_SENT: { label: 'Not sent', tone: 'neutral', icon: CircleSlash, detail: 'Blocked before sending; no message left this app.' },
 };
 
-/** Token classes per tone: text color for icon and label, a quiet tinted surface. */
+/**
+ * Token classes per tone (design spec §1 "Status (retuned)"): tone text for icon and label on the
+ * tone at 12% with a 35% border, which passes AA on bg-1 and bg-2 (danger lowest at 4.87:1).
+ * Neutral is a plain raised chip. Status hues are never decorative and never in gradients.
+ */
 export const TONE_CLASSES: Readonly<Record<StatusTone, string>> = {
   neutral: 'text-fg-2 bg-bg-2 border-border-strong',
-  success: 'text-success bg-success/10 border-success/30',
-  warning: 'text-warning bg-warning/10 border-warning/30',
-  danger: 'text-danger bg-danger/10 border-danger/30',
-  info: 'text-info bg-info/10 border-info/30',
-  demo: 'text-demo bg-demo/10 border-demo/30',
+  success: 'text-success bg-success/12 border-success/35',
+  warning: 'text-warning bg-warning/12 border-warning/35',
+  danger: 'text-danger bg-danger/12 border-danger/35',
+  info: 'text-info bg-info/12 border-info/35',
+  demo: 'text-demo bg-demo/12 border-demo/35',
 };
