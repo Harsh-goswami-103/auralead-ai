@@ -74,15 +74,27 @@ export const INTEGRATION_CATALOG: readonly IntegrationCatalogEntry[] = [
     provider: 'Resend',
     group: 'messaging',
     summary: 'Quotation and follow-up email with a signed unsubscribe link on every message.',
-    configFields: [{ key: 'fromDomain', label: 'Sending domain' }],
+    configFields: [
+      { key: 'fromDomain', label: 'Sending domain' },
+      { key: 'fromAddress', label: 'From address' },
+    ],
     credentialFields: [
       { key: 'apiKey', label: 'API key' },
       { key: 'webhookSecret', label: 'Webhook signing secret' },
     ],
     demoNote: 'DEMO sends email to the demo transport (recorded on this machine, labelled Simulated). Resend is never contacted.',
-    prerequisites: ['Verify the sending domain in Resend (SPF and DKIM records).', 'Create an API key with sending access.'],
+    prerequisites: [
+      'Verify the sending domain in Resend (SPF and DKIM records).',
+      'Create an API key with sending access.',
+      'After saving, add the callback URL shown on this page in Resend > Webhooks for the email.sent, email.delivered, email.delivery_delayed, email.bounced and email.complained events, then save its signing secret (whsec_...) here.',
+    ],
     webhookPath: null,
-    disclosures: ['Email permission is separate from WhatsApp consent: an opt-in on one channel never covers the other.'],
+    disclosures: [
+      'Email permission is separate from WhatsApp consent: an opt-in on one channel never covers the other.',
+      'Inbound email is not supported for this provider: replies go to your own mailbox, not to the inbox here.',
+      'Bounces and complaints arrive as signed webhooks; a hard bounce or a complaint stops email to that address.',
+      'When Resend and SMTP are both connected, Resend sends.',
+    ],
   },
   {
     kind: 'EMAIL_SMTP',
@@ -101,7 +113,11 @@ export const INTEGRATION_CATALOG: readonly IntegrationCatalogEntry[] = [
     demoNote: 'DEMO sends email to the demo transport (recorded on this machine, labelled Simulated). No mail server is contacted.',
     prerequisites: ['Use an SMTP account that is allowed to send from your domain (SPF and DKIM aligned).'],
     webhookPath: null,
-    disclosures: ['SMTP has no inbound replies and no bounce tracking: replies go to your mailbox, not to the inbox here.'],
+    disclosures: [
+      'SMTP has no inbound replies and no bounce tracking: replies go to your mailbox, not to the inbox here.',
+      'Bounces are not tracked over SMTP: a bounced address is not suppressed automatically.',
+      'TLS is required: STARTTLS on ports 25, 587 and 2525, TLS on port 465. A server without it is refused before the password is sent.',
+    ],
   },
   {
     kind: 'META_ADS',
@@ -194,6 +210,14 @@ export function integrationSlug(kind: IntegrationKind): string {
 
 /** Display order of the Integration center (the catalog's order). */
 export const INTEGRATION_KIND_ORDER: readonly IntegrationKind[] = INTEGRATION_CATALOG.map((e) => e.kind);
+
+/** Shape of a Resend webhook routing key (T33, ADR-101): `rs_` + 24 random bytes in base64url. */
+export const RESEND_ROUTING_KEY_RE = /^rs_[A-Za-z0-9_-]{32}$/;
+
+/** The path Resend posts to for one integration (shown on its setup page). */
+export function resendWebhookPath(routingKey: string): string {
+  return `/api/webhooks/email/resend/${routingKey}`;
+}
 
 /** The user-facing line for a DEMO connection test: nothing was contacted, nothing was verified. */
 export const SIMULATED_TEST_LABEL = 'Simulated, no provider contacted';

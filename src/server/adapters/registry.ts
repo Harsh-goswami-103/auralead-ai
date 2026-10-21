@@ -15,14 +15,17 @@
  *    `live*` functions below never reference one (pinned by tests/unit/arch/registry-live.test.ts).
  *  - A workspace whose stored mode differs from the process mode is refused (defense in depth).
  *
- * Email keeps the same shape: DEMO gets the demo transport; LIVE has no live email transport until
- * T33 adds Resend and SMTP in `liveEmailTransport`, so it answers INTEGRATION_NOT_CONFIGURED.
+ * Email keeps the same shape: DEMO gets the demo transport; LIVE gets the Resend transport (T33)
+ * when the Resend integration is usable, else the SMTP transport, else INTEGRATION_NOT_CONFIGURED
+ * or CREDENTIAL_UNREADABLE (ADR-100).
  */
 import type { Clock } from '@/lib/clock';
 import { getConfig } from '@/lib/config';
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { createDemoEmailTransport } from './email/demo';
 import type { EmailTransport } from './email/port';
+import { createResendClient, createResendTransport, type ResendClient, type ResendHttp } from './email/resend';
+import { checkSmtpConnection, createSmtpTransport, SMTP_PORTS, type SmtpCheckResult, type SmtpSeams } from './email/smtp';
 import { checkAnthropicConnection, checkOpenAiConnection, type AiCheckResult } from './ai/connection-check';
 import type { AiTransport } from './ai/port';
 import { createCloudApiClient, createCloudApiTransport, GRAPH_ID_RE, GRAPH_VERSION_RE, type CloudApiClient, type GraphHttp } from './whatsapp/cloud-api';
@@ -143,7 +146,10 @@ function liveGraphClient(input: { integration: IntegrationUse | null; graphVersi
   return { ok: true, value: createCloudApiClient(options.value) };
 }
 
-// ---- Email (T33 adds the live transports) ----------------------------------------------------------
+// ---- Email (T33: Resend and SMTP) --------------------------------------------------------------------
+
+/** Test seams for the live email adapters (a scripted Resend API, a local SMTP server). */
+export type EmailSeams = { resend?: { http?: ResendHttp; baseUrl?: string }; smtp?: SmtpSeams };
 
 export type EmailResolveInput = {
   mode: ProcessMode;
@@ -152,7 +158,11 @@ export type EmailResolveInput = {
   integrations: readonly IntegrationUse[];
   clock: Clock;
   storageDir: string;
+  seams?: EmailSeams;
 };
+
+/** LIVE preference when both are usable (ADR-100): Resend first, then SMTP. */
+export const EMAIL_KIND_PREFERENCE: readonly IntegrationKind[] = ['EMAIL_RESEND', 'EMAIL_SMTP'];
 
 export function resolveEmailTransport(input: EmailResolveInput): Resolution<EmailTransport> {
   if (!modeMatches(input.mode, input.workspaceMode)) return problem('MODE_MISMATCH', 'the workspace belongs to the other mode', null);
@@ -160,12 +170,98 @@ export function resolveEmailTransport(input: EmailResolveInput): Resolution<Emai
   return liveEmailTransport(input);
 }
 
-/** LIVE only. T33 adds Resend and SMTP here; until then no live email transport exists. Never a demo transport. */
+/**
+ * LIVE only: the Resend transport when the Resend integration is CONNECTED or DEGRADED, else the
+ * SMTP transport when that one is; the chosen integration must have readable credentials and a
+ * complete configuration, otherwise its typed problem (there is no second choice within one
+ * resolution, and never a demo transport).
+ */
 function liveEmailTransport(input: EmailResolveInput): Resolution<EmailTransport> {
-  const usable = input.integrations.find((i) => SEND_USABLE_STATUSES.has(i.status));
-  if (!usable) return problem('INTEGRATION_NOT_CONFIGURED', 'no connected email integration is stored', input.integrations[0]?.id ?? null);
-  if (usable.credentials.state === 'unreadable') return problem('CREDENTIAL_UNREADABLE', 'a stored email credential does not decrypt', usable.id, usable.credentials.field);
-  return problem('INTEGRATION_NOT_CONFIGURED', 'no live email transport is available in this version', usable.id);
+  const chosen = EMAIL_KIND_PREFERENCE.map((kind) => input.integrations.find((i) => i.kind === kind)).find((i): i is IntegrationUse => i !== undefined && SEND_USABLE_STATUSES.has(i.status));
+  if (!chosen) return problem('INTEGRATION_NOT_CONFIGURED', 'no connected email integration is stored', input.integrations[0]?.id ?? null);
+  if (chosen.kind === 'EMAIL_RESEND') {
+    const options = liveResendOptions(chosen, input.clock, input.seams);
+    return options.ok ? { ok: true, value: createResendTransport(options.value) } : options;
+  }
+  const options = liveSmtpOptions(chosen, input.clock, input.seams);
+  return options.ok ? { ok: true, value: createSmtpTransport(options.value) } : options;
+}
+
+const EMAIL_ADDRESS_RE = /^[^\s@<>",;]{1,64}@([A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?\.[A-Za-z]{2,63})$/;
+
+type ResendTransportOptions = Parameters<typeof createResendTransport>[0];
+type SmtpTransportOptions = Parameters<typeof createSmtpTransport>[0];
+
+/** LIVE only: the API key, the sending domain and a from address at that domain. */
+function liveResendOptions(integration: IntegrationUse, clock: Clock, seams: EmailSeams | undefined): Resolution<ResendTransportOptions> {
+  if (integration.kind !== 'EMAIL_RESEND') return problem('INTEGRATION_NOT_CONFIGURED', 'not a Resend integration', integration.id);
+  if (integration.credentials.state === 'unreadable') return problem('CREDENTIAL_UNREADABLE', 'the stored Resend API key does not decrypt', integration.id, integration.credentials.field);
+  if (integration.credentials.state === 'missing') return problem('INTEGRATION_NOT_CONFIGURED', 'the Resend API key is not saved', integration.id, integration.credentials.fields[0]);
+  const apiKey = integration.credentials.values.apiKey;
+  if (!apiKey) return problem('INTEGRATION_NOT_CONFIGURED', 'the Resend API key is not saved', integration.id, 'apiKey');
+  const fromDomain = configString(integration.config, 'fromDomain')?.toLowerCase() ?? null;
+  const fromAddress = configString(integration.config, 'fromAddress');
+  if (!fromDomain) return problem('INTEGRATION_NOT_CONFIGURED', 'the sending domain is not set', integration.id);
+  const match = fromAddress ? EMAIL_ADDRESS_RE.exec(fromAddress) : null;
+  if (!fromAddress || !match) return problem('INTEGRATION_NOT_CONFIGURED', 'the from address is not set', integration.id);
+  if (match[1]!.toLowerCase() !== fromDomain) return problem('INTEGRATION_NOT_CONFIGURED', 'the from address is not at the sending domain', integration.id);
+  return {
+    ok: true,
+    value: { mode: 'live', apiKey, fromAddress, clock, ...(seams?.resend?.http ? { http: seams.resend.http } : {}), ...(seams?.resend?.baseUrl ? { baseUrl: seams.resend.baseUrl } : {}) },
+  };
+}
+
+/** LIVE only: host, an SMTP port, username, password and the from address. */
+function liveSmtpOptions(integration: IntegrationUse, clock: Clock, seams: EmailSeams | undefined): Resolution<SmtpTransportOptions> {
+  if (integration.kind !== 'EMAIL_SMTP') return problem('INTEGRATION_NOT_CONFIGURED', 'not an SMTP integration', integration.id);
+  if (integration.credentials.state === 'unreadable') return problem('CREDENTIAL_UNREADABLE', 'the stored SMTP password does not decrypt', integration.id, integration.credentials.field);
+  if (integration.credentials.state === 'missing') return problem('INTEGRATION_NOT_CONFIGURED', 'the SMTP password is not saved', integration.id, integration.credentials.fields[0]);
+  const password = integration.credentials.values.password;
+  if (!password) return problem('INTEGRATION_NOT_CONFIGURED', 'the SMTP password is not saved', integration.id, 'password');
+  const host = configString(integration.config, 'host');
+  const portRaw = configString(integration.config, 'port');
+  const username = configString(integration.config, 'username');
+  const fromAddress = configString(integration.config, 'fromAddress');
+  const port = portRaw !== null && /^\d{1,5}$/.test(portRaw) ? Number(portRaw) : NaN;
+  if (!host || !username) return problem('INTEGRATION_NOT_CONFIGURED', 'the SMTP host or username is not set', integration.id);
+  if (!SMTP_PORTS.includes(port)) return problem('INTEGRATION_NOT_CONFIGURED', 'the SMTP port is not 25, 465, 587 or 2525', integration.id);
+  if (!fromAddress || !EMAIL_ADDRESS_RE.test(fromAddress)) return problem('INTEGRATION_NOT_CONFIGURED', 'the from address is not set', integration.id);
+  return { ok: true, value: { mode: 'live', host, port, username, password, fromAddress, clock, ...(seams?.smtp ? { seams: seams.smtp } : {}) } };
+}
+
+/** A Resend API client for the connection test on a configured integration of any checkable status; never in DEMO. */
+export function resendApiClient(input: { mode: ProcessMode; integration: IntegrationUse | null; clock: Clock; seams?: EmailSeams }): Resolution<ResendClient & { fromDomain: string }> {
+  if (input.mode !== 'live') return problem('MODE_MISMATCH', 'DEMO never contacts a provider', input.integration?.id ?? null);
+  return liveResendClient(input);
+}
+
+function liveResendClient(input: { integration: IntegrationUse | null; clock: Clock; seams?: EmailSeams }): Resolution<ResendClient & { fromDomain: string }> {
+  if (!input.integration) return problem('INTEGRATION_NOT_CONFIGURED', 'no Resend integration is stored', null);
+  if (input.integration.credentials.state !== 'unreadable' && !CHECKABLE_STATUSES.has(input.integration.status)) {
+    return problem('INTEGRATION_NOT_CONFIGURED', `the Resend integration is ${input.integration.status}`, input.integration.id);
+  }
+  const options = liveResendOptions(input.integration, input.clock, input.seams);
+  if (!options.ok) return options;
+  const fromDomain = configString(input.integration.config, 'fromDomain')!.toLowerCase();
+  return { ok: true, value: { ...createResendClient(options.value), fromDomain } };
+}
+
+export type SmtpCheck = () => Promise<SmtpCheckResult>;
+
+/** The SMTP connection test (connect, TLS, AUTH, QUIT) for a configured integration; never in DEMO. */
+export function smtpConnectionCheck(input: { mode: ProcessMode; integration: IntegrationUse | null; clock: Clock; seams?: EmailSeams }): Resolution<SmtpCheck> {
+  if (input.mode !== 'live') return problem('MODE_MISMATCH', 'DEMO never contacts a provider', input.integration?.id ?? null);
+  return liveSmtpCheck(input);
+}
+
+function liveSmtpCheck(input: { integration: IntegrationUse | null; clock: Clock; seams?: EmailSeams }): Resolution<SmtpCheck> {
+  if (!input.integration) return problem('INTEGRATION_NOT_CONFIGURED', 'no SMTP integration is stored', null);
+  if (input.integration.credentials.state !== 'unreadable' && !CHECKABLE_STATUSES.has(input.integration.status)) {
+    return problem('INTEGRATION_NOT_CONFIGURED', `the SMTP integration is ${input.integration.status}`, input.integration.id);
+  }
+  const options = liveSmtpOptions(input.integration, input.clock, input.seams);
+  if (!options.ok) return options;
+  return { ok: true, value: () => checkSmtpConnection(options.value) };
 }
 
 // ---- AI connection checks ---------------------------------------------------------------------------

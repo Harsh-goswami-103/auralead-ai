@@ -44,6 +44,24 @@ export function resetOutboundAttempts(): void {
   attempts.length = 0;
 }
 
+function recordAttempt(host: string, mode: OutboundMode, at: Date): boolean {
+  const blocked = mode === 'demo';
+  attempts.push({ host, mode, blocked, at });
+  if (attempts.length > MAX_LOG) attempts.shift();
+  return blocked;
+}
+
+/**
+ * The same door for provider sockets that are not HTTP (SMTP, T33): records the attempt and, in
+ * DEMO, throws `OutboundBlockedInDemoError` before any name resolution or socket. Call it first,
+ * before resolving the host.
+ */
+export function guardOutboundSocket(mode: OutboundMode, host: string, at: Date): void {
+  if (recordAttempt(host, mode, at)) {
+    throw new OutboundBlockedInDemoError({ message: `outbound connection to ${host} blocked in DEMO`, safeDetails: { host } });
+  }
+}
+
 /**
  * Where a thrown request error happened (E7, ADR-41), for adapters that must tell "definitely not
  * sent" from "may have reached the provider". Before the request was written: name resolution,
@@ -98,10 +116,7 @@ export function outboundFailureLabel(error: unknown): string {
  */
 export async function outboundRequest(mode: OutboundMode, url: string, init: OutboundRequest, at: Date): Promise<OutboundResponse> {
   const host = hostOf(url);
-  const blocked = mode === 'demo';
-  attempts.push({ host, mode, blocked, at });
-  if (attempts.length > MAX_LOG) attempts.shift();
-  if (blocked) {
+  if (recordAttempt(host, mode, at)) {
     throw new OutboundBlockedInDemoError({ message: `outbound request to ${host} blocked in DEMO`, safeDetails: { host } });
   }
   const res = await request(url, {

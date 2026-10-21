@@ -1,0 +1,12 @@
+{
+  "from": "\"Live Dental Co\" <quotes@example.com>",
+  "to": ["lead@example.net"],
+  "subject": "Quotation Q-0007 from Live Dental Co",
+  "text": "Hello Asha,\n\nPlease find attached quotation Q-0007.\n\n--\nTo stop emails from Live Dental Co, open https://app.example.test/unsubscribe/tok",
+  "headers": {
+    "List-Unsubscribe": "<https://app.example.test/api/unsubscribe?token=tok>",
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+  },
+  "attachments": [{ "filename": "Q-0007-v2.pdf", "content": "JVBERi0xLjQKJSBjb250cmFjdCB0ZXN0IHF1b3RhdGlvbgolJUVPRgo=" }],
+  "tags": [{ "name": "auralead_attempt", "value": "attcontract0001" }]
+}
