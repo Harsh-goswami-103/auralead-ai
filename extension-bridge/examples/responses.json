@@ -1,0 +1,40 @@
+{
+  "_about": "Answers of POST /api/webhooks/gmaps-extension, as the contract tests assert them (tests/integration/webhooks/extension-ingest.test.ts). Values are fictitious.",
+  "202 new batch": {
+    "batchId": "3f7d1c2a-8e4b-4f61-9b0e-5a2c7d9e1f00",
+    "eventId": "cmexampleevent000000000",
+    "outcome": "ACCEPTED",
+    "status": "RECEIVED",
+    "received": 3,
+    "queued": 2,
+    "rejected": 1,
+    "records": [
+      { "index": 0, "recordId": "12345678901234567890", "status": "QUEUED", "reasonCode": null },
+      { "index": 1, "recordId": "row-key-without-cid-0002", "status": "QUEUED", "reasonCode": null },
+      { "index": 2, "recordId": "malformed-1", "status": "REJECTED", "reasonCode": "INVALID_RECORD", "fields": ["name"] }
+    ]
+  },
+  "200 replay after processing": {
+    "batchId": "3f7d1c2a-8e4b-4f61-9b0e-5a2c7d9e1f00",
+    "eventId": "cmexampleevent000000000",
+    "outcome": "DUPLICATE",
+    "status": "PROCESSED",
+    "received": 3,
+    "queued": 2,
+    "rejected": 1,
+    "batchStatus": "PARTIAL",
+    "counts": { "received": 3, "accepted": 1, "duplicate": 0, "review": 0, "rejected": 2 },
+    "records": [
+      { "index": 0, "recordId": "12345678901234567890", "status": "ACCEPTED", "reasonCode": null },
+      { "index": 1, "recordId": "row-key-without-cid-0002", "status": "REJECTED", "reasonCode": "NO_VALID_CONTACT" },
+      { "index": 2, "recordId": "malformed-1", "status": "REJECTED", "reasonCode": "INVALID_RECORD", "fields": ["name"] }
+    ]
+  },
+  "401 revoked token": { "code": "token_revoked", "message": "This ingestion token was revoked. Create a new token in the Extension hub.", "reference": "req_example" },
+  "403 web origin": { "code": "web_origin_forbidden", "message": "Web pages cannot send extension batches.", "reference": "req_example" },
+  "403 other extension": { "code": "extension_not_allowed", "message": "This token is bound to another Chrome extension id. Check the allowed extension id in the Extension hub.", "reference": "req_example" },
+  "409 same batch id, other body": { "code": "BATCH_CONTENT_MISMATCH", "message": "This event or batch id was already received with different content. Send it with a new id.", "reference": "req_example" },
+  "413 more than 200 records": { "code": "TOO_MANY_RECORDS", "message": "A batch holds at most 200 records. Split it.", "reference": "req_example" },
+  "422 no valid record": { "code": "NO_VALID_RECORDS", "message": "No record of this batch is valid. Nothing was stored.", "reference": "req_example", "details": { "records": [{ "index": 0, "recordId": null, "status": "REJECTED", "reasonCode": "INVALID_RECORD", "fields": ["recordId"] }] } },
+  "429 rate limited": { "code": "RATE_LIMITED", "message": "Too many batches from this token. The bridge retries later.", "reference": "req_example" }
+}
