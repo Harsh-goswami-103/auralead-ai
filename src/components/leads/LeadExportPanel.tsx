@@ -6,7 +6,9 @@
  * one export); the worker writes the file and the panel re-reads the page until it is ready. The
  * list shows the viewer's own recent exports with their status (icon + label), row count and
  * expiry; a ready export downloads until it expires 24 hours after it was written. Without
- * leads.export the button stays focusable and says why (plan §12).
+ * leads.export the button stays focusable and says why (plan §12). The same filters as an export
+ * still preparing or ready reuse it, and a workspace at its active-export limit gets the server's
+ * message (ADR-73).
  */
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -47,7 +49,8 @@ export function LeadExportPanel(props: { exports: LeadExportDto[]; filters: Lead
       toast.error(res.message, { description: res.reference ? `Reference: ${res.reference}` : undefined });
       return;
     }
-    toast.success('Export started.', { description: 'The file appears below when it is ready.' });
+    if (res.data.created) toast.success('Export started.', { description: 'The file appears below when it is ready.' });
+    else toast.success('This export is already in your list.', { description: 'An export with the same search and filters is still preparing or ready.' });
     setRequestNo((n) => n + 1);
     router.refresh();
   }

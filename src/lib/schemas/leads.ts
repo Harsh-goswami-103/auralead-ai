@@ -217,7 +217,11 @@ export type ScoringPreviewRow = {
 export type ScoringPreviewDto = {
   sampleSize: number;
   rows: ScoringPreviewRow[];
+  /** Scored sample leads whose score would change (an unscored lead has no change to count). */
   changed: number;
+  /** Sample leads without a current score; left out of `changed` and of both averages (ADR-73). */
+  unscored: number;
+  /** Both averages are over the scored sample leads only, so they compare the same rows. */
   averageCurrent: number | null;
   averageProposed: number | null;
 };

@@ -80,7 +80,8 @@ describe('preview on 20 sample leads', () => {
         name: `Preview Lead ${String(i).padStart(2, '0')}`,
         email: i % 2 === 0 ? `preview${i}@example.test` : null,
         category: i % 3 === 0 ? 'Dental clinic' : 'Bakery',
-        score: 40,
+        // Leads 20 and 22 were never scored (in the sample of the 20 newest).
+        score: i === 20 || i === 22 ? null : 40,
         rating: 40 + (i % 10),
         reviewCount: i * 4,
         source: 'GOOGLE_SHEETS',
@@ -102,8 +103,17 @@ describe('preview on 20 sample leads', () => {
     expect(newest.proposedScore).toBe(87);
     expect(newest.delta).toBe(47);
     expect(newest.unknownInputs).toBe(1);
-    expect(preview.changed).toBe(preview.rows.filter((r) => r.delta !== 0).length);
+    // Both averages are over the same rows (the scored ones); unscored leads are counted apart and
+    // never as "changed" (ADR-73).
+    const unscored = preview.rows.filter((r) => r.currentScore === null);
+    expect(unscored.map((r) => r.displayName)).toEqual(['Preview Lead 22', 'Preview Lead 20']);
+    expect(unscored.every((r) => r.delta === null)).toBe(true);
+    expect(preview.unscored).toBe(2);
+    const scored = preview.rows.filter((r) => r.currentScore !== null);
+    expect(preview.changed).toBe(scored.filter((r) => r.delta !== 0).length);
+    expect(preview.changed).toBeLessThanOrEqual(18);
     expect(preview.averageCurrent).toBe(40);
+    expect(preview.averageProposed).toBe(Math.round(scored.reduce((s, r) => s + r.proposedScore, 0) / scored.length));
 
     // Nothing was written.
     expect(await h.db.lead.findMany({ where: { workspaceId: WS_A }, select: { id: true, score: true, scoreConfigVersionId: true, updatedAt: true } })).toEqual(before);

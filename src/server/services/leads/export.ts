@@ -15,6 +15,13 @@
  *
  * The file lives at `STORAGE_DIR/exports/<workspaceId>/<exportId>.csv`, outside the repository,
  * written to a temp name and renamed so a reader never sees half a file.
+ *
+ * Load and retention (ADR-73): a request with the same filters as one of the requester's exports
+ * still preparing or ready reuses it; a workspace holds at most `LEAD_EXPORT_ACTIVE_CAP` active
+ * exports (QUEUED plus unexpired READY, 409 `EXPORT_LIMIT_REACHED`); export and purge jobs run at
+ * `LEAD_EXPORT_PRIORITY`, behind sends and PDFs. The search text (`q`, possibly a name or phone) is
+ * kept only while the export is in flight: it is dropped when the export fails or expires, never
+ * shown for one that did, and `lead:erase` drops it from every export of the workspace.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -40,6 +47,12 @@ import { leadFilterWhere, leadsAfter, leadSortOrder } from './list';
 
 export const LEAD_EXPORT_JOB = 'leads.export';
 export const LEAD_EXPORT_PURGE_JOB = 'leads.exportPurge';
+/** Claim order is ascending (`ORDER BY priority, runAt`): sends and PDFs (0) and integration checks (5) go first. */
+export const LEAD_EXPORT_PRIORITY = 10;
+/** QUEUED plus unexpired READY exports a workspace may hold at once. */
+export const LEAD_EXPORT_ACTIVE_CAP = 3;
+/** errorCode of an export whose purge could not delete the file (it remains on disk). */
+export const PURGE_FAILED = 'PURGE_FAILED';
 const HOUR = 3_600_000;
 const BATCH = 500;
 const LIST_LIMIT = 10;
@@ -56,6 +69,10 @@ export class ExportExpiredError extends DomainRuleError {
   static override readonly status: number = 410;
   static override readonly defaultCode: string = 'EXPORT_EXPIRED';
   static override readonly defaultUserMessage: string = 'This export has expired and its file was deleted. Start a new export.';
+}
+export class ExportLimitError extends ConflictError {
+  static override readonly defaultCode: string = 'EXPORT_LIMIT_REACHED';
+  static override readonly defaultUserMessage: string = `This workspace already has ${LEAD_EXPORT_ACTIVE_CAP} exports preparing or ready. Download or wait for one to expire, then try again.`;
 }
 export class ExportIntegrityError extends AppError {
   static override readonly status: number = 500;
@@ -113,17 +130,37 @@ function filtersOf(value: unknown): LeadFiltersType {
   return parsed.success ? parsed.data : { sort: 'newest' };
 }
 
+/** The stored filters without the search text (kept for the panel and audits; `q` may be PII). */
+export function withoutSearchText(value: unknown): Prisma.InputJsonValue {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { sort: 'newest' };
+  const rest: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+  delete rest.q;
+  return rest as Prisma.InputJsonValue;
+}
+
+function sameFilters(a: LeadFiltersType, b: LeadFiltersType): boolean {
+  return (a.q ?? null) === (b.q ?? null) && (a.stage ?? null) === (b.stage ?? null) && (a.source ?? null) === (b.source ?? null) && (a.score ?? null) === (b.score ?? null) && a.sort === b.sort;
+}
+
+/** QUEUED, or READY and not yet expired at `now`. */
+function activeExportWhere(now: Date): Prisma.LeadExportWhereInput {
+  return { OR: [{ status: 'QUEUED' }, { status: 'READY', expiresAt: { gt: now } }] };
+}
+
 export function effectiveExportStatus(row: Pick<LeadExport, 'status' | 'expiresAt'>, now: Date): LeadExportStatus {
   if (row.status === 'READY' && row.expiresAt !== null && now.getTime() >= row.expiresAt.getTime()) return 'EXPIRED';
   return row.status;
 }
 
 export function leadExportDto(row: LeadExport, now: Date): LeadExportDto {
+  const effectiveStatus = effectiveExportStatus(row, now);
+  const filters = filtersOf(row.filters);
+  if (effectiveStatus === 'EXPIRED' || effectiveStatus === 'FAILED') delete filters.q;
   return {
     id: row.id,
     status: row.status,
-    effectiveStatus: effectiveExportStatus(row, now),
-    filters: filtersOf(row.filters),
+    effectiveStatus,
+    filters,
     rowCount: row.rowCount,
     truncated: row.truncated,
     bytes: row.bytes,
@@ -154,6 +191,15 @@ export async function requestLeadExport(ctx: AppCtx, input: { requestKey: string
       if (existing.requestedBy !== actor.userId) throw new IdempotencyConflictError({ message: 'export request key used by another person' });
       return { export: leadExportDto(existing, now), created: false };
     }
+    // The same export still preparing or ready (a second click later, another tab): reuse it.
+    const inFlight = await tx.leadExport.findMany({ where: { requestedBy: actor.userId, ...activeExportWhere(now) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+    const same = inFlight.find((e) => {
+      const stored = exportFiltersOf(e);
+      return stored !== null && sameFilters(stored, filters);
+    });
+    if (same) return { export: leadExportDto(same, now), created: false };
+    const active = await tx.leadExport.count({ where: activeExportWhere(now) });
+    if (active >= LEAD_EXPORT_ACTIVE_CAP) throw new ExportLimitError({ safeDetails: { limit: LEAD_EXPORT_ACTIVE_CAP } });
     const row = await tx.leadExport.create({
       data: { workspaceId, requestKey: input.requestKey, filters: filters as unknown as Prisma.InputJsonValue, requestedBy: actor.userId, correlationId: ctx.correlationId, createdAt: now },
     });
@@ -163,6 +209,7 @@ export async function requestLeadExport(ctx: AppCtx, input: { requestKey: string
       workspaceId,
       idempotencyKey: `${LEAD_EXPORT_JOB}:${row.id}`,
       correlationId: ctx.correlationId,
+      priority: LEAD_EXPORT_PRIORITY,
       kind: 'default',
     });
     const updated = await tx.leadExport.update({ where: { id: row.id }, data: { jobId: job.id } });
@@ -282,7 +329,11 @@ export function exportFiltersOf(row: Pick<LeadExport, 'filters'>): LeadFiltersTy
 
 type JobAuditCtx = AuditCtx;
 
-/** Marks a QUEUED export READY, schedules its purge at the expiry and audits it (fenced settle). */
+/**
+ * Marks a QUEUED export READY, schedules its purge at the expiry and audits it (fenced settle).
+ * False when the export is no longer QUEUED (cancelled by `lead:erase` while it was built): the
+ * caller then deletes the file it wrote.
+ */
 export async function completeLeadExport(
   tx: TxClient,
   ctx: JobAuditCtx,
@@ -303,6 +354,7 @@ export async function completeLeadExport(
     correlationId: ctx.correlationId,
     causationId: input.jobId,
     runAt: expiresAt,
+    priority: LEAD_EXPORT_PRIORITY,
     kind: 'default',
   });
   await recordAudit(tx, ctx, {
@@ -315,19 +367,46 @@ export async function completeLeadExport(
   return true;
 }
 
-/** Marks a QUEUED export FAILED (the job gave up) and audits it. */
+/** Marks a QUEUED export FAILED (the job gave up), drops its search text and audits it. */
 export async function failLeadExport(tx: TxClient, ctx: JobAuditCtx, input: { exportId: string; workspaceId: string; errorCode: string }): Promise<void> {
+  const row = await tx.leadExport.findFirst({ where: { id: input.exportId, workspaceId: input.workspaceId, status: 'QUEUED' }, select: { filters: true } });
+  if (!row) return;
   const done = await tx.leadExport.updateMany({
     where: { id: input.exportId, workspaceId: input.workspaceId, status: 'QUEUED' },
-    data: { status: 'FAILED', errorCode: input.errorCode, completedAt: ctx.clock.now() },
+    data: { status: 'FAILED', errorCode: input.errorCode, completedAt: ctx.clock.now(), filters: withoutSearchText(row.filters) },
   });
   if (done.count !== 1) return;
   await recordAudit(tx, ctx, { action: 'lead.export.failed', targetType: 'LeadExport', targetId: input.exportId, workspaceId: input.workspaceId, result: 'FAILED', summary: { errorCode: input.errorCode } });
 }
 
-/** Marks a READY export EXPIRED after its file was deleted, and audits it. */
-export async function expireLeadExport(tx: TxClient, ctx: JobAuditCtx, input: { exportId: string; workspaceId: string }): Promise<void> {
-  const done = await tx.leadExport.updateMany({ where: { id: input.exportId, workspaceId: input.workspaceId, status: 'READY' }, data: { status: 'EXPIRED', purgedAt: ctx.clock.now() } });
+/**
+ * Marks a READY export EXPIRED and drops its search text, and audits it. `purgeFailed`: the purge
+ * gave up deleting the file (it stays on disk, errorCode PURGE_FAILED, retryable from Platform
+ * admin > Jobs). Called again for such an export once its file is deleted, it clears the code.
+ */
+export async function expireLeadExport(tx: TxClient, ctx: JobAuditCtx, input: { exportId: string; workspaceId: string; purgeFailed?: boolean }): Promise<void> {
+  const now = ctx.clock.now();
+  const row = await tx.leadExport.findFirst({ where: { id: input.exportId, workspaceId: input.workspaceId }, select: { status: true, errorCode: true, filters: true } });
+  if (!row) return;
+  const afterFailure = row.status === 'EXPIRED' && row.errorCode === PURGE_FAILED;
+  if (row.status !== 'READY' && !afterFailure) return;
+  if (afterFailure && input.purgeFailed) return;
+  const done = await tx.leadExport.updateMany({
+    where: { id: input.exportId, workspaceId: input.workspaceId, status: row.status, errorCode: row.errorCode },
+    data: { status: 'EXPIRED', purgedAt: now, filters: withoutSearchText(row.filters), errorCode: input.purgeFailed ? PURGE_FAILED : null },
+  });
   if (done.count !== 1) return;
-  await recordAudit(tx, ctx, { action: 'lead.export.expire', targetType: 'LeadExport', targetId: input.exportId, workspaceId: input.workspaceId, summary: {} });
+  await recordAudit(tx, ctx, {
+    action: 'lead.export.expire',
+    targetType: 'LeadExport',
+    targetId: input.exportId,
+    workspaceId: input.workspaceId,
+    ...(input.purgeFailed ? { result: 'FAILED' as const } : {}),
+    summary: input.purgeFailed ? { fileDeleted: false, errorCode: PURGE_FAILED } : afterFailure ? { fileDeleted: true, afterPurgeFailure: true } : {},
+  });
+}
+
+/** An export the purge job still has to delete the file of: READY, or EXPIRED after a failed purge. */
+export function exportNeedsPurge(row: Pick<LeadExport, 'status' | 'errorCode'>): boolean {
+  return row.status === 'READY' || (row.status === 'EXPIRED' && row.errorCode === PURGE_FAILED);
 }
