@@ -154,6 +154,33 @@ describe('LeadsToolbar', () => {
     expect(screen.getByRole('link', { name: 'Board' }).getAttribute('href')).toBe('/dashboard/user/leads?view=board&q=%E0%A4%B6%E0%A4%B0%E0%A5%8D%E0%A4%AE%E0%A4%BE&source=META_ADS');
   });
 
+  it('keeps keyboard focus on the changed select after the URL changes, and shows the new filters (ADR-73)', () => {
+    const view = render(<LeadsToolbar basePath="/l" params={parseLeadPageParams({ q: 'asha' })} />);
+    const stage = screen.getByLabelText('Stage') as HTMLSelectElement;
+    stage.focus();
+    fireEvent.change(stage, { target: { value: 'REPLIED' } });
+    expect(push).toHaveBeenLastCalledWith('/l?q=asha&stage=REPLIED', { scroll: false });
+
+    // The router delivers the new URL: the same select is still there and still focused.
+    view.rerender(<LeadsToolbar basePath="/l" params={parseLeadPageParams({ q: 'asha', stage: 'REPLIED' })} />);
+    expect(screen.getByLabelText('Stage')).toBe(stage);
+    expect(document.activeElement).toBe(stage);
+    expect(stage.value).toBe('REPLIED');
+
+    const score = screen.getByLabelText('Score') as HTMLSelectElement;
+    score.focus();
+    fireEvent.change(score, { target: { value: 'high' } });
+    view.rerender(<LeadsToolbar basePath="/l" params={parseLeadPageParams({ q: 'asha', stage: 'REPLIED', score: 'high' })} />);
+    expect(document.activeElement).toBe(score);
+
+    // Clear filters or the back button: the fields follow the URL.
+    view.rerender(<LeadsToolbar basePath="/l" params={parseLeadPageParams({})} />);
+    expect((screen.getByLabelText('Search leads') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Stage') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('Score') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('Sort') as HTMLSelectElement).value).toBe('newest');
+  });
+
   it('the board view has no stage filter (its columns are the stages) and keeps view=board', () => {
     render(<LeadsToolbar basePath="/b" params={parseLeadPageParams({ view: 'board' })} />);
     expect(screen.queryByLabelText('Stage')).toBeNull();

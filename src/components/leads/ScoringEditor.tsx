@@ -4,7 +4,8 @@
  * The scoring configuration editor of the operator console (T26, P9, R14). The operator edits the
  * seven weights (whole points that must add up to 100), the target categories, the website
  * preference, the review target and a note; "Preview on 20 leads" scores the 20 newest leads with
- * the draft next to their current scores (nothing is saved); "Activate as version N" saves it as
+ * the draft next to their current scores (nothing is saved; averages and the change count cover the
+ * scored leads, unscored ones are listed apart); "Activate as version N" saves it as
  * the new active version after a confirmation, and the worker rescores every lead. The server
  * validates with the same Zod schema and answers with the issues; a version activated by someone
  * else meanwhile answers 409 and the page reloads. An earlier version can be loaded into the form
@@ -63,6 +64,30 @@ export function configOf(draft: Draft): unknown {
 }
 
 type Issues = Array<{ path: string; message: string }>;
+
+/**
+ * The preview in words. The change count and both averages cover the scored sample leads only, so
+ * "now" and "with this draft" compare the same leads; unscored leads are reported apart (ADR-73).
+ */
+export function previewSummary(preview: ScoringPreviewDto): string {
+  const scored = preview.sampleSize - preview.unscored;
+  const parts: string[] = [];
+  if (scored > 0) {
+    parts.push(`${preview.changed} of ${scored} scored ${scored === 1 ? 'lead' : 'leads'} would change.`);
+    if (preview.averageCurrent !== null && preview.averageProposed !== null) {
+      parts.push(`Average score of ${scored === 1 ? 'that lead' : `those ${scored}`}: ${preview.averageCurrent} now, ${preview.averageProposed} with this draft.`);
+    }
+  }
+  if (preview.unscored > 0) {
+    parts.push(
+      preview.unscored === 1
+        ? '1 lead in the sample is not scored yet; the draft would give it its first score.'
+        : `${preview.unscored} leads in the sample are not scored yet; the draft would give them their first score.`,
+    );
+  }
+  parts.push('Nothing is saved until you activate.');
+  return parts.join(' ');
+}
 
 export function ScoringEditor(props: { workspaceSlug: string; workspaceName: string; active: ScoringVersionDto | null; history: ScoringVersionDto[] }) {
   const router = useRouter();
@@ -250,10 +275,7 @@ export function ScoringEditor(props: { workspaceSlug: string; workspaceName: str
       {preview ? (
         <section aria-label="Preview" className="flex flex-col gap-2">
           <h3 className="text-sm font-semibold text-fg-1">Preview on the {preview.sampleSize} newest leads</h3>
-          <p className="text-sm text-fg-2">
-            {preview.changed} of {preview.sampleSize} would change.
-            {preview.averageCurrent !== null && preview.averageProposed !== null ? ` Average score ${preview.averageCurrent} now, ${preview.averageProposed} with this draft.` : ''} Nothing is saved until you activate.
-          </p>
+          <p className="text-sm text-fg-2">{previewSummary(preview)}</p>
           {preview.rows.length === 0 ? (
             <p className="text-sm text-fg-2">This workspace has no leads to preview yet.</p>
           ) : (
