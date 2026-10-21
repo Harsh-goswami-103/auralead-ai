@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": 429,
+    "message": "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'sheets.googleapis.com'.",
+    "status": "RESOURCE_EXHAUSTED"
+  }
+}

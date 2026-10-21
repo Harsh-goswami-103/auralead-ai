@@ -795,6 +795,11 @@ model SheetMapping {
   /// {column, truthyValues[], channel, purpose, noticeText, noticeTextHash} (P1)
   consentMapping    Json?
   active            Boolean     @default(false)
+  /// T34 (ADR-103): the normalized header names the fingerprint was taken from, so drift can be
+  /// shown as a column diff. Null on mappings made before T34 (the DEMO simulator's).
+  headerColumns     Json?
+  /// T34: the column holding the form submission time (the consent evidence time).
+  submittedAtColumn String?
 
   @@unique([integrationId, version])
   @@index([workspaceId, integrationId])
@@ -1322,6 +1327,7 @@ model Integration {
   metaFormMappings MetaFormMapping[]
   templates        WhatsAppTemplate[]
   campaigns        Campaign[]
+  sheetSyncRuns    SheetSyncRun[]
 
   @@unique([workspaceId, id])
   @@unique([workspaceId, kind])
@@ -1700,4 +1706,59 @@ model LeadExport {
   @@unique([workspaceId, id])
   @@unique([workspaceId, requestKey])
   @@index([workspaceId, requestedBy, createdAt])
+}
+
+// ---- Google Sheets sync (T34) ------------------------------------------------------------------
+
+/// SheetSyncRun.status: QUEUED until the `sheets.sync` job claims it, RUNNING while it reads and
+/// ingests, SUCCEEDED or FAILED when it settles, BLOCKED when the Sheet's header row no longer
+/// matches the confirmed mapping (drift; nothing is read until the mapping is re-confirmed).
+enum SheetSyncStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  BLOCKED
+}
+
+/// One "Sync now" run of a workspace's Google Sheets integration (T34, ADR-104). Rows after
+/// `cursorRow` are read through the service account, mapped with the active SheetMapping and
+/// ingested through `ingestBatch` (ImportBatch `sheets-sync:<id>`). The next run starts after the
+/// last SUCCEEDED run's `cursorRow` (1 = the header row, so the first run reads from row 2).
+model SheetSyncRun {
+  id             String          @id @default(cuid(2))
+  workspaceId    String
+  integrationId  String
+  integration    Integration     @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  status         SheetSyncStatus @default(QUEUED)
+  /// The SheetMapping version the run mapped rows with.
+  mappingVersion Int?
+  /// userId of the person who pressed Sync now.
+  requestedBy    String
+  correlationId  String
+  jobId          String?
+  /// First sheet row read and the row up to which everything is done (the next run's start - 1).
+  fromRow        Int?
+  cursorRow      Int?
+  rowsRead       Int             @default(0)
+  created        Int             @default(0)
+  duplicate      Int             @default(0)
+  review         Int             @default(0)
+  rejected       Int             @default(0)
+  /// Empty rows and rows still waiting for their auralead_event_id.
+  skipped        Int             @default(0)
+  /// Rows identified by a content hash because the Sheet has no auralead_event_id column.
+  weakIdRows     Int             @default(0)
+  importBatchId  String?
+  /// BLOCKED: { added: string[], removed: string[] }; SUCCEEDED: { pendingRows: number[] }. Never filtered on.
+  detail         Json?
+  errorCode      String?
+  errorRedacted  String?
+  createdAt      DateTime
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  @@unique([workspaceId, id])
+  @@unique([integrationId], map: "SheetSyncRun_one_open_per_integration", where: raw("\"status\" IN ('QUEUED', 'RUNNING')"))
+  @@index([workspaceId, integrationId, createdAt])
 }

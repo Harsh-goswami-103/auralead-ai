@@ -1,0 +1,17 @@
+{
+  "properties": {
+    "timeZone": "Asia/Kolkata"
+  },
+  "sheets": [
+    {
+      "properties": {
+        "title": "Form Responses 1"
+      }
+    },
+    {
+      "properties": {
+        "title": "Summary"
+      }
+    }
+  ]
+}

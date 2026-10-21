@@ -57,7 +57,10 @@ describe('Integration center (DEMO)', () => {
     const center = await getIntegrationCenter(await employeeCtx(h));
     const sheets = center.cards.find((c) => c.kind === 'GOOGLE_SHEETS')!;
     expect(sheets).toMatchObject({ status: 'SIMULATED', stored: true });
-    expect(sheets.config).toEqual([{ key: 'sheetId', label: 'Spreadsheet ID', value: 'demo-sheet-smile-avenue-dental' }]);
+    expect(sheets.config).toEqual([
+      { key: 'sheetId', label: 'Spreadsheet ID', value: 'demo-sheet-smile-avenue-dental' },
+      { key: 'sheetName', label: 'Tab name', value: null },
+    ]);
     const wa = center.cards.find((c) => c.kind === 'WHATSAPP_CLOUD')!;
     expect(wa.quality).toEqual({ qualityRaw: 'GREEN', messagingLimitRaw: 'TIER_1K', checkedAt: new Date(NOW_ISO), pausesAutomation: false });
   });

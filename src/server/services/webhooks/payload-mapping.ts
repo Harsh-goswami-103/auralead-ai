@@ -97,7 +97,8 @@ export function sheetsToIngest(push: SheetsPush, mapping: StoredMapping, opts: {
       externalId: row.rowKey,
       fields: mapFields(fieldMap, row.values),
       answers: row.values,
-      attribution: { sheet: push.sheetId },
+      // T34: a row identified by a content hash (no auralead_event_id) is flagged on its source record.
+      attribution: { sheet: push.sheetId, ...(row.weakId ? { weakId: 'content-hash' } : {}) },
       ...(row.submittedAt ? { submittedAt: row.submittedAt } : {}),
     })),
   };

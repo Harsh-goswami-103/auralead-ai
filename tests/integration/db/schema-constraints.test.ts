@@ -35,6 +35,7 @@ describe('migration', () => {
       'PipelineConfigVersion_one_active',
       'PricingVersion_one_active',
       'ScoringConfigVersion_one_active',
+      'SheetSyncRun_one_open_per_integration',
       'Suppression_active_contact_key',
       'WebhookRejection_unrouted_day',
     ]);

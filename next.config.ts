@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
   turbopack: { root: projectRoot },
   outputFileTracingRoot: projectRoot,
   // Native or heavy server modules are loaded with Node's require, never bundled (plan §2.3).
-  serverExternalPackages: ['better-sqlite3', '@prisma/adapter-better-sqlite3', '@node-rs/argon2', 'sharp', '@react-pdf/renderer'],
+  serverExternalPackages: ['better-sqlite3', '@prisma/adapter-better-sqlite3', '@node-rs/argon2', 'sharp', '@react-pdf/renderer', 'google-auth-library'],
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },

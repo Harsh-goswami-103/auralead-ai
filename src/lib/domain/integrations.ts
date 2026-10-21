@@ -131,17 +131,21 @@ export const INTEGRATION_CATALOG: readonly IntegrationCatalogEntry[] = [
     provider: 'Google',
     group: 'sources',
     summary: 'Google Form responses pushed by an Apps Script, and a mapped preview and sync of the Sheet.',
-    configFields: [{ key: 'sheetId', label: 'Spreadsheet ID' }],
+    configFields: [
+      { key: 'sheetId', label: 'Spreadsheet ID' },
+      { key: 'sheetName', label: 'Tab name' },
+    ],
     credentialFields: [
       { key: 'serviceAccountJson', label: 'Service account key (JSON)' },
       { key: 'appsScriptSecret', label: 'Apps Script signing secret' },
     ],
     demoNote: 'DEMO creates form rows with the simulator on the Sheets page, which sets this integration up as a demo simulation. Google is never contacted.',
     prerequisites: [
-      'Create a Google Cloud service account and download its JSON key.',
-      'Share the Sheet with the service account email. A Sheet URL alone grants no access.',
+      'Create a Google Cloud service account, enable the Google Sheets API in its project, and download its JSON key.',
+      'Share the Sheet with the service account email (Viewer is enough). A Sheet URL alone grants no access.',
+      'On the Google Sheets page: confirm the column mapping, issue the Apps Script signing secret and install the generated script.',
     ],
-    webhookPath: null,
+    webhookPath: '/api/webhooks/google-sheets',
     disclosures: ['Rows are pushed only by the Apps Script you install, signed with this workspace’s secret.'],
   },
   {

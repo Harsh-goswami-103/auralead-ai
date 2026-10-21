@@ -206,6 +206,29 @@ export function CredentialForm(props: CredentialFormProps) {
               'aria-describedby': describedBy,
               'data-secret-input': c.field,
             } as const;
+            if (rule?.generated) {
+              // T34: generated on the server and shown once where it is issued (the Sheets page); never typed in here.
+              return (
+                <div key={c.field} data-generated-credential={c.field} className="flex flex-col gap-1 rounded-lg border border-border-subtle bg-bg-2/50 px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-sm text-fg-1">
+                    <KeyRound aria-hidden="true" className="size-4 text-fg-3" />
+                    {c.label}
+                  </p>
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs text-fg-2">
+                    {c.saved ? (
+                      <>
+                        <LockKeyhole aria-hidden="true" className="size-3.5 text-success" />
+                        <span className="font-mono text-fg-1">{c.last4 ? `Saved •••• ${c.last4}` : 'Saved ••••'}</span>
+                        {c.updatedAt ? <span>{`on ${formatDateTime(c.updatedAt, props.timeZone)}`}</span> : null}
+                      </>
+                    ) : (
+                      <span>Not issued</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-fg-2">{rule.hint}</p>
+                </div>
+              );
+            }
             return (
               <div key={c.field} className="flex flex-col gap-1.5">
                 <Label htmlFor={id} className="text-fg-1">
