@@ -3,9 +3,14 @@
 // opt-in, an attested B2B email basis, or the customer's own message; a missing contact says so),
 // the score breakdown is the stored snapshot, and the source records show source, status,
 // attribution and batch without the raw payload. Another workspace's lead is 404.
+// ADR-73: the profile's consent state never disagrees with `evaluateDispatchEligibility` over the
+// same consent rows (a WhatsApp opt-in counts as an opt-in only for MARKETING; an email opt-in is an
+// opt-in whatever its purpose).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { ConsentBasis, ConsentPurpose, SendIntent } from '@/lib/domain/enums';
 import { contactKey } from '@/server/security/contact-key';
 import { loadLeadProfile } from '@/server/services/leads/profile';
+import { evaluateDispatchEligibility, type DispatchKind, type EligibilityConsent, type ReasonCode } from '@/server/services/messaging/eligibility';
 import { createQuoteHarness, makeLeads, ownerCtx, userCtx, WS_A, WS_B, type QuoteHarness } from './support';
 
 let h: QuoteHarness;
@@ -93,6 +98,60 @@ describe('loadLeadProfile', () => {
     expect(JSON.stringify(profile.sources)).not.toContain('field_data');
     expect(profile.score.reasons).toEqual([{ input: 'phonePresent', label: 'Phone on record', points: 15, maxPoints: 15 }]);
     expect(profile.score.unknownInputs).toEqual([{ input: 'rating', label: 'Rating: not on record', reasonCode: 'RATING_MISSING' }]);
+  });
+
+  it('agrees with dispatch eligibility for every channel, purpose and basis (ADR-73)', async () => {
+    const CONSENT_REASONS: readonly ReasonCode[] = ['NO_WHATSAPP_OPT_IN', 'NO_EMAIL_BASIS', 'ATTESTED_MANUAL_ONLY'];
+    const consentReasons = (kind: DispatchKind, sendIntent: SendIntent, consents: EligibilityConsent[]) =>
+      evaluateDispatchEligibility(
+        {
+          kind,
+          sendIntent,
+          globalPaused: false,
+          workspaceAutomationPaused: false,
+          qualityPaused: false,
+          pipelineApprovalMode: 'HUMAN',
+          suppression: null,
+          consents,
+          conversation: null,
+          template: { statusRaw: 'APPROVED', approved: true, category: 'MARKETING' },
+          emailAddressValid: true,
+          integrationReady: true,
+          // Attestation enabled: the most permissive email setting, so a profile "opt-in" must mean bulk-eligible.
+          workspace: { emailB2bAttestationEnabled: true, autoSendEnabled: true },
+          internalCapRemaining: null,
+        },
+        h.clock,
+      ).reasons.filter((r) => CONSENT_REASONS.includes(r));
+
+    const owner = await ownerCtx(h);
+    const now = h.clock.now();
+    let n = 0;
+    for (const channel of ['WHATSAPP', 'EMAIL'] as const) {
+      for (const purpose of ['MARKETING', 'SERVICE_CONVERSATION'] as const satisfies readonly ConsentPurpose[]) {
+        for (const basis of ['OPT_IN', 'INBOUND_MESSAGE', 'B2B_ATTESTED'] as const satisfies readonly ConsentBasis[]) {
+          n += 1;
+          const phone = `+9198222${String(n).padStart(5, '0')}`;
+          const email = `agree${n}@example.test`;
+          const [lead] = await makeLeads(h.db, WS_A, [{ name: `Profile Agrees ${n}`, phone, email }]);
+          const key = channel === 'WHATSAPP' ? contactKey(PEPPER, 'phone', phone) : contactKey(PEPPER, 'email', email);
+          await h.db.consentRecord.create({
+            data: { workspaceId: WS_A, leadId: lead!.id, contactKey: key, channel, purpose, basis, source: 'MANUAL_EVIDENCE', evidence: {}, collectedAt: new Date(now.getTime() - 60_000), recordedAt: now },
+          });
+          // The rows exactly as eligibility loads them.
+          const rows = await h.db.consentRecord.findMany({ where: { channel, contactKey: key }, select: { channel: true, purpose: true, basis: true, collectedAt: true, withdrawnAt: true } });
+          const state = (await loadLeadProfile(owner, lead!.id, deps)).consent.find((c) => c.channel === channel)!.state;
+          const label = `${channel} ${purpose} ${basis} -> ${state}`;
+          if (channel === 'WHATSAPP') {
+            expect(state === 'OPT_IN', label).toBe(consentReasons('WA_TEMPLATE', 'BULK', rows).length === 0);
+            expect(state !== 'NONE', label).toBe(consentReasons('WA_FREEFORM', 'MANUAL_SINGLE', rows).length === 0);
+          } else {
+            expect(state === 'OPT_IN', label).toBe(consentReasons('EMAIL', 'BULK', rows).length === 0);
+            expect(state === 'OPT_IN' || state === 'B2B_ATTESTED', label).toBe(consentReasons('EMAIL', 'MANUAL_SINGLE', rows).length === 0);
+          }
+        }
+      }
+    }
   });
 
   it('another workspace is 404; leads.read only can read but not move stages', async () => {

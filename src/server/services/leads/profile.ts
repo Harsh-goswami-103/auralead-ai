@@ -58,8 +58,10 @@ async function consentFor(ctx: AppCtx, channel: Channel, key: string | null, now
   if (suppression) return { channel, state: 'OPTED_OUT', since: suppression.createdAt.toISOString(), source: suppression.reason };
   let best: ConsentChannelDto = { channel, state: 'NONE', since: null, source: null };
   for (const r of records) {
-    // An opt-in for messaging counts only for MARKETING; a service conversation is the customer's own message.
-    const state = r.basis === 'OPT_IN' && r.purpose !== 'MARKETING' ? 'CUSTOMER_MESSAGED' : BASIS_STATE[r.basis];
+    // As eligibility decides (ADR-73): a WhatsApp opt-in is an opt-in (template sends) only for
+    // MARKETING, otherwise it is a service conversation the customer started; an email opt-in is an
+    // opt-in whatever its purpose.
+    const state = channel === 'WHATSAPP' && r.basis === 'OPT_IN' && r.purpose !== 'MARKETING' ? 'CUSTOMER_MESSAGED' : BASIS_STATE[r.basis];
     if (STATE_RANK[state] > STATE_RANK[best.state]) best = { channel, state, since: r.collectedAt.toISOString(), source: r.source };
   }
   return best;

@@ -15,9 +15,12 @@
  *  - Jobs (payloads hold ids only); the person's QUEUED or RUNNING jobs are cancelled.
  *  - Bulk run results and import batch counts (ids and codes only).
  *
- * Ended on purpose (T26, ADR-70): every READY CSV export of the workspace may hold the person's
- * row, so each is marked EXPIRED (`LEAD_ERASED`) in the same transaction and its file is deleted
- * after the commit, like the PDFs.
+ * Ended on purpose (T26, ADR-70, ADR-73): every READY CSV export of the workspace may hold the
+ * person's row, so each is marked EXPIRED (`LEAD_ERASED`) in the same transaction and its file is
+ * deleted after the commit, like the PDFs. A QUEUED export (possibly being built right now) is
+ * marked FAILED (`LEAD_ERASED`): its job's settle then matches nothing and deletes the file it
+ * wrote, and any file already at its path is deleted after the commit. Every export of the
+ * workspace, in any status, loses its search text (it may be the person's name or phone).
  *
  * Refused (409 ERASE_SEND_IN_FLIGHT) while a send to the person is SENDING: its settle would
  * write to rows that no longer exist. Retry once it settles.
@@ -34,6 +37,7 @@ import { withTx } from '@/server/db/tx';
 import { requestCancel } from '@/server/jobs/queue';
 import { contactKey } from '@/server/security/contact-key';
 import { recordAudit } from '@/server/services/audit/record';
+import { leadExportRelPath, PURGE_FAILED, withoutSearchText } from '@/server/services/leads/export';
 
 type Tx = Prisma.TransactionClient;
 
@@ -56,6 +60,8 @@ export type EraseLeadResult = {
   filesDeleted: number;
   /** READY lead CSV exports of the workspace ended because they may hold the person's row. */
   exportsExpired: number;
+  /** QUEUED lead CSV exports cancelled (FAILED, LEAD_ERASED) so they are never written with it. */
+  exportsCancelled: number;
 };
 
 const MAX_MERGE_DEPTH = 50;
@@ -168,10 +174,26 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
 
       const artifacts = await tx.quoteArtifact.findMany({ where: { workspaceId, quoteVersionId: { in: versionIds } }, select: { path: true } });
 
-      // CSV exports written before now may hold this person's row: end them (files go after commit).
-      const exports = await tx.leadExport.findMany({ where: { workspaceId, status: 'READY' }, select: { id: true, path: true } });
-      if (exports.length > 0) {
-        await tx.leadExport.updateMany({ where: { workspaceId, id: { in: exports.map((e) => e.id) }, status: 'READY' }, data: { status: 'EXPIRED', purgedAt: now, errorCode: 'LEAD_ERASED' } });
+      // CSV exports may hold this person's row, and their search text may be the person's name or
+      // phone: end the ready ones, cancel the queued ones, drop every search text (files go after commit).
+      const exports = await tx.leadExport.findMany({ where: { workspaceId }, select: { id: true, status: true, path: true, filters: true, errorCode: true } });
+      let exportsExpired = 0;
+      let exportsCancelled = 0;
+      const exportFiles: string[] = [];
+      for (const e of exports) {
+        const filters = withoutSearchText(e.filters);
+        const where = { id: e.id, workspaceId, status: e.status };
+        if (e.status === 'READY') {
+          exportsExpired += (await tx.leadExport.updateMany({ where, data: { status: 'EXPIRED', purgedAt: now, errorCode: 'LEAD_ERASED', filters } })).count;
+          if (e.path) exportFiles.push(e.path);
+        } else if (e.status === 'QUEUED') {
+          exportsCancelled += (await tx.leadExport.updateMany({ where, data: { status: 'FAILED', completedAt: now, errorCode: 'LEAD_ERASED', filters } })).count;
+          exportFiles.push(leadExportRelPath(workspaceId, e.id));
+        } else {
+          await tx.leadExport.updateMany({ where, data: { filters } });
+          // A purge that gave up left the file on disk: it may hold the person's row too.
+          if (e.status === 'EXPIRED' && e.errorCode === PURGE_FAILED && e.path) exportFiles.push(e.path);
+        }
       }
 
       // Deletes: foreign keys are checked at commit, when every referencing row is gone too.
@@ -211,7 +233,7 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
           targetId: input.leadId,
           reason,
           workspaceId,
-          summary: { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length, exportsExpired: exports.length },
+          summary: { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length, exportsExpired, exportsCancelled },
         },
       );
       return {
@@ -220,9 +242,10 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
         suppressionsKept,
         jobsCancelled,
         webhookEventsPurged: touched.length,
-        exportsExpired: exports.length,
+        exportsExpired,
+        exportsCancelled,
         artifacts: artifacts.map((a) => a.path),
-        exportFiles: exports.map((e) => e.path).filter((p): p is string => p !== null),
+        exportFiles,
       };
     },
     { timeoutMs: 120_000 },

@@ -75,13 +75,15 @@ describe('ScoringEditor', () => {
     const calls = stubFetch(() =>
       json({
         preview: {
-          sampleSize: 2,
+          sampleSize: 3,
           changed: 1,
+          unscored: 1,
           averageCurrent: 40,
           averageProposed: 52,
           rows: [
             { leadId: 'l1', displayName: 'राहुल शर्मा', currentScore: 40, proposedScore: 64, delta: 24, unknownInputs: 1 },
             { leadId: 'l2', displayName: 'Asha Raman', currentScore: 40, proposedScore: 40, delta: 0, unknownInputs: 2 },
+            { leadId: 'l3', displayName: 'Unscored Clinic', currentScore: null, proposedScore: 70, delta: null, unknownInputs: 0 },
           ],
         },
       }),
@@ -99,8 +101,11 @@ describe('ScoringEditor', () => {
       config: { schemaVersion: 1, weights: { phonePresent: 5, emailPresent: 20 }, targetCategories: ['Dental clinic', 'Orthodontist'], websitePreference: 'PRESENT', reviewCountTarget: 100, notes: 'Heuristic opportunity score.' },
     });
     const preview = await screen.findByRole('region', { name: 'Preview' });
-    expect(preview.textContent).toContain('1 of 2 would change. Average score 40 now, 52 with this draft.');
+    // The comparison covers the scored leads only; an unscored lead is reported apart (ADR-73).
+    expect(preview.textContent).toContain('1 of 2 scored leads would change. Average score of those 2: 40 now, 52 with this draft.');
+    expect(preview.textContent).toContain('1 lead in the sample is not scored yet; the draft would give it its first score.');
     expect(within(preview).getByText('+24')).toBeTruthy();
+    expect(within(preview).getByText('New')).toBeTruthy();
   });
 
   it('lists the server validation issues', async () => {
@@ -186,6 +191,26 @@ describe('LeadExportPanel', () => {
     expect(calls[0]!.url).toBe('/api/app/leads/exports');
     expect(calls[0]!.body).toMatchObject({ filters: { q: 'शर्मा', stage: 'NEW', sort: 'score' }, workspaceSlug: 'smile-avenue-dental' });
     expect(calls[0]!.body.requestKey).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('says so when the same export is already in the list, and shows the limit message (ADR-73)', async () => {
+    let answer = json({ export: exportRow('exp_1', 'QUEUED'), created: false });
+    stubFetch(() => answer);
+    render(
+      <CsrfProvider token="csrf-export">
+        <LeadExportPanel exports={[exportRow('exp_1', 'QUEUED')]} filters={{ stage: 'NEW', sort: 'newest' }} gate={null} timeZone="Asia/Kolkata" filtered />
+      </CsrfProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Export matching leads (CSV)' }));
+    });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('This export is already in your list.', expect.anything()));
+
+    answer = json({ code: 'EXPORT_LIMIT_REACHED', message: 'This workspace already has 3 exports preparing or ready. Download or wait for one to expire, then try again.', reference: 'req_7' }, 409);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Export matching leads (CSV)' }));
+    });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('This workspace already has 3 exports preparing or ready. Download or wait for one to expire, then try again.', { description: 'Reference: req_7' }));
   });
 
   it('lists exports with status chips and a download link only while ready', () => {
