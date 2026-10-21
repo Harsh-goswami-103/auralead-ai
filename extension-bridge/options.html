@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AuraLead sync</title>
+    <style>
+      :root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
+      body { max-width: 44rem; margin: 1.5rem auto; padding: 0 1rem; }
+      fieldset { border: 1px solid #8884; border-radius: 8px; margin: 0 0 1rem; padding: 0.75rem 1rem; }
+      label { display: block; margin: 0.6rem 0 0.2rem; font-weight: 600; }
+      input, textarea { box-sizing: border-box; width: 100%; padding: 0.4rem; font: inherit; }
+      textarea { font-family: ui-monospace, monospace; font-size: 12px; min-height: 9rem; }
+      .hint { margin: 0.2rem 0 0; font-size: 12px; opacity: 0.8; }
+      .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+      code, .mono { font-family: ui-monospace, monospace; }
+      #status { padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid #8884; }
+      #notice:empty { display: none; }
+      button { padding: 0.45rem 0.9rem; font: inherit; cursor: pointer; }
+      details { margin-top: 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <h1>AuraLead sync</h1>
+    <p>Sends the rows this extension extracts to one AuraLead workspace. The token is kept in this browser profile's extension storage only. Sync stays off while the extension is not licensed.</p>
+
+    <section aria-labelledby="status-title">
+      <h2 id="status-title">Status</h2>
+      <div id="status" role="status" aria-live="polite">Loading...</div>
+      <div class="row" style="margin-top: 0.5rem">
+        <button id="sync-now" type="button">Sync now</button>
+      </div>
+      <details>
+        <summary>Refused batches</summary>
+        <ul id="failed"></ul>
+      </details>
+    </section>
+
+    <form id="form" novalidate>
+      <h2>Connection</h2>
+      <fieldset>
+        <label for="saasOrigin">AuraLead URL</label>
+        <input id="saasOrigin" name="saasOrigin" type="url" autocomplete="off" placeholder="https://app.example.com" aria-describedby="saasOrigin-hint" />
+        <p id="saasOrigin-hint" class="hint">The address you open AuraLead at. Saving asks Chrome for permission to reach this one origin only.</p>
+
+        <label for="token">Ingestion token</label>
+        <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" placeholder="alx_..." aria-describedby="token-hint" />
+        <p id="token-hint" class="hint">Create it in AuraLead under Employee panel, workspace, Maps extension. Leave empty to keep the saved token.</p>
+
+        <label for="extension-id">This extension's id</label>
+        <div class="row">
+          <input id="extension-id" class="mono" readonly aria-describedby="extension-id-hint" />
+          <button id="copy-id" type="button">Copy</button>
+        </div>
+        <p id="extension-id-hint" class="hint">Enter it as the token's allowed extension id in the Extension hub, so AuraLead accepts this extension only.</p>
+      </fieldset>
+
+      <details>
+        <summary>Advanced (the extension's storage format)</summary>
+        <fieldset>
+          <label for="vendorKey">Storage key the extension saves its rows under</label>
+          <input id="vendorKey" name="vendorKey" class="mono" autocomplete="off" />
+          <label for="rowsPath">Path of the row list inside it</label>
+          <input id="rowsPath" name="rowsPath" class="mono" autocomplete="off" />
+          <label for="settleSeconds">Settle time (seconds a row must stay unchanged before it is sent)</label>
+          <input id="settleSeconds" name="settleSeconds" type="number" min="0" max="600" />
+          <label for="fieldMap">Field names (JSON: AuraLead field to the row keys to try)</label>
+          <textarea id="fieldMap" name="fieldMap" spellcheck="false"></textarea>
+          <label><input id="enabled" name="enabled" type="checkbox" style="width: auto" /> Sync enabled</label>
+        </fieldset>
+      </details>
+
+      <p id="notice" role="alert"></p>
+      <button type="submit">Save</button>
+    </form>
+
+    <script src="saas-sync.js"></script>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

@@ -1824,4 +1824,66 @@ export const ROUTES: readonly RouteEntry[] = [
     calls: [{ method: 'GET', expect: all(200), note: 'public docs page; an unknown slug is 404 (tests/unit/docs/docs-render.test.ts)' }],
     crawlAs: ['anonymous'],
   },
+  // ---- Maps extension receiver and token management (T36) -----------------------------------
+  {
+    path: '/api/webhooks/gmaps-extension',
+    file: 'src/app/api/webhooks/gmaps-extension/route.ts',
+    kind: 'api',
+    owner: 'T36',
+    access: 'public',
+    calls: [{ method: 'POST', body: { version: 1, batchId: 'matrix-probe', records: [{ recordId: 'r1', name: 'Matrix probe' }] }, expect: all(403), note: 'sent with the app Origin (a web page): refused before any token check; cookies are never read' }],
+  },
+  {
+    path: '/api/app/extension/tokens',
+    file: 'src/app/api/app/extension/tokens/route.ts',
+    kind: 'api',
+    owner: 'T36',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'extension.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), name: 'Matrix probe' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'issue an ingestion token in workspace B (shown once)',
+      },
+    ],
+  },
+  {
+    path: '/api/app/extension/tokens/[tokenId]/revoke',
+    file: 'src/app/api/app/extension/tokens/[tokenId]/revoke/route.ts',
+    kind: 'api',
+    owner: 'T36',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'extension.manage',
+    params: { tokenId: fixture('extension.unknownTokenId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), confirm: 'REVOKE' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "revoke a token in workspace B (typed confirmation)",
+      },
+    ],
+  },
+  {
+    path: '/api/app/extension/tokens/[tokenId]/allowed-extension',
+    file: 'src/app/api/app/extension/tokens/[tokenId]/allowed-extension/route.ts',
+    kind: 'api',
+    owner: 'T36',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'extension.manage',
+    params: { tokenId: fixture('extension.unknownTokenId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), allowedExtensionId: 'abcdefghijklmnopabcdefghijklmnop' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "bind a workspace B token to one Chrome extension id",
+      },
+    ],
+  },
 ];
