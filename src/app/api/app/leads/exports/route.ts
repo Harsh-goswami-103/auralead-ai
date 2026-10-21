@@ -1,7 +1,9 @@
 /**
  * /api/app/leads/exports (T26, ADR-70): the Leads "Export CSV" action.
  * - POST `{ requestKey, filters?, workspaceSlug? }` stores the export with the list filters and
- *   enqueues the `leads.export` job (audited; a repeated request key returns the same export).
+ *   enqueues the `leads.export` job (audited; a repeated request key returns the same export, and
+ *   so do the same filters as one of the caller's exports still preparing or ready). A workspace
+ *   holds at most 3 active exports: past that, 409 `EXPORT_LIMIT_REACHED` (ADR-73).
  * - GET `?workspaceSlug=` lists the caller's own recent exports with their status and expiry.
  * Both need `leads.export`. Roles USER (the session's workspace) and EMPLOYEE (by slug).
  */

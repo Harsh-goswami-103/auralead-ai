@@ -131,14 +131,16 @@ export async function previewScoringConfig(ctx: AppCtx, input: { config: unknown
       unknownInputs: result.unknownInputs.length,
     };
   });
+  // Compare like with like (ADR-73): both averages over the scored leads; unscored ones apart.
   const scored = rows.filter((r) => r.currentScore !== null);
   const average = (values: number[]) => (values.length === 0 ? null : Math.round(values.reduce((s, v) => s + v, 0) / values.length));
   return {
     sampleSize: rows.length,
     rows,
-    changed: rows.filter((r) => r.delta !== 0).length,
+    changed: scored.filter((r) => r.delta !== null && r.delta !== 0).length,
+    unscored: rows.length - scored.length,
     averageCurrent: average(scored.map((r) => r.currentScore as number)),
-    averageProposed: average(rows.map((r) => r.proposedScore)),
+    averageProposed: average(scored.map((r) => r.proposedScore)),
   };
 }
 

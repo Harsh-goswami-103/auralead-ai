@@ -5,13 +5,17 @@
  * view events, acceptance and the rendered PDF file, pipeline execution, drafts, call requests),
  * keeps every Suppression row and its contact HMAC (so the person stays opted out) with
  * `contactPlain` nulled, and writes one audit tombstone without PII. A scan of every table finds
- * none of the lead's name, phone or email afterwards. An erase is refused while a send is in flight.
+ * none of the lead's name, phone or email afterwards, including lead CSV exports that were requested
+ * with the lead's phone or name as the search term (T26, ADR-73: their search text is cleared and a
+ * queued export is cancelled so it can never be written with the person's row). An erase is
+ * refused while a send is in flight.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applicationTables } from '../../../prisma/seed/seed';
 import { eraseLead } from '@/server/services/admin/lead-erase';
+import { requestLeadExport } from '@/server/services/leads/export';
 import { contactKey } from '@/server/security/contact-key';
 import { recordSuppression } from '@/server/services/messaging/suppression';
 import { approveAndSendMessage, createMessageDraft } from '@/server/services/messaging/dispatch';
@@ -91,6 +95,10 @@ describe('lead:erase', () => {
     const before = await h.db.suppression.findUniqueOrThrow({ where: { id: suppressed.suppressionId } });
     expect(before.contactPlain).toBe(EMAIL);
 
+    // Someone exported the leads found by the person's phone, and by their name (both still queued).
+    const byPhone = await requestLeadExport(owner, { requestKey: 'erase-export-phone', filters: { q: PHONE, sort: 'newest' } });
+    const byName = await requestLeadExport(owner, { requestKey: 'erase-export-name', filters: { q: NAME, stage: 'NEW', sort: 'name' } });
+
     const result = await eraseLead(h.db, h.clock, { workspaceId: WS_A, leadId: lead.id, reason: 'Data principal erasure request #42', contactKeyPepper: PEPPER, storageDir: h.storageDir, correlationId: 'test-erase' });
     expect(result.leadIds.sort()).toEqual([lead.id, duplicate.id].sort());
     expect(result.counts.quotes).toBe(1);
@@ -114,6 +122,14 @@ describe('lead:erase', () => {
 
     const dump = await dumpAll();
     for (const needle of [NAME, NAME.toLowerCase(), PHONE, '9811177777', '9811177778', EMAIL, '14 Golf Course Road']) expect(dump).not.toContain(needle);
+
+    // The queued exports are cancelled (they would have held the person's row) and keep no search text.
+    for (const e of [byPhone, byName]) {
+      const row = await h.db.leadExport.findUniqueOrThrow({ where: { id: e.export.id } });
+      expect(row).toMatchObject({ status: 'FAILED', errorCode: 'LEAD_ERASED' });
+      expect(row.filters).not.toHaveProperty('q');
+    }
+    expect((await h.db.leadExport.findUniqueOrThrow({ where: { id: byName.export.id } })).filters).toMatchObject({ stage: 'NEW', sort: 'name' });
   });
 
   it('refuses while a send to the lead is in flight (SENDING), and a foreign or unknown lead is not found', async () => {
