@@ -1734,4 +1734,98 @@ export const ROUTES: readonly RouteEntry[] = [
     calls: [{ method: 'GET', expect: all(200), note: 'public docs page; an unknown slug is 404 (tests/unit/docs/docs-render.test.ts)' }],
     crawlAs: ['anonymous'],
   },
+  // ---- Google Sheets and Apps Script (T34) ------------------------------------------------------
+  {
+    path: '/api/webhooks/google-sheets',
+    file: 'src/app/api/webhooks/google-sheets/route.ts',
+    kind: 'api',
+    owner: 'T34',
+    access: 'public',
+    calls: [{ method: 'POST', body: { version: 1, eventId: 'matrix-probe', sheetId: 'matrix-sheet', mappingVersion: 1, rows: [] }, expect: all(401), note: 'unsigned push; a Sheet URL or sheet id authorizes nothing; cookies are never read' }],
+  },
+  {
+    path: '/api/app/sheets/header',
+    file: 'src/app/api/app/sheets/header/route.ts',
+    kind: 'api',
+    owner: 'T34',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'sheets.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "read row 1 of workspace B's Sheet",
+      },
+    ],
+  },
+  {
+    path: '/api/app/sheets/preview',
+    file: 'src/app/api/app/sheets/preview/route.ts',
+    kind: 'api',
+    owner: 'T34',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'sheets.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "dry-run workspace B's Sheet rows",
+      },
+    ],
+  },
+  {
+    path: '/api/app/sheets/mapping',
+    file: 'src/app/api/app/sheets/mapping/route.ts',
+    kind: 'api',
+    owner: 'T34',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'sheets.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), expectedVersion: 0, headerFingerprint: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', mapping: { fieldMap: { name: 'Full name', phone: 'Phone' }, submittedAtColumn: null, consent: null } },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "confirm a mapping for workspace B",
+      },
+    ],
+  },
+  {
+    path: '/api/app/sheets/sync',
+    file: 'src/app/api/app/sheets/sync/route.ts',
+    kind: 'api',
+    owner: 'T34',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'sheets.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "queue Sync now for workspace B",
+      },
+    ],
+  },
+  {
+    path: '/api/app/sheets/apps-script/secret',
+    file: 'src/app/api/app/sheets/apps-script/secret/route.ts',
+    kind: 'api',
+    owner: 'T34',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'sheets.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "issue workspace B's Apps Script secret",
+      },
+    ],
+  },
 ];

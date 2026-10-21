@@ -8,6 +8,8 @@
  *  - WhatsApp Cloud API: GET /<phone number id>?fields=id,display_phone_number,verified_name and,
  *    when a WABA id is set, GET /<waba id>?fields=id,name. Both ids must come back as configured.
  *  - Anthropic and OpenAI: the Models API check in adapters/ai/connection-check.ts.
+ *  - Google Sheets (T34): the header read in services/sheets/access.ts (tabs, then row 1 through the
+ *    service account); 403 is SHEET_NOT_SHARED with the address to share with.
  *
  * Failure mapping: a rejected token is ERROR PROVIDER_AUTH; a missing permission ERROR
  * PERMISSION_MISSING; an unknown id ERROR CONFIG_INVALID; an unreadable secret ERROR
@@ -18,10 +20,11 @@
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { AppError, ProviderAuthError, ProviderPermissionError, ProviderRateLimitedError } from '@/lib/errors';
 import type { AiTransport } from '@/server/adapters/ai/port';
-import { aiConnectionCheck, whatsAppGraphClient, type GraphSeams, type IntegrationUse, type Problem } from '@/server/adapters/registry';
+import { aiConnectionCheck, whatsAppGraphClient, type GraphSeams, type IntegrationUse, type Problem, type SheetsSeams } from '@/server/adapters/registry';
 import { classifyGraphReadFailure, describeGraphFailure, type GraphCall } from '@/server/adapters/whatsapp/cloud-api';
 import type { AppCtx } from '@/server/auth/context';
 import type { KeyRing } from '@/server/security/secrets';
+import { sheetsTester } from '@/server/services/sheets/access';
 import { loadIntegrationForUse } from './credentials';
 import { CREDENTIAL_UNREADABLE_CODE, CREDENTIAL_UNREADABLE_MESSAGE, type LiveConnectionTester, type LiveTesters, type LiveTestOutcome, type LiveTestStatus } from './types';
 
@@ -33,6 +36,8 @@ export type LiveAdapterDeps = {
   graph?: GraphSeams;
   aiTransport?: AiTransport;
   aiBaseUrl?: Partial<Record<'AI_ANTHROPIC' | 'AI_OPENAI', string>>;
+  /** T34 test seam: scripted Google answers (token endpoint and Sheets API). */
+  sheets?: SheetsSeams;
 };
 
 /** Throttling or no answer: says nothing about the credentials. */
@@ -128,5 +133,6 @@ export function liveConnectionTesters(deps: LiveAdapterDeps): LiveTesters {
     WHATSAPP_CLOUD: whatsAppTester(deps),
     AI_ANTHROPIC: aiTester('AI_ANTHROPIC', deps),
     AI_OPENAI: aiTester('AI_OPENAI', deps),
+    GOOGLE_SHEETS: sheetsTester({ keyRing: deps.keyRing, ...(deps.sheets ? { sheets: deps.sheets } : {}) }),
   };
 }

@@ -13,12 +13,12 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { FixedClock } from '@/lib/clock';
 import { IntegrationStatus } from '@/lib/domain/enums';
-import { resolveEmailTransport, resolveWhatsAppTransport, whatsAppGraphClient, aiConnectionCheck, type CredentialState } from '@/server/adapters/registry';
+import { resolveEmailTransport, resolveWhatsAppTransport, sheetsReadClient, whatsAppGraphClient, aiConnectionCheck, type CredentialState } from '@/server/adapters/registry';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const REGISTRY = 'src/server/adapters/registry.ts';
 const DEMO_MODULES = ['src/server/adapters/whatsapp/demo.ts', 'src/server/adapters/email/demo.ts'];
-const LIVE_MODULES = ['src/server/adapters/whatsapp/cloud-api.ts', 'src/server/adapters/whatsapp/media.ts', 'src/server/adapters/whatsapp/limits.ts', 'src/server/adapters/ai/connection-check.ts'];
+const LIVE_MODULES = ['src/server/adapters/whatsapp/cloud-api.ts', 'src/server/adapters/whatsapp/media.ts', 'src/server/adapters/whatsapp/limits.ts', 'src/server/adapters/ai/connection-check.ts', 'src/server/adapters/sheets/google.ts'];
 
 function resolve(from: string, spec: string): string | null {
   let base: string | null = null;
@@ -68,7 +68,7 @@ describe('LIVE never imports the demo transport in the registry path (static)', 
     expect(demoNames.size).toBeGreaterThan(0); // the DEMO branch does use them
     const sf = source(REGISTRY);
     const liveFns = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && (s.name?.text ?? '').startsWith('live'));
-    expect(liveFns.map((f) => f.name!.text).sort()).toEqual(['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveWhatsAppTransport']);
+    expect(liveFns.map((f) => f.name!.text).sort()).toEqual(['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveSheetsClient', 'liveWhatsAppTransport']);
     const used: string[] = [];
     for (const fn of liveFns) {
       const visit = (n: ts.Node) => {
@@ -135,5 +135,20 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
   it('DEMO never gets a live client or a live AI check', () => {
     expect(whatsAppGraphClient({ mode: 'demo', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
     expect(aiConnectionCheck({ mode: 'demo', kind: 'AI_ANTHROPIC', apiKey: 'k', modelId: null })).toMatchObject({ ok: false });
+  });
+
+  it('Sheets (T34): DEMO never gets a client; LIVE gets the service account client only when configured', () => {
+    expect(sheetsReadClient({ mode: 'demo', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    const key = JSON.stringify({ type: 'service_account', client_email: 'reader@proj.iam.gserviceaccount.com', private_key: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n' });
+    const sheetCreds: CredentialState[] = [{ state: 'ok', values: { serviceAccountJson: key } }, { state: 'ok', values: { serviceAccountJson: 'not json' } }, { state: 'missing', fields: ['serviceAccountJson'] }, { state: 'unreadable', field: 'serviceAccountJson' }];
+    for (const status of IntegrationStatus) {
+      for (const credentials of sheetCreds) {
+        const r = sheetsReadClient({ mode: 'live', integration: { id: 'gs_1', kind: 'GOOGLE_SHEETS', status, config: { sheetId: 'x'.repeat(30) }, credentials }, clock });
+        if (r.ok) {
+          expect(r.value.serviceAccountEmail).toBe('reader@proj.iam.gserviceaccount.com');
+          expect(['CONFIGURED_UNVERIFIED', 'VERIFYING', 'CONNECTED', 'DEGRADED', 'ERROR']).toContain(status);
+        } else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
+      }
+    }
   });
 });
