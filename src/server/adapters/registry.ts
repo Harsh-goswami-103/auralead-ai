@@ -32,6 +32,7 @@ import { createResendClient, createResendTransport, type ResendClient, type Rese
 import { checkSmtpConnection, createSmtpTransport, SMTP_PORTS, type SmtpCheckResult, type SmtpSeams } from './email/smtp';
 import { checkAnthropicConnection, checkOpenAiConnection, type AiCheckResult } from './ai/connection-check';
 import type { AiTransport } from './ai/port';
+import { createGoogleSheetsClient, parseServiceAccountKey, type GoogleSheetsClient, type SheetsHttp } from './sheets/google';
 import { createCloudApiClient, createCloudApiTransport, GRAPH_ID_RE, GRAPH_VERSION_RE, type CloudApiClient, type GraphHttp } from './whatsapp/cloud-api';
 import { adAccountDigits, createMetaLeadsClient, createMetaMarketingClient, type MetaLeadsClient, type MetaMarketingClient } from './meta/graph';
 import { createDemoWhatsAppTransport, createFileDemoOutbox, demoOutboxDir } from './whatsapp/demo';
@@ -353,4 +354,33 @@ export function aiConnectionCheck(input: { mode: ProcessMode; kind: 'AI_ANTHROPI
 function liveAiCheck(input: { kind: 'AI_ANTHROPIC' | 'AI_OPENAI'; apiKey: string; modelId: string | null; transport?: AiTransport; baseURL?: string }): Resolution<AiCheck> {
   const args = { apiKey: input.apiKey, modelId: input.modelId, ...input.transport, ...(input.baseURL ? { baseURL: input.baseURL } : {}) };
   return { ok: true, value: input.kind === 'AI_ANTHROPIC' ? () => checkAnthropicConnection(args) : () => checkOpenAiConnection(args) };
+}
+
+// ---- Google Sheets (T34) -----------------------------------------------------------------------------
+
+export type SheetsSeams = { http?: SheetsHttp };
+
+/**
+ * A Sheets API client for live reads (connection test, header, preview, sync) on a configured
+ * GOOGLE_SHEETS integration of any checkable status. DEMO never gets one: DEMO rows come from the
+ * simulator and Google is never contacted.
+ */
+export function sheetsReadClient(input: { mode: ProcessMode; integration: IntegrationUse | null; clock: Clock; sheets?: SheetsSeams }): Resolution<GoogleSheetsClient> {
+  if (input.mode !== 'live') return problem('MODE_MISMATCH', 'DEMO never contacts a provider', input.integration?.id ?? null);
+  return liveSheetsClient(input);
+}
+
+/** LIVE only: the service account client or a typed problem. Never a demo source. */
+function liveSheetsClient(input: { integration: IntegrationUse | null; clock: Clock; sheets?: SheetsSeams }): Resolution<GoogleSheetsClient> {
+  const integration = input.integration;
+  if (!integration || integration.kind !== 'GOOGLE_SHEETS') return problem('INTEGRATION_NOT_CONFIGURED', 'no Google Sheets integration is stored', null);
+  if (integration.credentials.state === 'unreadable') return problem('CREDENTIAL_UNREADABLE', 'a stored Google Sheets credential does not decrypt', integration.id, integration.credentials.field);
+  if (!CHECKABLE_STATUSES.has(integration.status)) return problem('INTEGRATION_NOT_CONFIGURED', `the Google Sheets integration is ${integration.status}`, integration.id);
+  if (integration.credentials.state === 'missing') return problem('INTEGRATION_NOT_CONFIGURED', 'the service account key is not saved', integration.id, integration.credentials.fields[0]);
+  const raw = integration.credentials.values.serviceAccountJson;
+  const serviceAccount = raw ? parseServiceAccountKey(raw) : null;
+  if (!serviceAccount) return problem('INTEGRATION_NOT_CONFIGURED', 'the saved service account key is not a service account JSON key', integration.id, 'serviceAccountJson');
+  const spreadsheetId = configString(integration.config, 'sheetId');
+  if (!spreadsheetId) return problem('INTEGRATION_NOT_CONFIGURED', 'the spreadsheet ID is not set', integration.id);
+  return { ok: true, value: createGoogleSheetsClient({ mode: 'live', serviceAccount, spreadsheetId, clock: input.clock, ...(input.sheets?.http ? { http: input.sheets.http } : {}) }) };
 }

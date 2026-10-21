@@ -7,10 +7,17 @@
  * path and ingestion as the Apps Script push), the recent pushes with their per-record counts, and
  * the rows that need attention. The `[ws]` slug is resolved against the employee's assignments;
  * reading needs `leads.read`.
+ *
+ * T34 live parts (`services/sheets/view.ts`): the service account to share the Sheet with (email,
+ * masked key file, share guidance), the mapping editor (load row 1, map fields and the consent
+ * column, dry-run preview, confirm), the Apps Script (signing secret shown once, the generated
+ * script with copy and setup steps) and the sync status with Sync now and drift blocking. They act
+ * only in LIVE with `sheets.manage`; DEMO shows them gated on mode and keeps the simulator.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, FileSpreadsheet, FlaskConical, ListChecks, Table2, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Code, FileSpreadsheet, FlaskConical, ListChecks, RefreshCw, Table2, TriangleAlert, UserRoundCheck } from 'lucide-react';
+import { CopyButton } from '@/components/admin/CopyButton';
 import { setupHref } from '@/components/integrations/IntegrationCard';
 import { NotInAssignment } from '@/components/integrations/NotInAssignment';
 import { DeliveryTable, IssueTable } from '@/components/integrations/SourceActivity';
@@ -23,9 +30,33 @@ import { ChipTitle } from '@/components/patterns/IconChip';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { IntegrationStatusBadge } from '@/components/patterns/StatusBadge';
+import type { Gate } from '@/components/patterns/GatedAction';
 import { buttonVariants } from '@/components/ui/button';
+import { getRuntime } from '@/server/boot';
 import { getSheetsSetup } from '@/server/services/integrations/source-pages';
+import { getSheetsLiveView, type SheetsLiveView } from '@/server/services/sheets/view';
 import { readOrNull, workspacePage } from '../integrations/_lib/workspace-page';
+import { AppsScriptPanel } from './AppsScriptPanel';
+import { SheetsMappingEditor } from './SheetsMappingEditor';
+import { SheetsSyncPanel } from './SheetsSyncPanel';
+
+const NOT_READY = new Set(['NOT_CONFIGURED', 'REVOKED', 'SIMULATED']);
+
+/** The gate of the live Sheets actions: mode, then permission, then configuration (plan §12). */
+function liveGate(live: SheetsLiveView, setup: string): Gate | null {
+  if (live.mode === 'demo') return { category: 'mode', reason: 'DEMO never contacts Google: form rows come from the simulator on this page. Reading a real Sheet, the mapping, the Apps Script secret and Sync now work in a LIVE install.' };
+  if (!live.canManage) return { category: 'permission', reason: 'Your assignment here does not include “Manage Sheets”. A super admin can grant it.' };
+  if (live.integrationStatus === null || NOT_READY.has(live.integrationStatus)) return { category: 'configuration', reason: 'Save the service account key and the spreadsheet ID first.', fix: { href: setup, label: 'Open setup' } };
+  return null;
+}
+
+function scriptMissingReason(live: SheetsLiveView): string | null {
+  if (live.appsScript.script) return null;
+  if (live.mode === 'demo') return 'DEMO pushes come from the simulator; the Apps Script is generated in a LIVE install.';
+  if (!live.mapping) return 'Confirm a column mapping first: the script sends exactly the mapped columns.';
+  if (!live.appsScript.keyId) return 'Issue the signing secret to get the script.';
+  return 'Save the spreadsheet ID in the setup to get the script.';
+}
 
 export const metadata: Metadata = { title: 'Google Sheets' };
 export const dynamic = 'force-dynamic';
@@ -34,7 +65,17 @@ export default async function SheetsPage({ params }: { params: Promise<{ ws: str
   const { ws } = await params;
   const page = await workspacePage(ws);
   const view = await readOrNull(() => getSheetsSetup(page.ctx));
+  const runtimeConfig = getRuntime().config;
+  const live = view ? await getSheetsLiveView(page.ctx, { keyRing: runtimeConfig.secrets.credentials, appOrigin: runtimeConfig.appOrigin, now: page.ctx.clock.now() }) : null;
   const name = view?.workspace.name ?? ws;
+  const gate = live ? liveGate(live, setupHref(ws, 'google-sheets')) : null;
+  const syncGate: Gate | null =
+    gate ??
+    (live && !live.mapping
+      ? { category: 'configuration', reason: 'Confirm a column mapping before syncing.' }
+      : live?.sync.drift
+        ? { category: 'configuration', reason: 'Re-confirm the mapping: the Sheet’s columns changed since it was confirmed.' }
+        : null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -44,7 +85,7 @@ export default async function SheetsPage({ params }: { params: Promise<{ ws: str
         description="Google Form responses reach this workspace through an Apps Script that signs every push with the workspace’s secret. A Sheet URL alone grants no access."
       />
       <WorkspaceSectionNav slug={ws} workspaceName={name} />
-      {view === null ? (
+      {view === null || live === null ? (
         <NotInAssignment what="Google Sheets" />
       ) : (
         <>
@@ -81,6 +122,35 @@ export default async function SheetsPage({ params }: { params: Promise<{ ws: str
                 gate={testConnectionGate({ mode: view.mode, canManage: view.canTestConnection, status: view.integration.status, label: 'Google Sheets', setupHref: setupHref(ws, 'google-sheets') })}
               />
             </div>
+            {live.lastError ? (
+              <p role="note" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-fg-1">
+                Last check failed ({live.lastError.code}){live.lastError.message ? `: ${live.lastError.message}` : '.'}
+              </p>
+            ) : null}
+            {live.serviceAccount.state === 'saved' ? (
+              <div data-service-account className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-2/50 p-3">
+                <p className="flex items-center gap-2 text-sm font-medium text-fg-1">
+                  <UserRoundCheck aria-hidden="true" className="size-4 text-fg-3" />
+                  Share the Sheet with this service account
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="font-mono text-sm break-all text-fg-1">{live.serviceAccount.email}</code>
+                  <CopyButton value={live.serviceAccount.email} label="service account email" />
+                </div>
+                <p className="text-xs text-fg-2">Open the Sheet, choose Share, add this address as a Viewer and untick “Notify people”. A Sheet URL alone grants no access; Google answers 403 until it is shared.</p>
+                <pre className="overflow-x-auto rounded border border-border-subtle bg-bg-1 p-2 font-mono text-xs text-fg-2">
+                  {JSON.stringify(
+                    { type: 'service_account', project_id: live.serviceAccount.projectId, client_email: live.serviceAccount.email, private_key_id: live.serviceAccount.privateKeyIdLast4 ? `••••${live.serviceAccount.privateKeyIdLast4}` : null, private_key: 'saved, never shown' },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </div>
+            ) : live.mode === 'live' && live.serviceAccount.state !== 'missing' ? (
+              <p role="note" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-fg-1">
+                {live.serviceAccount.state === 'unreadable' ? 'Credential unreadable, re-enter the service account key in the setup.' : 'The saved key is not a service account JSON key; save the key file again in the setup.'}
+              </p>
+            ) : null}
           </SectionCard>
 
           <SectionCard
@@ -156,6 +226,58 @@ export default async function SheetsPage({ params }: { params: Promise<{ ws: str
                 }
               />
             )}
+          </SectionCard>
+
+          <SectionCard
+            title={
+              <ChipTitle icon={<Table2 aria-hidden="true" />} hue="ice">
+                Edit the mapping
+              </ChipTitle>
+            }
+            meta="Read from the Sheet’s row 1 through the service account. Preview is a dry run; confirming makes a new mapping version."
+          >
+            <SheetsMappingEditor workspaceSlug={ws} initial={live.mapping ? { fieldMap: live.mapping.fieldMap, submittedAtColumn: live.mapping.submittedAtColumn, consent: live.mapping.consent } : null} activeVersion={live.mapping?.version ?? 0} gate={gate} />
+          </SectionCard>
+
+          <SectionCard
+            title={
+              <ChipTitle icon={<Code aria-hidden="true" />} hue="aura">
+                Apps Script
+              </ChipTitle>
+            }
+            meta="Pushes each new form response, signed with the workspace’s secret. The secret lives in Script Properties, never in a cell or in the script."
+          >
+            <AppsScriptPanel
+              workspaceSlug={ws}
+              workspaceName={name}
+              keyId={live.appsScript.keyId}
+              secretIssuedAt={live.appsScript.secretIssuedAt ? live.appsScript.secretIssuedAt.toISOString() : null}
+              endpoint={live.appsScript.endpoint}
+              originReachable={live.appsScript.originReachable}
+              script={live.appsScript.script}
+              scriptMissingReason={scriptMissingReason(live)}
+              gate={gate}
+              timeZone={view.workspace.timezone}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title={
+              <ChipTitle icon={<RefreshCw aria-hidden="true" />} hue="zest">
+                Sync from the Sheet
+              </ChipTitle>
+            }
+            meta="Reads new rows through the service account and ingests them exactly like a push. A row the script already sent is never created twice."
+          >
+            <SheetsSyncPanel
+              workspaceSlug={ws}
+              runs={live.sync.runs.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null }))}
+              cursorRow={live.sync.cursorRow}
+              open={live.sync.open}
+              drift={live.sync.drift}
+              gate={syncGate}
+              timeZone={view.workspace.timezone}
+            />
           </SectionCard>
 
           <SectionCard
