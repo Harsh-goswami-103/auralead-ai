@@ -41,7 +41,10 @@ export const PROCESSED_RETENTION_MS = 7 * DAY_MS;
 export const UNRESOLVED_RETENTION_MS = 30 * DAY_MS;
 export const UNROUTED_SCOPE = 'unrouted';
 
-export type ProcessJobType = typeof INGEST_PROCESS_JOB;
+/** `meta.lead.fetch` (T35): a live leadgen notification carries ids only, so its job fetches the lead first. */
+export const META_LEAD_FETCH_JOB = 'meta.lead.fetch';
+
+export type ProcessJobType = typeof INGEST_PROCESS_JOB | typeof META_LEAD_FETCH_JOB;
 
 export type PersistWebhookInput = {
   provider: WebhookProvider;
@@ -119,8 +122,8 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(sortKeys(value));
 }
 
-export function ingestJobKey(eventId: string): string {
-  return idempotencyKey(INGEST_PROCESS_JOB, eventId);
+export function ingestJobKey(eventId: string, processJob: ProcessJobType = INGEST_PROCESS_JOB): string {
+  return idempotencyKey(processJob, eventId);
 }
 
 export function purgeJobKey(eventId: string): string {
@@ -173,7 +176,7 @@ function recordCount(body: unknown): number | null {
 
 type Tx = Prisma.TransactionClient;
 
-async function replay(tx: Tx, existing: WebhookEvent, bodySha256: string): Promise<PersistWebhookResult> {
+async function replay(tx: Tx, existing: WebhookEvent, bodySha256: string, processJob: ProcessJobType): Promise<PersistWebhookResult> {
   if (existing.bodySha256 !== bodySha256) {
     throw new IdempotencyConflictError({
       code: 'BATCH_CONTENT_MISMATCH',
@@ -181,7 +184,7 @@ async function replay(tx: Tx, existing: WebhookEvent, bodySha256: string): Promi
       userMessage: 'This event or batch id was already received with different content. Send it with a new id.',
     });
   }
-  const job = await tx.job.findUnique({ where: { idempotencyKey: ingestJobKey(existing.id) }, select: { id: true } });
+  const job = await tx.job.findUnique({ where: { idempotencyKey: ingestJobKey(existing.id, processJob) }, select: { id: true } });
   return {
     outcome: 'DUPLICATE',
     eventId: existing.id,
@@ -202,7 +205,7 @@ export async function persistWebhookEvent(db: PrismaClient, ctx: AuditCtx, input
     try {
       return await withTx(db, async (tx) => {
         const existing = await tx.webhookEvent.findUnique({ where: { provider_scopeKey_externalKey: key } });
-        if (existing) return replay(tx, existing, input.bodySha256);
+        if (existing) return replay(tx, existing, input.bodySha256, input.processJob);
 
         const now = ctx.clock.now();
         const routed = input.workspaceId !== null;
@@ -230,9 +233,10 @@ export async function persistWebhookEvent(db: PrismaClient, ctx: AuditCtx, input
             payload: { webhookEventId: created.id },
             payloadVersion: WEBHOOK_JOB_PAYLOAD_VERSION,
             workspaceId: input.workspaceId,
-            idempotencyKey: ingestJobKey(created.id),
+            idempotencyKey: ingestJobKey(created.id, input.processJob),
             correlationId: ctx.correlationId,
-            kind: 'default',
+            // The Meta lead fetch reads the Graph API: fetch kind (8 attempts, plan §4.3).
+            kind: input.processJob === META_LEAD_FETCH_JOB ? 'fetch' : 'default',
           });
           jobId = job.id;
         } else {

@@ -428,6 +428,7 @@ model Workspace {
   pipelineConfigVersions PipelineConfigVersion[]
   bulkRuns               BulkRun[]
   leadExports            LeadExport[]
+  metaLeadBackfills      MetaLeadBackfill[]
 }
 
 model WorkspaceSettings {
@@ -1292,6 +1293,13 @@ model CampaignAction {
   idempotencyKey         String              @unique
   createdAt              DateTime            @default(now())
   resolvedAt             DateTime?
+  /// T35 (ADR-107): the configured status when the change was requested (raw provider string).
+  previousStatus         String?
+  /// Why the action FAILED or is UNKNOWN (PERMISSION_MISSING, PROVIDER_AUTH, WRITE_TIMEOUT, ...).
+  reasonCode             String?
+  /// The campaign's effective status read back from the provider after the call (raw string).
+  readBackStatus         String?
+  readBackAt             DateTime?
 
   @@index([workspaceId, createdAt])
 }
@@ -1322,6 +1330,7 @@ model Integration {
   metaFormMappings MetaFormMapping[]
   templates        WhatsAppTemplate[]
   campaigns        Campaign[]
+  leadBackfills    MetaLeadBackfill[]
 
   @@unique([workspaceId, id])
   @@unique([workspaceId, kind])
@@ -1700,4 +1709,47 @@ model LeadExport {
   @@unique([workspaceId, id])
   @@unique([workspaceId, requestKey])
   @@index([workspaceId, requestedBy, createdAt])
+}
+
+enum MetaBackfillStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// One on-demand "Backfill from form since T" run (T35, critic L-8 / 12.4, ADR-106): the leads of one
+/// Instant Form created after `since`, read page by page from the Graph API by the
+/// `meta.lead.backfill` job and ingested through `ingestBatch` (dedupe by leadgen id, so leads that
+/// already arrived through the webhook count as duplicates). The result stays visible on the Meta
+/// page: pages read, leads fetched, the ingestion counts, and the error code of a failed run.
+model MetaLeadBackfill {
+  id            String             @id @default(cuid(2))
+  workspaceId   String
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  integrationId String
+  integration   Integration        @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  formId        String
+  /// Leads created strictly after this instant are read.
+  since         DateTime
+  /// Client idempotency key: a repeated request (double click, retry) returns the same run.
+  requestKey    String
+  status        MetaBackfillStatus @default(QUEUED)
+  requestedBy   String
+  correlationId String
+  jobId         String?
+  pages         Int                @default(0)
+  fetched       Int                @default(0)
+  /// { received, accepted, duplicate, review, rejected } summed over the run's import batches.
+  counts        Json?
+  /// The page has more leads than the run reads (MAX_PAGES): a later run continues from the newest.
+  truncated     Boolean            @default(false)
+  errorCode     String?
+  errorRedacted String?
+  createdAt     DateTime           @default(now())
+  completedAt   DateTime?
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, requestKey])
+  @@index([workspaceId, createdAt])
 }

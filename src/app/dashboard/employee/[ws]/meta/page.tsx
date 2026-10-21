@@ -8,10 +8,17 @@
  * with the date window, attribution and As of time, the DEMO lead simulation, the recent leadgen
  * deliveries and the rows that need attention. The `[ws]` slug is resolved against the employee's
  * assignments; reading needs `leads.read`.
+ *
+ * T35 live parts: "Sync campaigns" (DEMO: simulated campaigns), pause and resume per campaign with a
+ * typed confirmation and the newest action's result from Meta (Simulated in DEMO), the webhook
+ * callback URL, the Instant Form mapping editor, "Backfill from form since T" with its runs, and
+ * the leads that could not be fetched (by reason) with the forms that still need a mapping. Every
+ * control is gated by configuration, permission or mode only (plan §12). Metric windows are
+ * calendar dates in the ad account's time zone, shown as dates (not shifted to the workspace's).
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, BarChart3, FlaskConical, ListChecks, Megaphone, NotebookTabs, TriangleAlert } from 'lucide-react';
+import { ArrowRight, BarChart3, FlaskConical, History, ListChecks, Megaphone, NotebookTabs, TriangleAlert, Webhook } from 'lucide-react';
 import { setupHref } from '@/components/integrations/IntegrationCard';
 import { NotInAssignment } from '@/components/integrations/NotInAssignment';
 import { DeliveryTable, IssueTable } from '@/components/integrations/SourceActivity';
@@ -21,23 +28,53 @@ import { TestConnectionButton } from '@/components/integrations/TestConnectionBu
 import { formatMinor, LEAD_FIELD_LABELS, rawStatusEntry, simulationGateOf, testConnectionGate } from '@/components/integrations/vocabulary';
 import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { EmptyState } from '@/components/patterns/EmptyState';
+import type { Gate } from '@/components/patterns/GatedAction';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { IntegrationStatusBadge, ModeChip } from '@/components/patterns/StatusBadge';
 import { buttonVariants } from '@/components/ui/button';
 import { formatDate, formatDateTime } from '@/lib/format/date';
+import { getRuntime } from '@/server/boot';
+import { getMetaLiveParts, type ControlGate } from '@/server/services/campaigns/console';
 import { getMetaConsole } from '@/server/services/integrations/source-pages';
 import { readOrNull, workspacePage } from '../integrations/_lib/workspace-page';
+import { BackfillForm } from './backfill-form';
+import { CampaignControl } from './campaign-control';
+import { CampaignSyncButton } from './campaign-sync-button';
+import { FormMappingForm } from './form-mapping-form';
+import { BACKFILL_STATE, failureLabel } from './meta-vocabulary';
 
 export const metadata: Metadata = { title: 'Meta Lead Ads' };
 export const dynamic = 'force-dynamic';
+
+const gateOf = (g: ControlGate, fix?: Gate['fix']): Gate | null => (g.allowed ? null : { category: g.category, reason: g.reason, ...(fix && g.category === 'configuration' ? { fix } : {}) });
+
+/** `YYYY-MM-DDTHH:mm` (a datetime-local value) of `at` in the workspace time zone. */
+function localInput(at: Date, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at).map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
 
 export default async function MetaPage({ params }: { params: Promise<{ ws: string }> }) {
   const { ws } = await params;
   const page = await workspacePage(ws);
   const view = await readOrNull(() => getMetaConsole(page.ctx));
+  const config = getRuntime().config;
+  const live = view
+    ? await getMetaLiveParts(page.ctx, {
+        graphVersionSet: config.meta.graphVersion !== null,
+        marketingVersionSet: config.meta.marketingVersion !== null,
+        appSecretSet: config.meta.appSecret !== null,
+        verifyTokenSet: config.meta.verifyToken !== null,
+      })
+    : null;
   const name = view?.workspace.name ?? ws;
+  const setup = setupHref(ws, 'meta-ads');
+  const fix = { href: setup, label: 'Open setup' };
+  const backfillDefault = localInput(new Date(page.ctx.clock.now().getTime() - 7 * 24 * 60 * 60 * 1000), view?.workspace.timezone ?? 'Asia/Kolkata');
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,7 +84,7 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
         description="Instant Form leads from your Facebook Page and the metrics of your campaigns. Ads linked to a Google Form are not Instant Forms: their rows arrive through Google Sheets."
       />
       <WorkspaceSectionNav slug={ws} workspaceName={name} />
-      {view === null ? (
+      {view === null || live === null ? (
         <NotInAssignment what="The Meta console" />
       ) : (
         <>
@@ -58,7 +95,7 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
               </ChipTitle>
             }
             actions={
-              <Link href={setupHref(ws, 'meta-ads')} className={buttonVariants({ variant: view.integration.status === 'NOT_CONFIGURED' ? 'secondary' : 'ghost', size: 'sm' })}>
+              <Link href={setup} className={buttonVariants({ variant: view.integration.status === 'NOT_CONFIGURED' ? 'secondary' : 'ghost', size: 'sm' })}>
                 {view.integration.status === 'NOT_CONFIGURED' ? 'Set up Meta Lead Ads' : 'Manage setup'}
                 <ArrowRight aria-hidden="true" />
               </Link>
@@ -85,8 +122,18 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
                 workspaceSlug={ws}
                 kindSlug="meta-ads"
                 label="Meta Lead Ads"
-                gate={testConnectionGate({ mode: view.mode, canManage: view.canTestConnection, status: view.integration.status, label: 'Meta Lead Ads', setupHref: setupHref(ws, 'meta-ads') })}
+                gate={testConnectionGate({ mode: view.mode, canManage: view.canTestConnection, status: view.integration.status, label: 'Meta Lead Ads', setupHref: setup })}
               />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="flex items-center gap-1.5 text-xs text-fg-2">
+                <Webhook aria-hidden="true" className="size-3.5" />
+                Leadgen webhook callback URL
+                {live.mode === 'live' && !(live.server.appSecretSet && live.server.verifyTokenSet) ? ' (the server has no META_APP_SECRET or META_VERIFY_TOKEN yet, so deliveries are refused)' : ''}
+              </p>
+              <code data-webhook-url className="block overflow-x-auto rounded-lg border border-border-subtle bg-bg-2 px-3 py-2 font-mono text-sm text-fg-1">
+                {`${config.appOrigin}${live.webhookPath}`}
+              </code>
             </div>
             {view.integration.lastError ? (
               <p role="note" className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-fg-1">
@@ -102,6 +149,7 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
               </ChipTitle>
             }
             meta="Spend and cost per lead in the ad account’s own currency, for the window and attribution setting Meta reported."
+            actions={<CampaignSyncButton workspaceSlug={ws} gate={gateOf(live.gates.sync, fix)} />}
           >
             {view.campaigns.length === 0 ? (
               <EmptyState
@@ -110,14 +158,14 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
                 title="No campaigns found for this ad account"
                 description={
                   view.mode === 'demo'
-                    ? 'DEMO has no ad account, so no campaign metrics exist here. The lead simulation below still exercises the Instant Form path.'
+                    ? 'DEMO has no real ad account. “Sync campaigns” adds simulated campaigns (labelled Simulated) so metrics and pause or resume can be tried; Meta is never contacted.'
                     : 'Campaign metrics appear here once Meta Lead Ads is connected and its campaigns have been synced.'
                 }
               />
             ) : (
               <div className="relative overflow-x-auto rounded-lg border border-border-subtle">
-                <table className="w-full min-w-[52rem] text-left text-sm">
-                  <caption className="sr-only">Campaigns and their latest metrics</caption>
+                <table className="w-full min-w-[64rem] text-left text-sm">
+                  <caption className="sr-only">Campaigns, their latest metrics and pause or resume</caption>
                   <thead className="bg-bg-2/60 text-xs text-fg-2">
                     <tr>
                       <th scope="col" className="px-3 py-2 font-medium">
@@ -137,6 +185,9 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
                       </th>
                       <th scope="col" className="px-3 py-2 font-medium">
                         Window and As of
+                      </th>
+                      <th scope="col" className="px-3 py-2 font-medium">
+                        Pause or resume
                       </th>
                     </tr>
                   </thead>
@@ -158,13 +209,24 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
                         <td className="px-3 py-2 text-xs text-fg-2">
                           {c.latest ? (
                             <>
-                              {formatDate(c.latest.dateStart, view.workspace.timezone)} to {formatDate(c.latest.dateStop, view.workspace.timezone)}
-                              {c.latest.attributionSetting ? `, ${c.latest.attributionSetting}` : ''}
+                              {formatDate(c.latest.dateStart, 'UTC')} to {formatDate(c.latest.dateStop, 'UTC')}
+                              {c.latest.attributionSetting ? `, ${c.latest.attributionSetting}` : ', attribution not reported'}
                               <span className="block">As of {formatDateTime(c.latest.asOf, view.workspace.timezone)}</span>
                             </>
                           ) : (
                             'No metrics synced'
                           )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <CampaignControl
+                            workspaceSlug={ws}
+                            workspaceName={name}
+                            campaignId={c.id}
+                            campaignName={c.name}
+                            configuredStatus={c.configuredStatus}
+                            latest={live.actions[c.id] ?? null}
+                            gate={gateOf(live.gates.control, fix)}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -183,7 +245,7 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
           >
             {view.forms.length === 0 ? (
               <p className="text-sm text-fg-2">
-                {view.mode === 'demo' ? 'The first simulated lead below installs the demo form’s mapping.' : 'Each form’s questions are mapped to lead fields once Meta Lead Ads is set up.'}
+                {view.mode === 'demo' ? 'The first simulated lead below installs the demo form’s mapping.' : 'Map each Instant Form’s questions to lead fields (and its consent question) so its leads can be read.'}
               </p>
             ) : (
               <ul className="grid gap-3 lg:grid-cols-2">
@@ -200,6 +262,53 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
                 ))}
               </ul>
             )}
+            {live.unmappedForms.length > 0 ? (
+              <p role="note" className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-fg-1">
+                Leads arrived from {live.unmappedForms.length === 1 ? 'a form' : 'forms'} without a mapping: {live.unmappedForms.join(', ')}. Map {live.unmappedForms.length === 1 ? 'it' : 'them'}, then backfill from the form to bring those leads in.
+              </p>
+            ) : null}
+            <details className="rounded-lg border border-border-subtle bg-bg-2/40 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-fg-1">Add or replace a form mapping</summary>
+              <div className="mt-3">
+                <FormMappingForm workspaceSlug={ws} gate={gateOf(live.gates.mapping, fix)} {...(live.unmappedForms[0] ? { defaultFormId: live.unmappedForms[0] } : {})} />
+              </div>
+            </details>
+          </SectionCard>
+
+          <SectionCard
+            title={
+              <ChipTitle icon={<History aria-hidden="true" />} hue="ice">
+                Backfill from form
+              </ChipTitle>
+            }
+            meta="Reads a mapped form’s leads created after a time (last 90 days) from Meta. Leads that already arrived are counted as duplicates, never added twice."
+          >
+            <BackfillForm workspaceSlug={ws} forms={view.forms.map((f) => f.formId)} defaultSince={backfillDefault} gate={gateOf(live.gates.backfill, fix)} />
+            {live.backfills.length > 0 ? (
+              <ul className="flex flex-col gap-2" data-backfill-runs>
+                {live.backfills.map((b) => (
+                  <li key={b.id} className="flex flex-col gap-1 rounded-lg border border-border-subtle bg-bg-2/50 p-3 text-sm">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <StatusChip entry={BACKFILL_STATE[b.status] ?? BACKFILL_STATE.QUEUED!} />
+                      <span className="text-fg-1">
+                        Form <span className="font-mono">{b.formId}</span> since {formatDateTime(b.since, view.workspace.timezone)}
+                      </span>
+                    </span>
+                    <span className="text-xs text-fg-2">
+                      {b.pages} {b.pages === 1 ? 'page' : 'pages'}, {b.fetched} {b.fetched === 1 ? 'lead' : 'leads'} read
+                      {b.counts ? `: ${b.counts.accepted} added, ${b.counts.duplicate} already known, ${b.counts.review} to review, ${b.counts.rejected} rejected` : ''}
+                      {b.truncated ? '. More leads remain: run another backfill.' : '.'}
+                    </span>
+                    {b.errorCode ? (
+                      <span className="text-xs text-danger">
+                        {failureLabel(b.errorCode)}
+                        {b.errorMessage ? `: ${b.errorMessage}` : ''}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </SectionCard>
 
           <SectionCard
@@ -225,6 +334,21 @@ export default async function MetaPage({ params }: { params: Promise<{ ws: strin
               </ChipTitle>
             }
           >
+            {live.fetchFailures.length > 0 ? (
+              <ul role="note" className="flex flex-col gap-1 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-fg-1" data-fetch-failures>
+                {live.fetchFailures.map((f) => (
+                  <li key={f.code}>
+                    {f.count} {f.count === 1 ? 'lead' : 'leads'} not fetched: {failureLabel(f.code)} (oldest {formatDateTime(f.oldest, view.workspace.timezone)}).
+                  </li>
+                ))}
+                <li className="text-xs text-fg-2">Fix the cause (a new token, a permission, the form’s mapping), then backfill from the form since the oldest time.</li>
+              </ul>
+            ) : null}
+            {live.pendingFetch > 0 ? (
+              <p className="text-xs text-fg-2">
+                {live.pendingFetch} {live.pendingFetch === 1 ? 'lead is' : 'leads are'} waiting to be fetched from Meta by the worker.
+              </p>
+            ) : null}
             {view.events.length === 0 ? (
               <p className="text-sm text-fg-2">No leadgen event has arrived yet.</p>
             ) : (

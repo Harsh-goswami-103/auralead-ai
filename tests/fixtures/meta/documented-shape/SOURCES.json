@@ -1,0 +1,134 @@
+{
+  "_about": "Documented-shape fixtures derived from Meta's published Graph API, Lead Ads and Marketing API references, read through web-search snippets only (developers.facebook.com is blocked in the build environment, checked 2026-10-20/21). None is recorded live traffic; every shape is UNVERIFIED until a user-authorized live check (docs/integrations.md).",
+  "files": {
+    "webhook.leadgen.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-leadgen",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "note": "a Page delivery with one leadgen change (ids only) and one feed change carrying Devanagari text; the feed change is ignored"
+    },
+    "response.lead.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "GET /<leadgen id> with field_data; custom_disclaimer_responses shape UNVERIFIED"
+    },
+    "response.page.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/page/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.form-leads-page-1.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "GET /<form id>/leads with filtering on time_created; the filtering syntax comes from third-party guides (UNVERIFIED)"
+    },
+    "response.form-leads-page-2.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "last page: no paging.next"
+    },
+    "response.ad-account-usd.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "an ad account billed in USD: spend must stay USD"
+    },
+    "response.campaigns.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/reference/ad-account/campaigns/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.insights.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/insights/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "level=campaign, date_preset=last_7d; attribution_setting field and lead action types UNVERIFIED"
+    },
+    "response.campaign-paused.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "read-back after a pause; effective_status values UNVERIFIED"
+    },
+    "response.campaign-active.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "read-back showing the change did not apply"
+    },
+    "response.update-success.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "POST /<campaign id> status=PAUSED"
+    },
+    "error.190.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/error-handling",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.200-leads-retrieval.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/error-handling",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 403,
+      "note": "permission message shape UNVERIFIED"
+    },
+    "error.10-no-name.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/error-handling",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 403,
+      "note": "a permission refusal that names no permission: the operation names its own"
+    },
+    "error.4-rate-limit.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/overview/rate-limiting/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.80004.json": {
+      "source": "https://developers.facebook.com/docs/marketing-api/overview/rate-limiting",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.100-not-found.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/error-handling",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    }
+  }
+}

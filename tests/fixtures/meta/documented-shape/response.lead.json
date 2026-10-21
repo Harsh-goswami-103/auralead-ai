@@ -1,0 +1,45 @@
+{
+  "id": "610000000000001",
+  "created_time": "2026-10-20T05:59:50+0000",
+  "ad_id": "310000000000001",
+  "form_id": "210000000000001",
+  "campaign_id": "410000000000001",
+  "field_data": [
+    {
+      "name": "full_name",
+      "values": [
+        "राहुल शर्मा"
+      ]
+    },
+    {
+      "name": "phone_number",
+      "values": [
+        "+919812345678"
+      ]
+    },
+    {
+      "name": "email",
+      "values": [
+        "rahul.sharma@auralead-fixture.in"
+      ]
+    },
+    {
+      "name": "city",
+      "values": [
+        "गुरुग्राम"
+      ]
+    },
+    {
+      "name": "whatsapp_updates",
+      "values": [
+        "yes"
+      ]
+    }
+  ],
+  "custom_disclaimer_responses": [
+    {
+      "checkbox_key": "marketing_optin",
+      "is_checked": "1"
+    }
+  ]
+}

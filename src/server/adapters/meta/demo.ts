@@ -13,6 +13,7 @@
 import { demoPerson } from '@/lib/demo/contacts';
 import type { ConsentMapping } from '@/lib/schemas/ingest';
 import type { FieldMap, MetaLeadEvent } from '@/lib/schemas/webhooks';
+import type { CampaignMetricsFetch } from './port';
 
 export const DEMO_META_PAGE_ID = '100000000000001';
 export const DEMO_META_FORM_ID = '200000000000001';
@@ -82,4 +83,34 @@ export function buildSimulatedLeadgenEvents(input: SimulatedLeadgenInput): MetaL
       },
     };
   });
+}
+
+// ---- Campaign metrics (T35) ---------------------------------------------------------------------
+
+export const DEMO_META_AD_ACCOUNT_ID = '500000000000001';
+/** The campaign every simulated Instant Form lead is attributed to. */
+export const DEMO_META_LEAD_CAMPAIGN_ID = DEMO_META_CAMPAIGN_ID;
+
+/**
+ * DEMO stands in for the Marketing API (T35, ADR-108): a fixed ad account in INR with two
+ * campaigns and their last-7-days insights, built from the clock only. Everything it returns is
+ * stored with `simulated = true` and shown labelled Simulated; Meta is never contacted.
+ */
+export function buildDemoCampaignMetrics(now: Date): CampaignMetricsFetch {
+  const day = 24 * 60 * 60 * 1000;
+  const stop = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - day);
+  const start = new Date(stop.getTime() - 6 * day);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    account: { accountId: DEMO_META_AD_ACCOUNT_ID, name: 'Demo ad account', currency: 'INR', timezone: 'Asia/Kolkata' },
+    campaigns: [
+      { providerCampaignId: DEMO_META_CAMPAIGN_ID, name: 'Instant Form: free check-up offer', configuredStatus: 'ACTIVE', effectiveStatus: 'ACTIVE' },
+      { providerCampaignId: '400000000000002', name: 'Retargeting: website visitors', configuredStatus: 'PAUSED', effectiveStatus: 'PAUSED' },
+    ],
+    insights: [
+      { providerCampaignId: DEMO_META_CAMPAIGN_ID, dateStart: iso(start), dateStop: iso(stop), spend: '1842.50', leads: 12, costPerLead: '153.54', attributionSetting: '7-day click or 1-day view' },
+    ],
+    datePreset: 'last_7d',
+    complete: true,
+  };
 }
