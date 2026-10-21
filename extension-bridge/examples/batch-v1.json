@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "batchId": "3f7d1c2a-8e4b-4f61-9b0e-5a2c7d9e1f00",
+  "keyword": "dental clinic in Gurugram",
+  "records": [
+    {
+      "recordId": "12345678901234567890",
+      "name": "Example Dental Studio",
+      "phone": "+91 99999 00000",
+      "website": "https://example.com",
+      "address": "Sector 29, Gurugram",
+      "category": "Dental clinic",
+      "rating": 4.6,
+      "reviewCount": 128,
+      "extractedAt": "2026-10-16T00:00:00.000Z"
+    },
+    {
+      "recordId": "row-key-without-cid-0002",
+      "name": "Example Physio Centre",
+      "phone": "0124 400 0000",
+      "email": "frontdesk@example.com",
+      "extractedAt": "2026-10-16T00:00:05.000Z"
+    }
+  ]
+}

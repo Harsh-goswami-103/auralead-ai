@@ -23,7 +23,7 @@ Column meanings:
 | Resend (email send, webhooks) | Yes (inbound email not supported, ADR-102) | Yes | Yes | No |
 | SMTP (nodemailer) | Yes (no inbound, no bounce tracking) | Yes (local fake server) | Yes | No |
 | Google Sheets and Apps Script | No | No | Yes | No |
-| Google_Map_Extractor bridge | No | No | Yes | No |
+| Google_Map_Extractor bridge (receiver, tokens, `extension-bridge/`) | Yes | Yes (contract and chaos tests, fake `chrome.*`) | Yes | No |
 | Anthropic (drafts) | Yes | Yes | Yes | No |
 | OpenAI (drafts) | Yes | Yes | Yes | No |
 | Anthropic and OpenAI connection tests (Models API) | Yes | Yes | Yes | No |
@@ -211,4 +211,54 @@ the sync and the pause/resume controls on configuration. Snippets: a previous Ma
 | Permissions | `ads_read` for reads, `ads_management` for pause/resume (named in the failure when Meta refuses) | UNVERIFIED |
 | Throttling codes | 4, 17, 32, 613, 80000-80014 (business use case limits) or HTTP 429; `X-Business-Use-Case-Usage` is not read | UNVERIFIED |
 | DEMO | "Sync campaigns" uses the demo stand-in (an INR ad account with two simulated campaigns, labelled Simulated); pause/resume changes the simulated campaign at once as a SIMULATED action; zero outbound | Demo-verified by tests |
+
+### Google_Map_Extractor bridge (T36, checked 2026-10-21)
+
+Status: **contract verified, live extension NOT verified** (plan section 13). No vendor code and no vendor key material is in
+the repository (ADR-13). There is no provider documentation to check: the vendor publishes none, so the contract is AuraLead's
+own, and everything about the vendor extension below comes from the CEO security review (`docs/reviews/ceo/03-security.md`,
+T19), not from a first-hand inspection during T36 (no vendor copy is available in the build environment).
+
+What exists:
+
+- Receiver `POST /api/webhooks/gmaps-extension` (`src/server/services/extension/receive.ts`): `Authorization: Bearer
+  alx_<keyId>_<secret>` only, prefix lookup and constant-time sha256 compare, scope `ingest:gmaps`, one workspace, revocation
+  applies to the next request (401 `token_revoked`), `token_expired`, `token_invalid`, `token_missing`; an http(s) or `null`
+  Origin is 403; CORS only for `chrome-extension://<allowedExtensionId>` of a live token (preflight `OPTIONS` too); 1 MiB and
+  200 records (more is 413 `TOO_MANY_RECORDS`); per-record intake validation (`INVALID_RECORD`), 422 `NO_VALID_RECORDS` when
+  none is valid; WebhookEvent persistence keyed `(GMAPS_EXTENSION, workspaceId, batchId)` with the raw-body hash: replay returns
+  the stored per-record results, other bytes are 409 `BATCH_CONTENT_MISMATCH`; rate limit `extension` 60 batches per minute
+  per token; refusals counted in WebhookRejection and, for a known token, audited `extension.token.denied` without secrets.
+  Records go through `ingestBatch` as `GMAPS_EXTENSION`: no WhatsApp consent, no invented email, E.164 phones.
+- Tokens (`/api/app/extension/tokens`, `/revoke`, `/allowed-extension`; `extension.manage`): shown once, sha256 only, at most 10
+  active per workspace, optional expiry (30, 90, 365 days), audited by prefix.
+- Extension hub page (`/dashboard/employee/[ws]/extension`): webhook URL, create/list/revoke, allowed extension id, batches with
+  per-record failures, refused requests, example payload, DEMO simulation.
+- `extension-bridge/`: `saas-sync.js` (classic script for the vendor's service worker), options page, `PATCH-GUIDE.md`, examples.
+
+| Behaviour | What the bridge assumes | Status |
+|---|---|---|
+| Handoff | The extension saves its whole local blob under `Google_Map_Extractor_local_default` in `chrome.storage.local`; rows in `collect[]`, each with `row_key`; `cid` sometimes missing | From the review's reading of the copy inspected on 2026-10-15; configurable; UNVERIFIED live |
+| Licence gate | `_auth.hasValidKey === true` in that blob means licensed; anything else disables sync ("Extension not licensed: sync disabled") | Same source; UNVERIFIED live |
+| Row field names | Only `row_key`, `cid`, `keyword`, `location` are recorded; name, phone, email, website, address, rating and reviews keys are guesses with a configurable mapping | UNVERIFIED |
+| Service worker hook | `importScripts(chrome.runtime.getURL('/extension-bridge/saas-sync.js'))` at the top level of `controllers/background.js` | Same source; UNVERIFIED live |
+| Permissions added | `alarms` (and `storage`), `optional_host_permissions` for the AuraLead origin, `options_page` | Chrome MV3 behaviour from memory; UNVERIFIED in this environment |
+
+Vendor telemetry disclosure (for `/docs`, T37). Observed in the copy inspected on 2026-10-15, as recorded by one reviewer of the
+CEO security review (T19); the critic (`docs/reviews/ceo/99-critic.md` 12.3) confirmed only that both copies exist, that neither
+has a LICENSE file and that the original carries local modifications, and asked for re-confirmation during implementation. That
+re-confirmation was **not** possible in T36 (no vendor copy in the build environment), so each item below is unconfirmed:
+
+- the licence check sends the licence key in a query string to the vendor's backend (`jmjdigitalworld.com`);
+- every page load calls the vendor's `version.php` and `adinfo.php` (the user's IP address and usage timing reach the vendor), and
+  the vendor can remotely show an "update required" dialog with any download link plus an ad image and link;
+- the original copy contains unreachable code that would post every extracted row (business name, phone, emails, address,
+  coordinates, website, the search keyword and location) to a vendor endpoint; it is dead in that copy, so a vendor build may
+  be capable of exfiltrating lead data;
+- the extension requests `<all_urls>` (used for its email scraping, which fetches each lead's website from the operator's
+  browser) and exposes some scripts as web-accessible resources.
+
+Unknown: whether the build a customer installs matches the inspected copy, what any current vendor build sends, and the
+vendor's terms. The bridge adds no host permission of its own beyond the AuraLead origin, never reads the licence key and never
+writes the vendor's storage; the token sits in the extension's storage and is readable by any code running in the extension.
 

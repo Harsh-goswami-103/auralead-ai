@@ -1,0 +1,6 @@
+{
+  "_about": "Keys to merge into the Google_Map_Extractor manifest.json (see PATCH-GUIDE.md). Merge, do not replace: keep every key and permission the extension already has.",
+  "permissions": ["alarms", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "options_page": "extension-bridge/options.html"
+}
