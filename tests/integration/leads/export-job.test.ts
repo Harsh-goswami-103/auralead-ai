@@ -392,6 +392,8 @@ describe('routes', () => {
   }
 
   it('POST requests, GET lists, and the download is a CSV attachment', async () => {
+    // Earlier tests leave many exports with the same fixed-clock createdAt; the list shows only the newest 10 by (createdAt, id).
+    await h.db.leadExport.deleteMany();
     const owner = await auth('owner');
     const res = await requestRoute(makeRequest('/api/app/leads/exports', { body: { requestKey: 'export-route-0001', filters: { stage: 'NEW' } }, cookie: owner.cookie, csrf: owner.csrf }), { params: Promise.resolve({}) });
     expect(res.status).toBe(200);
