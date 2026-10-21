@@ -31,7 +31,7 @@ import {
   schedulePurge,
   type WebhookEventResult,
 } from './events';
-import { extensionToIngest, metaToIngest, parseExtensionBatch, parseMetaLeadEvent, parseSheetsPush, PayloadMappingError, sheetsToIngest } from './payload-mapping';
+import { extensionIntakeOf, extensionToIngest, metaToIngest, parseExtensionBatch, parseMetaLeadEvent, parseSheetsPush, PayloadMappingError, sheetsToIngest, withIntakeRejections } from './payload-mapping';
 
 export type IngestProcessDeps = {
   keyRing: KeyRing;
@@ -70,7 +70,8 @@ async function toIngestInput(job: JobHandlerContext, event: WebhookEvent, body: 
       return metaToIngest(lead, mapping, { externalBatchId: event.externalKey, simulated: event.simulated });
     }
     case 'GMAPS_EXTENSION':
-      return extensionToIngest(parseExtensionBatch(body), { simulated: event.simulated });
+      // A live batch carries the server-written intake block (T36): the token that sent it.
+      return extensionToIngest(parseExtensionBatch(body), { simulated: event.simulated, extensionTokenId: extensionIntakeOf(body)?.extensionTokenId ?? null });
     default:
       throw new PayloadMappingError('UNSUPPORTED_PROVIDER', `ingest.process does not handle ${event.provider} events`);
   }
@@ -123,8 +124,10 @@ export async function processIngestEvent(job: JobHandlerContext, deps: IngestPro
   if (event.processingPayload === null) return failEvent('PAYLOAD_PURGED', 'the processing payload was purged before processing');
 
   let input: IngestBatchInput;
+  let body: unknown = null;
   try {
-    input = await toIngestInput(job, event, decryptProcessingPayload(deps.keyRing, event));
+    body = decryptProcessingPayload(deps.keyRing, event);
+    input = await toIngestInput(job, event, body);
   } catch (error) {
     if (error instanceof PayloadMappingError) return failEvent(error.code, error.message);
     if (error instanceof Error && error.name === 'SecretDecryptError') return failEvent('PAYLOAD_UNREADABLE', 'the processing payload could not be decrypted with the configured key ring');
@@ -145,7 +148,8 @@ export async function processIngestEvent(job: JobHandlerContext, deps: IngestPro
     throw error;
   }
 
-  const result = ingestResultOf(ingested);
+  // Records the extension receiver rejected at intake (T36) are reported next to the ingested ones.
+  const result = event.provider === 'GMAPS_EXTENSION' ? withIntakeRejections(ingestResultOf(ingested), extensionIntakeOf(body)?.rejected ?? []) : ingestResultOf(ingested);
   return {
     outcome: 'succeeded',
     finalTx: async (tx) => {

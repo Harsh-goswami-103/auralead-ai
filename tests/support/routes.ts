@@ -132,6 +132,8 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   'admin.unknownInviteId': 'invitematrixprobe00000000',
   /** T26: a well-formed lead export id that does not exist. */
   'leads.unknownExportId': 'exportmatrixprobe00000000',
+  /** T36: a well-formed extension token id that does not exist. */
+  'extension.unknownTokenId': 'exttokenmatrixprobe000000',
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {

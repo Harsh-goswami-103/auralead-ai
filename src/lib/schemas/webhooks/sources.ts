@@ -73,30 +73,29 @@ export const metaLeadEventSchema = z.object({
 });
 export type MetaLeadEvent = z.infer<typeof metaLeadEventSchema>;
 
+/** One Maps record of an extension batch (also validated one by one at intake, T36). */
+export const extensionRecordSchema = z.object({
+  recordId: id(),
+  placeId: id().optional(),
+  name: z.string().max(300).nullish(),
+  phone: z.string().max(300).nullish(),
+  email: z.string().max(320).nullish(),
+  website: z.string().max(2048).nullish(),
+  address: z.string().max(1000).nullish(),
+  city: z.string().max(200).nullish(),
+  category: z.string().max(200).nullish(),
+  rating: z.union([z.number(), z.string().max(20)]).nullish(),
+  reviewCount: z.union([z.number(), z.string().max(40)]).nullish(),
+  extractedAt: isoTime.optional(),
+});
+export type ExtensionRecord = z.infer<typeof extensionRecordSchema>;
+
 export const extensionBatchSchema = z.object({
   version: z.literal(1),
   batchId: id(128),
   /** Search keyword the records were scraped for (attribution). */
   keyword: z.string().max(200).optional(),
-  records: z
-    .array(
-      z.object({
-        recordId: id(),
-        placeId: id().optional(),
-        name: z.string().max(300).nullish(),
-        phone: z.string().max(300).nullish(),
-        email: z.string().max(320).nullish(),
-        website: z.string().max(2048).nullish(),
-        address: z.string().max(1000).nullish(),
-        city: z.string().max(200).nullish(),
-        category: z.string().max(200).nullish(),
-        rating: z.union([z.number(), z.string().max(20)]).nullish(),
-        reviewCount: z.union([z.number(), z.string().max(40)]).nullish(),
-        extractedAt: isoTime.optional(),
-      }),
-    )
-    .min(1)
-    .max(EXTENSION_MAX_RECORDS),
+  records: z.array(extensionRecordSchema).min(1).max(EXTENSION_MAX_RECORDS),
 });
 export type ExtensionBatch = z.infer<typeof extensionBatchSchema>;
 
