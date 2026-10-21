@@ -75,6 +75,8 @@ const DIGITS_RE = /^\d{5,32}$/;
 const HOST_RE = /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
 const EMAIL_RE = /^[^\s@]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+/** SMTP ports a workspace may use (T33): no other port can be reached from a workspace setting. */
+const SMTP_PORT_VALUES: readonly string[] = ['25', '465', '587', '2525'];
 
 const token = (min: number, max: number, what: string) => (v: string) => {
   if (v.length < min || v.length > max) return `${what} must be ${min} to ${max} characters.`;
@@ -108,10 +110,11 @@ export const CONFIG_FIELD_RULES: Readonly<Record<IntegrationKind, Readonly<Recor
   },
   EMAIL_RESEND: {
     fromDomain: { required: true, hint: 'A domain verified in Resend.', check: host('The sending domain') },
+    fromAddress: { required: true, hint: 'The address emails are sent from, at the sending domain (for example quotes@example.com).', check: (v) => (EMAIL_RE.test(v) ? null : 'Enter an email address such as quotes@example.com.') },
   },
   EMAIL_SMTP: {
     host: { required: true, hint: 'The SMTP server name.', check: host('The SMTP host') },
-    port: { required: true, hint: 'Usually 587 (STARTTLS) or 465 (TLS).', check: (v) => (/^\d{1,5}$/.test(v) && Number(v) >= 1 && Number(v) <= 65535 ? null : 'The port is a number from 1 to 65535.') },
+    port: { required: true, hint: '587 (STARTTLS), 465 (TLS), 25 or 2525.', check: (v) => (SMTP_PORT_VALUES.includes(v) ? null : 'The port must be 25, 465, 587 or 2525.') },
     username: { required: true, hint: 'The SMTP account name.', check: (v) => (v.length >= 1 && v.length <= 254 && NO_SPACE_RE.test(v) ? null : 'The username is 1 to 254 characters without spaces.') },
     fromAddress: { required: true, hint: 'The address emails are sent from.', check: (v) => (EMAIL_RE.test(v) ? null : 'Enter an email address such as quotes@example.com.') },
   },
@@ -137,7 +140,11 @@ export const CREDENTIAL_FIELD_RULES: Readonly<Record<IntegrationKind, Readonly<R
   },
   EMAIL_RESEND: {
     apiKey: { required: true, hint: 'A Resend API key with sending access.', check: token(8, 512, 'The API key') },
-    webhookSecret: { required: false, hint: 'Optional until email webhooks are set up: the webhook signing secret.', check: token(8, 512, 'The signing secret') },
+    webhookSecret: {
+      required: false,
+      hint: 'Optional until email webhooks are set up: the signing secret Resend shows for the webhook (starts with whsec_).',
+      check: (v) => (/^whsec_[A-Za-z0-9+/]{22,}={0,2}$/.test(v) && v.length <= 512 ? null : 'The signing secret starts with whsec_ followed by the key Resend shows.'),
+    },
   },
   EMAIL_SMTP: {
     password: { required: true, hint: 'The SMTP account password.', check: (v) => (v.length >= 1 && v.length <= 512 && !CONTROL_RE.test(v) ? null : 'The password is 1 to 512 characters without line breaks.') },

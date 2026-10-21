@@ -13,12 +13,20 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { FixedClock } from '@/lib/clock';
 import { IntegrationStatus } from '@/lib/domain/enums';
-import { resolveEmailTransport, resolveWhatsAppTransport, whatsAppGraphClient, aiConnectionCheck, type CredentialState } from '@/server/adapters/registry';
+import { resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const REGISTRY = 'src/server/adapters/registry.ts';
 const DEMO_MODULES = ['src/server/adapters/whatsapp/demo.ts', 'src/server/adapters/email/demo.ts'];
-const LIVE_MODULES = ['src/server/adapters/whatsapp/cloud-api.ts', 'src/server/adapters/whatsapp/media.ts', 'src/server/adapters/whatsapp/limits.ts', 'src/server/adapters/ai/connection-check.ts'];
+const LIVE_MODULES = [
+  'src/server/adapters/whatsapp/cloud-api.ts',
+  'src/server/adapters/whatsapp/media.ts',
+  'src/server/adapters/whatsapp/limits.ts',
+  'src/server/adapters/ai/connection-check.ts',
+  // T33
+  'src/server/adapters/email/resend.ts',
+  'src/server/adapters/email/smtp.ts',
+];
 
 function resolve(from: string, spec: string): string | null {
   let base: string | null = null;
@@ -68,7 +76,9 @@ describe('LIVE never imports the demo transport in the registry path (static)', 
     expect(demoNames.size).toBeGreaterThan(0); // the DEMO branch does use them
     const sf = source(REGISTRY);
     const liveFns = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && (s.name?.text ?? '').startsWith('live'));
-    expect(liveFns.map((f) => f.name!.text).sort()).toEqual(['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveWhatsAppTransport']);
+    expect(liveFns.map((f) => f.name!.text).sort()).toEqual(
+      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
+    );
     const used: string[] = [];
     for (const fn of liveFns) {
       const visit = (n: ts.Node) => {
@@ -123,11 +133,37 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
     expect(resolveWhatsAppTransport({ mode: 'live', workspaceMode: 'DEMO', integration: null, graphVersion: 'v24.0', clock, storageDir: '/x' })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
   });
 
-  it('LIVE email has no live transport yet (T33): INTEGRATION_NOT_CONFIGURED, never the demo transport', () => {
-    for (const status of IntegrationStatus) {
-      const r = resolveEmailTransport({ mode: 'live', workspaceMode: 'LIVE', integrations: [{ id: 'e1', kind: 'EMAIL_RESEND', status, config: {}, credentials: creds[0]! }], clock, storageDir: '/x' });
-      expect(r.ok).toBe(false);
+  it('T33: every email status x credential state answers Resend, SMTP or a typed problem, never the demo transport; Resend wins when both are usable', () => {
+    const resendCreds: CredentialState[] = [{ state: 'ok', values: { apiKey: 're_archtestkey000000000000' } }, { state: 'missing', fields: ['apiKey'] }, { state: 'unreadable', field: 'apiKey' }];
+    const smtpCreds: CredentialState[] = [{ state: 'ok', values: { password: 'pw' } }, { state: 'missing', fields: ['password'] }, { state: 'unreadable', field: 'password' }];
+    const resend = (status: (typeof IntegrationStatus)[number], credentials: CredentialState): IntegrationUse => ({ id: 'r1', kind: 'EMAIL_RESEND', status, config: { fromDomain: 'example.com', fromAddress: 'q@example.com' }, credentials });
+    const smtp = (status: (typeof IntegrationStatus)[number], credentials: CredentialState): IntegrationUse => ({ id: 's1', kind: 'EMAIL_SMTP', status, config: { host: 'smtp.example.com', port: '587', username: 'u', fromAddress: 'q@example.com' }, credentials });
+    for (const rs of IntegrationStatus) {
+      for (const rc of resendCreds) {
+        for (const ss of IntegrationStatus) {
+          for (const sc of smtpCreds) {
+            const r = resolveEmailTransport({ mode: 'live', workspaceMode: 'LIVE', integrations: [resend(rs, rc), smtp(ss, sc)], clock, storageDir: '/x' });
+            const resendUsable = ['CONNECTED', 'DEGRADED'].includes(rs);
+            const smtpUsable = ['CONNECTED', 'DEGRADED'].includes(ss);
+            if (r.ok) {
+              expect(r.value.simulated).toBe(false);
+              if (resendUsable) expect(r.value.label).toBe('resend');
+              else expect(r.value.label).toBe('smtp');
+              expect(r.value.label === 'resend' ? rc.state : sc.state).toBe('ok');
+            } else {
+              expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
+              if (resendUsable) expect(rc.state).not.toBe('ok');
+              else if (smtpUsable) expect(sc.state).not.toBe('ok');
+            }
+          }
+        }
+      }
     }
+    expect(resolveEmailTransport({ mode: 'live', workspaceMode: 'LIVE', integrations: [], clock, storageDir: '/x' })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+    const off = resolveEmailTransport({ mode: 'live', workspaceMode: 'LIVE', integrations: [{ ...resend('CONNECTED', resendCreds[0]!), config: { fromDomain: 'example.com', fromAddress: 'q@other.example' } }], clock, storageDir: '/x' });
+    expect(off).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED', reason: 'the from address is not at the sending domain' });
+    const port = resolveEmailTransport({ mode: 'live', workspaceMode: 'LIVE', integrations: [{ ...smtp('CONNECTED', smtpCreds[0]!), config: { host: 'smtp.example.com', port: '6379', username: 'u', fromAddress: 'q@example.com' } }], clock, storageDir: '/x' });
+    expect(port).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
     const demo = resolveEmailTransport({ mode: 'demo', workspaceMode: 'DEMO', integrations: [], clock, storageDir: '/x' });
     expect(demo.ok && demo.value.simulated).toBe(true);
   });
@@ -135,5 +171,7 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
   it('DEMO never gets a live client or a live AI check', () => {
     expect(whatsAppGraphClient({ mode: 'demo', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
     expect(aiConnectionCheck({ mode: 'demo', kind: 'AI_ANTHROPIC', apiKey: 'k', modelId: null })).toMatchObject({ ok: false });
+    expect(resendApiClient({ mode: 'demo', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(smtpConnectionCheck({ mode: 'demo', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
   });
 });

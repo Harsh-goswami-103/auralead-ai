@@ -13,6 +13,8 @@ export const emailEventSchema = z.looseObject({
     email_id: z.string().min(1).max(256),
     to: z.array(z.string().max(320)).max(50).optional(),
     bounce: z.looseObject({ type: z.string().max(64).optional(), subType: z.string().max(64).optional() }).optional(),
+    /** Resend echoes the send's tags, as a key-value object in the snippets (UNVERIFIED, T33); any other shape is ignored. */
+    tags: z.unknown().optional(),
   }),
 });
 export type EmailEvent = z.infer<typeof emailEventSchema>;

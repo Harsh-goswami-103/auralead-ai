@@ -4,9 +4,12 @@
 // - CONNECTED integration with a readable token: the Cloud API request goes out (scripted Graph),
 //   with the per-send quick-reply payload ids of the template mapping and the attempt id echoed;
 //   the attempt is SENT with the provider's message id.
-// - No Graph version, an unverified integration, an unreadable credential, or LIVE email (no live
-//   email transport until T33): the existing NOT_CONFIGURED skip, zero provider requests, and the
-//   demo outbox is never written: LIVE never falls back to a demo transport.
+// - No Graph version, an unverified integration, an unreadable credential, or a LIVE email
+//   integration without its credentials: the existing NOT_CONFIGURED skip, zero provider requests,
+//   and the demo outbox is never written: LIVE never falls back to a demo transport.
+// - T33: LIVE email through the registry: Resend when it is connected (also when SMTP is), SMTP
+//   (a local fake server) when only SMTP is, the unsubscribe headers on both, and an unreadable
+//   Resend key recorded on the integration and skipped.
 // - A provider error goes through the dated error map; a timeout after the write is AMBIGUOUS
 //   (job DEAD, message "Delivery unknown"), never retried.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -14,6 +17,9 @@ import { withTx } from '@/server/db/tx';
 import { queueOutboundMessage } from '@/server/services/messaging/dispatch';
 import { contactKey } from '@/server/security/contact-key';
 import { fixtureAnswer, networkError } from '../contract/whatsapp-support';
+import { emailLead, queueEmail, storeResend, storeSmtp } from '../contract/email-live-support';
+import { startFakeSmtp } from '../contract/smtp-support';
+import { KEY_RING as HARNESS_RING } from '../integrations/live-support';
 import { createLiveHarness, liveLead, PEPPER, PHONE_ID, queueWhatsApp, SIMPLE_TEMPLATE, storeTemplate, storeWhatsApp, type LiveHarness } from '../integrations/live-support';
 
 let h: LiveHarness;
@@ -98,8 +104,8 @@ describe('LIVE WhatsApp through the registry', () => {
   });
 });
 
-describe('LIVE email (shaped identically; T33 adds the transport)', () => {
-  it('is skipped NOT_CONFIGURED in LIVE, with no demo transport, even with a CONNECTED email integration', async () => {
+describe('LIVE email without credentials', () => {
+  it('is skipped NOT_CONFIGURED in LIVE, with no demo transport, when the CONNECTED email integration has no saved key', async () => {
     const lead = await liveLead(h);
     await h.db.lead.update({ where: { id: lead.id }, data: { emailNormalized: `live${lead.id.slice(-6)}@example.test` } });
     const email = `live${lead.id.slice(-6)}@example.test`;
@@ -115,5 +121,65 @@ describe('LIVE email (shaped identically; T33 adds the transport)', () => {
     expect(await attemptOf(q.messageId)).toMatchObject({ state: 'SKIPPED', reasonCode: 'NOT_CONFIGURED' });
     expect(h.demoOutboxExists()).toBe(false);
     expect(h.graph.requests).toHaveLength(0);
+  });
+});
+
+describe('T33 LIVE email through the registry', () => {
+  it('a CONNECTED Resend integration sends through Resend with the unsubscribe headers and the configured from address', async () => {
+    await storeResend(h, { status: 'CONNECTED' });
+    h.resend.reset();
+    h.resend.on('POST', /^\/emails$/, { status: 200, body: { id: 'resend-live-1' } });
+    const { lead, email } = await emailLead(h);
+    const q = await queueEmail(h, lead.id);
+    await h.drain();
+    expect(await attemptOf(q.messageId)).toMatchObject({ state: 'SENT', providerMessageId: 'resend-live-1' });
+    const body = h.resend.requests[0]!.body as Record<string, unknown>;
+    expect(body).toMatchObject({ from: '"Live Dental Co" <quotes@example.com>', to: [email] });
+    expect(body.headers).toMatchObject({ 'List-Unsubscribe': expect.stringContaining('https://app.example.test/api/unsubscribe?token='), 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' });
+    expect(h.resend.requests[0]!.headers['idempotency-key']).toBe((await attemptOf(q.messageId)).idempotencyKey);
+    expect(h.demoOutboxExists()).toBe(false);
+  });
+
+  it('with Resend not connected, a CONNECTED SMTP integration sends (local fake server); with both connected Resend wins', async () => {
+    const smtp = await startFakeSmtp();
+    Object.assign(h.smtpSeams, smtp.seams());
+    try {
+      await storeResend(h, { status: 'CONFIGURED_UNVERIFIED' });
+      await storeSmtp(h, { status: 'CONNECTED' });
+      h.resend.reset();
+      const { lead } = await emailLead(h);
+      const q = await queueEmail(h, lead.id);
+      await h.drain();
+      const attempt = await attemptOf(q.messageId);
+      expect(attempt).toMatchObject({ state: 'SENT', providerMessageId: `${attempt.id}@example.com` });
+      expect(smtp.messages).toHaveLength(1);
+      expect(smtp.messages[0]).toMatch(/^List-Unsubscribe:\s+<https:\/\/app\.example\.test\/api\/unsubscribe\?token=/m);
+      expect(h.resend.requests).toHaveLength(0);
+
+      await storeResend(h, { status: 'CONNECTED' });
+      h.resend.on('POST', /^\/emails$/, { status: 200, body: { id: 'resend-live-2' } });
+      const q2 = await queueEmail(h, (await emailLead(h)).lead.id);
+      await h.drain();
+      expect(await attemptOf(q2.messageId)).toMatchObject({ state: 'SENT', providerMessageId: 'resend-live-2' });
+      expect(smtp.messages).toHaveLength(1);
+    } finally {
+      for (const k of Object.keys(h.smtpSeams)) delete (h.smtpSeams as Record<string, unknown>)[k];
+      await smtp.close();
+      await h.db.integration.deleteMany({ where: { workspaceId: h.workspaceId, kind: 'EMAIL_SMTP' } });
+    }
+  });
+
+  it('an unreadable Resend key is skipped NOT_CONFIGURED and recorded "Credential unreadable, re-enter"; no request', async () => {
+    const row = await storeResend(h, { status: 'CONNECTED' });
+    const other = { activeKid: 'k9', keys: { k9: Buffer.alloc(32, 99) } };
+    const { credentialAad, encryptSecret } = await import('@/server/security/secrets');
+    await h.db.integration.update({ where: { id: row.id }, data: { secrets: { apiKey: encryptSecret(other, 're_otherkey000000000000', credentialAad({ workspaceId: h.workspaceId, integrationId: row.id, field: 'apiKey' })) } } });
+    expect(HARNESS_RING.activeKid).toBe('k1');
+    h.resend.reset();
+    const q = await queueEmail(h, (await emailLead(h)).lead.id);
+    await h.drain();
+    expect(await attemptOf(q.messageId)).toMatchObject({ state: 'SKIPPED', reasonCode: 'NOT_CONFIGURED' });
+    expect(await h.db.integration.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ status: 'ERROR', lastErrorCode: 'CREDENTIAL_UNREADABLE' });
+    expect(h.resend.requests).toHaveLength(0);
   });
 });
