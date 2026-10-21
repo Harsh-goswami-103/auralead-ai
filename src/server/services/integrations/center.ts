@@ -17,7 +17,7 @@
  * `integrations.manage`.
  */
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
-import { catalogEntry, INTEGRATION_CATALOG, type IntegrationCatalogEntry, type IntegrationGroup } from '@/lib/domain/integrations';
+import { catalogEntry, INTEGRATION_CATALOG, RESEND_ROUTING_KEY_RE, resendWebhookPath, type IntegrationCatalogEntry, type IntegrationGroup } from '@/lib/domain/integrations';
 import { NOT_SENDABLE_LABELS, parseTemplateMapping, templateShape, type QuickReplyIntentValue, type TemplateVariableSource } from '@/lib/domain/whatsapp-templates';
 import { NotFoundError } from '@/lib/errors';
 import { isQualityRed } from '@/server/adapters/whatsapp/limits';
@@ -273,7 +273,10 @@ export async function getIntegrationSetup(ctx: AppCtx, kind: IntegrationKind): P
   const workspace = await workspaceOf(ctx);
   const entry = catalogEntry(kind);
   const card = await loadIntegrationCard(ctx, kind);
-  const row = await ctx.db.integration.findFirst({ where: { kind }, select: { id: true } });
+  const row = await ctx.db.integration.findFirst({ where: { kind }, select: { id: true, routingKey: true } });
+  // T33: Resend posts to this integration's own URL, which exists once a LIVE write gave it a routing key.
+  const webhookUrlPath =
+    kind === 'EMAIL_RESEND' ? (ctx.mode === 'live' && row?.routingKey && RESEND_ROUTING_KEY_RE.test(row.routingKey) ? resendWebhookPath(row.routingKey) : null) : entry.webhookPath;
 
   const templates: TemplateView[] =
     kind === 'WHATSAPP_CLOUD' && row
@@ -298,5 +301,5 @@ export async function getIntegrationSetup(ctx: AppCtx, kind: IntegrationKind): P
     return { id: e.id, action: e.action, result: e.result, simulated: e.simulated, outcome: typeof outcome === 'string' ? outcome : null, createdAt: e.createdAt };
   });
 
-  return { mode: ctx.mode, workspace, canManage: hasCapability(ctx, 'integrations.manage'), card, entry, webhookUrlPath: entry.webhookPath, templates, activity };
+  return { mode: ctx.mode, workspace, canManage: hasCapability(ctx, 'integrations.manage'), card, entry, webhookUrlPath, templates, activity };
 }

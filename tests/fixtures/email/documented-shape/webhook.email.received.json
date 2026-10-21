@@ -1,0 +1,13 @@
+{
+  "type": "email.received",
+  "created_at": "2026-10-20T07:00:00.000Z",
+  "data": {
+    "email_id": "56761188-7520-42d8-8898-ff6fc54ce618",
+    "created_at": "2026-10-20T07:00:00.000Z",
+    "from": "Lead <lead@example.net>",
+    "to": ["quotes@example.com"],
+    "subject": "Re: Quotation Q-0007 from Live Dental Co",
+    "message_id": "<111-222-333@email.example.net>",
+    "attachments": []
+  }
+}

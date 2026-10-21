@@ -9,14 +9,14 @@
  */
 import type { Channel } from '@/generated/prisma/client';
 import type { EmailTransport } from '@/server/adapters/email/port';
-import { resolveEmailTransport, resolveWhatsAppTransport, type GraphSeams, type IntegrationUse, type Resolution } from '@/server/adapters/registry';
+import { EMAIL_KIND_PREFERENCE, resolveEmailTransport, resolveWhatsAppTransport, type EmailSeams, type GraphSeams, type IntegrationUse, type Resolution } from '@/server/adapters/registry';
 import type { WhatsAppTransport } from '@/server/adapters/whatsapp/port';
 import type { AppCtx } from '@/server/auth/context';
 import { requireWorkspace } from '@/server/auth/guards';
 import type { KeyRing } from '@/server/security/secrets';
 import { loadIntegrationForUse } from './credentials';
 
-export type TransportDeps = { keyRing: KeyRing | null; graphVersion: string | null; storageDir: string; graph?: GraphSeams };
+export type TransportDeps = { keyRing: KeyRing | null; graphVersion: string | null; storageDir: string; graph?: GraphSeams; email?: EmailSeams };
 
 /** The workspace's stored mode; a missing workspace reads as the other mode, so the registry refuses it (MODE_MISMATCH). */
 async function workspaceMode(ctx: AppCtx): Promise<'DEMO' | 'LIVE'> {
@@ -35,12 +35,12 @@ export async function resolveWorkspaceEmail(ctx: AppCtx, deps: TransportDeps): P
   const mode = await workspaceMode(ctx);
   const integrations: IntegrationUse[] = [];
   if (ctx.mode === 'live') {
-    for (const kind of ['EMAIL_RESEND', 'EMAIL_SMTP'] as const) {
+    for (const kind of EMAIL_KIND_PREFERENCE) {
       const use = await loadIntegrationForUse(ctx.db, kind, deps.keyRing);
       if (use) integrations.push(use);
     }
   }
-  return resolveEmailTransport({ mode: ctx.mode, workspaceMode: mode, integrations, clock: ctx.clock, storageDir: deps.storageDir });
+  return resolveEmailTransport({ mode: ctx.mode, workspaceMode: mode, integrations, clock: ctx.clock, storageDir: deps.storageDir, ...(deps.email ? { seams: deps.email } : {}) });
 }
 
 export function resolveWorkspaceTransport(ctx: AppCtx, channel: Channel, deps: TransportDeps): Promise<Resolution<WhatsAppTransport | EmailTransport>> {

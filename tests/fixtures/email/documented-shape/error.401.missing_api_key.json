@@ -1,0 +1,1 @@
+{ "statusCode": 401, "message": "Missing API key in the authorization header. Include the following header in the request: Authorization: Bearer YOUR_API_KEY", "name": "missing_api_key" }

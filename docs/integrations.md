@@ -20,8 +20,8 @@ Column meanings:
 | WhatsApp webhooks (inbound, statuses) | Yes | Yes | Yes | No |
 | Meta Lead Ads webhook and lead fetch | No | No | Yes | No |
 | Meta Marketing API (metrics, pause/resume) | No | No | Yes | No |
-| Resend (email send, webhooks) | Demo transport only | No | Yes | No |
-| SMTP (nodemailer) | No | No | Yes | No |
+| Resend (email send, webhooks) | Yes (inbound email not supported, ADR-102) | Yes | Yes | No |
+| SMTP (nodemailer) | Yes (no inbound, no bounce tracking) | Yes (local fake server) | Yes | No |
 | Google Sheets and Apps Script | No | No | Yes | No |
 | Google_Map_Extractor bridge | No | No | Yes | No |
 | Anthropic (drafts) | Yes | Yes | Yes | No |
@@ -94,3 +94,52 @@ methods define the paths; response shapes in the fixtures follow the SDK types. 
 | Anthropic connection test | `GET /v1/models?limit=1` (key check), then `GET /v1/models/<modelId>` (the configured model, or the adapter default `claude-opus-5-5`); the key only in `x-api-key`; no retries | Fixture-tested, UNVERIFIED live |
 | OpenAI connection test | `GET /v1/models`; CONNECTED only when the configured model id is in the list (OpenAI has no default model here) | Fixture-tested, UNVERIFIED live |
 | Outcomes | 401/403 ERROR `PROVIDER_AUTH`; unknown model ERROR `AI_MODEL_NOT_FOUND`; 429, 5xx and timeouts leave the status unverified (or DEGRADED after CONNECTED); never CONNECTED without a real answer | Design choice |
+
+### Resend (T33, checked 2026-10-20)
+
+How the pages were read: **not first-hand**. `resend.com` did not resolve from the build environment (WebFetch: `ENOTFOUND
+resend.com`), so everything below comes from web-search snippets of Resend's pages, its changelog and blog, and third-party
+pages that quote them (Hookdeck, Svix docs, getfluxly, sendraven, GitHub pull requests). Every behaviour is **UNVERIFIED** until a
+user-authorized live check. The fixtures in `tests/fixtures/email/documented-shape/` are documented-shape fixtures derived from
+these snippets; none is recorded live traffic (`SOURCES.json` there lists each file's source). The adapter uses plain HTTP through
+`adapters/http/outbound.ts`, not the `resend` SDK (the SDK cannot be driven through the outbound guard).
+
+Pages cited (not read first-hand):
+
+- Send email: https://resend.com/docs/api-reference/emails/send-email
+- Errors: https://resend.com/docs/api-reference/errors ; rate limits: https://resend.com/docs/api-reference/rate-limit
+- Idempotency keys: https://resend.com/docs/dashboard/emails/idempotency-keys and https://resend.com/changelog/idempotency-keys
+- List domains: https://resend.com/docs/api-reference/domains/list-domains ; API key permissions: https://resend.com/changelog/new-api-key-permissions
+- Webhooks: https://resend.com/docs/webhooks/introduction , https://resend.com/docs/webhooks/verify-webhooks-requests ,
+  https://docs.svix.com/receiving/verifying-payloads/how
+- Receiving: https://resend.com/docs/dashboard/receiving/introduction , https://resend.com/docs/webhooks/emails/received ,
+  https://resend.com/docs/api-reference/emails/retrieve-received-email
+
+| Behaviour | What the app does | Status |
+|---|---|---|
+| Send | `POST https://api.resend.com/emails`, JSON, `Authorization: Bearer <key>`; `from` = `"<workspace name>" <configured from address>`, `to` (one address), `subject`, `text` (text/plain only), `headers` (List-Unsubscribe and List-Unsubscribe-Post, RFC 8058), `attachments: [{filename, content: base64}]`, `tags: [{name: auralead_attempt, value: <attempt id>}]`; answer `{id}` | UNVERIFIED shape |
+| Idempotency-Key | Confirmed in the docs and changelog snippets: header `Idempotency-Key`, 1 to 256 characters, 24-hour window, a repeat with the same body returns the original response and sends nothing; a different body is 409 `invalid_idempotent_request`; a repeat while the first runs is 409 `concurrent_idempotent_requests`. The app sends the attempt's own key and, when an outcome is unknown (timeout or reset after the write, or a 5xx), replays the identical bytes under the same key once: a 2xx with an id is SENT, anything else AMBIGUOUS (ADR-100) | Semantics UNVERIFIED |
+| Reply-To | Not set: inbound email is not processed (below), so replies go to the from mailbox | Design choice |
+| Error classes | `src/server/adapters/email/error-map.ts` (dated 2026-10-20): validation_error, missing_required_field, invalid_parameter, invalid_attachment, invalid_from_address, invalid_access, invalid_region, missing_api_key, invalid_api_key, restricted_api_key, not_found, method_not_allowed, invalid_idempotency_key, invalid_idempotent_request, monthly_quota_exceeded, security_error PERMANENT; rate_limit_exceeded and daily_quota_exceeded RETRYABLE with a workspace throttle; concurrent_idempotent_requests AMBIGUOUS; unmapped 5xx AMBIGUOUS after the replay; `Retry-After` honoured (capped at one hour) | UNVERIFIED |
+| Size | 40 MB per email after base64 (snippets); checked locally before the request | UNVERIFIED |
+| Connection test | `GET /domains`: CONNECTED when the configured sending domain is listed with status `verified`; another status or absent is ERROR CONFIG_INVALID with the raw status. A sending-only key answers 401 `restricted_api_key` on this endpoint (third-party reports): the key is real and may send, so the test reports CONNECTED and the first send checks the domain | UNVERIFIED |
+| Webhook signature | Svix scheme: `svix-id`, `svix-timestamp`, `svix-signature` (space-separated `v1,<base64>`), HMAC-SHA256 of `id.timestamp.rawBody` with the base64 key after `whsec_`, constant-time compare, +/- 5 minutes (`src/server/security/svix.ts`) | UNVERIFIED |
+| Webhook routing | Per-integration URL `/api/webhooks/email/resend/<routing key>` (random `rs_...` key written by the LIVE credential save, shown on the setup page); the integration's own `webhookSecret` verifies; unknown key 404, bad or stale signature 401, both counted, nothing stored (ADR-101) | Design choice |
+| Webhook events | `email.sent`, `email.delivered`, `email.bounced` (`bounce.type` Permanent suppresses `HARD_BOUNCE`; Transient does not), `email.complained` (suppresses `COMPLAINT`), `email.delivery_delayed`, opens and clicks stored only; payload `{type, created_at, data: {email_id, to[], bounce?, tags?}}`; idempotent per `(RESEND, integrationId, svix-id)`; rank merge as ADR-62; the echoed `auralead_attempt` tag resolves an AMBIGUOUS attempt | UNVERIFIED payload, tags echo UNVERIFIED |
+| Inbound (receiving) | Resend has a receiving product (`email.received`, MX on a domain), but its webhook carries metadata only; the reply text and the In-Reply-To header come from the Retrieve Received Email API, whose response fields could not be confirmed. **Inbound email is not supported for this provider** in this version: `email.received` is acknowledged and not stored, and the setup page says so (ADR-102) | Not implemented, disclosed |
+
+### SMTP (T33, checked 2026-10-20)
+
+SMTP itself is RFC 5321 / 3207 / 4954; the client is nodemailer 10.1.1 (`SMTPConnection` and `MailComposer`, which ship their own
+type declarations, so `@types/nodemailer` is not added). Tested against a fake SMTP server on 127.0.0.1 with a test-only
+self-signed certificate (`tests/fixtures/email/tls/`), never a real server.
+
+| Behaviour | What the app does | Status |
+|---|---|---|
+| TLS | Required: implicit TLS on 465, STARTTLS on 25, 587 and 2525 (`requireTLS`), TLS 1.2 or newer, certificate checked against the configured host; a server without STARTTLS is refused before AUTH | Fixture-tested |
+| Destination | Ports 25, 465, 587 and 2525 only; the host must be a name whose every address is public unicast; the socket is pinned to the checked address (SNI and the certificate keep the name) | Design choice |
+| Outcomes | 4xx at any step RETRYABLE, 5xx PERMANENT (a refused login PROVIDER_AUTH); a timeout or reset once the server accepted DATA and the body is being written is AMBIGUOUS; before that PRE_SEND | Fixture-tested |
+| Message | text/plain, the unsubscribe headers, the PDF attachment, `Message-ID: <attemptId@from domain>` (also the stored provider id), no Reply-To | Fixture-tested |
+| Connection test | connect, TLS, AUTH, QUIT; no MAIL FROM, no message | Fixture-tested |
+| Bounces and inbound | **Bounces are not tracked and there is no inbound over SMTP**; replies go to the mailbox; disclosed on the setup page | Disclosed |
+| Preference | When Resend and SMTP are both CONNECTED, Resend sends (ADR-100) | Design choice |
