@@ -22,6 +22,9 @@ import { createDispatchWhatsAppJob } from '@/server/jobs/handlers/dispatch-whats
 import { createIntegrationHealthJob } from '@/server/jobs/handlers/integration-health';
 import { createTemplateSyncJob } from '@/server/jobs/handlers/template-sync';
 import { createWaQualityCheckJob } from '@/server/jobs/handlers/wa-quality-check';
+import { createStatusApplyJob } from '@/server/jobs/handlers/status-apply';
+import type { EmailSeams } from '@/server/adapters/registry';
+import type { SmtpSeams } from '@/server/adapters/email/smtp';
 import { buildJobRegistry } from '@/server/jobs/registry';
 import { contactKey } from '@/server/security/contact-key';
 import { credentialAad, encryptSecret, type KeyRing } from '@/server/security/secrets';
@@ -50,6 +53,10 @@ export type LiveHarness = {
   ownerId: string;
   memberId: string;
   graph: FakeGraph;
+  /** T33: the scripted Resend API and the SMTP seams (mutable: point them at a local server). */
+  resend: FakeGraph;
+  smtpSeams: SmtpSeams;
+  emailSeams: EmailSeams;
   flags: { graphVersion: string | null; keyRing: KeyRing | null };
   deps: () => LiveAdapterDeps;
   owner: () => Promise<AppCtx>;
@@ -77,8 +84,11 @@ export async function createLiveHarness(label: string): Promise<LiveHarness> {
   await db.membership.create({ data: { userId: member.id, workspaceId: ws.id, role: 'MEMBER' } });
 
   const graph = new FakeGraph();
+  const resend = new FakeGraph();
+  const smtpSeams: SmtpSeams = {};
+  const emailSeams: EmailSeams = { resend: { http: resend.http }, smtp: smtpSeams };
   const flags: LiveHarness['flags'] = { graphVersion: GRAPH_VERSION, keyRing: KEY_RING };
-  const deps = (): LiveAdapterDeps => ({ keyRing: flags.keyRing, graphVersion: flags.graphVersion, graph: { http: graph.http } });
+  const deps = (): LiveAdapterDeps => ({ keyRing: flags.keyRing, graphVersion: flags.graphVersion, graph: { http: graph.http }, email: emailSeams });
   const runtimeDeps = (): DispatchRuntimeDeps => ({
     contactKeyPepper: PEPPER,
     storageDir,
@@ -92,7 +102,8 @@ export async function createLiveHarness(label: string): Promise<LiveHarness> {
   const live = () => 'live' as const;
   const defs = [
     createDispatchWhatsAppJob({ mode: live, deps: runtimeDeps, graph: { http: graph.http } }),
-    createDispatchEmailJob({ mode: live, deps: runtimeDeps }),
+    createDispatchEmailJob({ mode: live, deps: runtimeDeps, emailSeams }),
+    createStatusApplyJob({ deps: () => ({ keyRing: flags.keyRing ?? KEY_RING, contactKeyPepper: PEPPER, mode: 'live' }) }),
     createIntegrationHealthJob({ mode: live, deps }),
     createWaQualityCheckJob({ mode: live, deps }),
     createTemplateSyncJob({ mode: live, deps }),
@@ -123,6 +134,9 @@ export async function createLiveHarness(label: string): Promise<LiveHarness> {
     ownerId: owner.id,
     memberId: member.id,
     graph,
+    resend,
+    smtpSeams,
+    emailSeams,
     flags,
     deps,
     owner: () => ctxFor(owner.id),

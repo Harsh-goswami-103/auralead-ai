@@ -18,11 +18,12 @@
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { AppError, ProviderAuthError, ProviderPermissionError, ProviderRateLimitedError } from '@/lib/errors';
 import type { AiTransport } from '@/server/adapters/ai/port';
-import { aiConnectionCheck, whatsAppGraphClient, type GraphSeams, type IntegrationUse, type Problem } from '@/server/adapters/registry';
+import { aiConnectionCheck, whatsAppGraphClient, type EmailSeams, type GraphSeams, type IntegrationUse, type Problem } from '@/server/adapters/registry';
 import { classifyGraphReadFailure, describeGraphFailure, type GraphCall } from '@/server/adapters/whatsapp/cloud-api';
 import type { AppCtx } from '@/server/auth/context';
 import type { KeyRing } from '@/server/security/secrets';
 import { loadIntegrationForUse } from './credentials';
+import { resendTester, smtpTester } from './email-testers';
 import { CREDENTIAL_UNREADABLE_CODE, CREDENTIAL_UNREADABLE_MESSAGE, type LiveConnectionTester, type LiveTesters, type LiveTestOutcome, type LiveTestStatus } from './types';
 
 export type LiveAdapterDeps = {
@@ -33,6 +34,8 @@ export type LiveAdapterDeps = {
   graph?: GraphSeams;
   aiTransport?: AiTransport;
   aiBaseUrl?: Partial<Record<'AI_ANTHROPIC' | 'AI_OPENAI', string>>;
+  /** T33 test seams: a scripted Resend API, a local SMTP server. */
+  email?: EmailSeams;
 };
 
 /** Throttling or no answer: says nothing about the credentials. */
@@ -128,5 +131,7 @@ export function liveConnectionTesters(deps: LiveAdapterDeps): LiveTesters {
     WHATSAPP_CLOUD: whatsAppTester(deps),
     AI_ANTHROPIC: aiTester('AI_ANTHROPIC', deps),
     AI_OPENAI: aiTester('AI_OPENAI', deps),
+    EMAIL_RESEND: resendTester(deps),
+    EMAIL_SMTP: smtpTester(deps),
   };
 }

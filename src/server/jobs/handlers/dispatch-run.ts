@@ -25,7 +25,7 @@ import { LeaseLostError, fenceJob } from '@/server/db/fence';
 import type { ScopedTx } from '@/server/db/scoped';
 import { withTx } from '@/server/db/tx';
 import type { EmailTransport } from '@/server/adapters/email/port';
-import type { GraphSeams, Resolution } from '@/server/adapters/registry';
+import type { EmailSeams, GraphSeams, Resolution } from '@/server/adapters/registry';
 import { boundedError } from '@/server/adapters/whatsapp/error-map';
 import type { SendOutcome, WhatsAppTransport } from '@/server/adapters/whatsapp/port';
 import type { AppCtx } from '@/server/auth/context';
@@ -86,6 +86,8 @@ export type DispatchJobOptions = {
   email?: (env: TransportEnv) => EmailTransport | null;
   /** Graph test seams for the registry's Cloud API transport (a scripted HTTP answer, a local URL). */
   graph?: GraphSeams;
+  /** Email test seams for the registry's Resend and SMTP transports (T33). */
+  emailSeams?: EmailSeams;
 };
 
 export function dispatchDepsFromConfig(): DispatchRuntimeDeps {
@@ -114,7 +116,13 @@ type Resolved = { transport: WhatsAppTransport | EmailTransport | null; problem:
 async function resolveTransport(channel: Channel, options: DispatchJobOptions, env: TransportEnv, ctx: AppCtx, d: DispatchRuntimeDeps): Promise<Resolved> {
   const double = channel === 'WHATSAPP' ? options.whatsapp : options.email;
   if (double) return { transport: double(env), problem: null };
-  const deps: TransportDeps = { keyRing: d.keyRing ?? null, graphVersion: d.graphVersion ?? null, storageDir: d.storageDir, ...(options.graph ? { graph: options.graph } : {}) };
+  const deps: TransportDeps = {
+    keyRing: d.keyRing ?? null,
+    graphVersion: d.graphVersion ?? null,
+    storageDir: d.storageDir,
+    ...(options.graph ? { graph: options.graph } : {}),
+    ...(options.emailSeams ? { email: options.emailSeams } : {}),
+  };
   const resolved = channel === 'WHATSAPP' ? await resolveWorkspaceWhatsApp(ctx, deps) : await resolveWorkspaceEmail(ctx, deps);
   return resolved.ok ? { transport: resolved.value, problem: null } : { transport: null, problem: resolved };
 }

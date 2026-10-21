@@ -113,14 +113,14 @@ describe('email provider events', () => {
     expect((await postEmailEvent('demo', bounced('x', 'someone@example.test', 'Permanent'), { eventId: 'evt_no_sig', signature: null })).status).toBe(401);
   });
 
-  it('resend waits for its verified receiver (T33); SMTP discloses no inbound and no bounce tracking', async () => {
+  it('resend is received only at the workspace URL (T33, [provider]/[routingKey]); SMTP discloses no inbound and no bounce tracking', async () => {
     expect((await postEmailEvent('resend', bounced('x', 'a@example.test', 'Permanent'), { eventId: 'evt_resend' })).status).toBe(404);
     const smtp = await postEmailEvent('smtp', bounced('x', 'a@example.test', 'Permanent'), { eventId: 'evt_smtp' });
     expect(smtp.status).toBe(404);
     expect(await smtp.json()).toMatchObject({ code: 'EMAIL_PROVIDER_NO_WEBHOOKS' });
     expect(EMAIL_PROVIDER_CAPABILITIES.EMAIL_SMTP).toMatchObject({ inbound: false, bounceTracking: false });
     expect(EMAIL_PROVIDER_CAPABILITIES.EMAIL_SMTP.disclosure).toMatch(/no inbound/i);
-    expect(EMAIL_PROVIDER_CAPABILITIES.EMAIL_RESEND.inbound).toBe('UNVERIFIED');
+    expect(EMAIL_PROVIDER_CAPABILITIES.EMAIL_RESEND.inbound).toBe(false);
   });
 });
 

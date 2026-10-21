@@ -30,6 +30,7 @@ import type { Clock } from '@/lib/clock';
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { catalogEntry } from '@/lib/domain/integrations';
 import { ConflictError, DomainRuleError, NotFoundError, ValidationError } from '@/lib/errors';
+import { randomBase64Url } from '@/lib/ids';
 import { checkConfigValue, checkCredentialValue, configRule, credentialRule } from '@/lib/schemas/integrations';
 import type { CredentialState, IntegrationUse } from '@/server/adapters/registry';
 import type { AppCtx } from '@/server/auth/context';
@@ -80,6 +81,11 @@ export function last4Of(value: string): string | null {
   if (value.length < LAST4_MIN_LENGTH) return null;
   const tail = value.slice(-4);
   return /^[A-Za-z0-9]{4}$/.test(tail) ? tail : null;
+}
+
+/** A Resend webhook routing key (T33, ADR-101): `rs_` + 24 random bytes (RESEND_ROUTING_KEY_RE). */
+function newResendRoutingKey(): string {
+  return `rs_${randomBase64Url(24)}`;
 }
 
 /** The field a webhook routes by (plan §5.6 `routingKey`): WhatsApp phone number ID, Meta Page ID. */
@@ -161,10 +167,11 @@ export async function saveIntegrationCredentials(ctx: AppCtx, input: SaveCredent
   let written: { integrationId: string; saved: string[]; replaced: string[]; configChanged: string[] };
   try {
     written = await withTx(ctx.db, async (tx) => {
-      let row = await tx.integration.findFirst({ where: { kind: input.kind }, select: { id: true, status: true, config: true, secrets: true, secretLast4: true } });
+      const rowSelect = { id: true, status: true, config: true, secrets: true, secretLast4: true, routingKey: true } as const;
+      let row = await tx.integration.findFirst({ where: { kind: input.kind }, select: rowSelect });
       const created = row === null;
       if (!row) {
-        row = await tx.integration.create({ data: { workspaceId, kind: input.kind, status, config: {} }, select: { id: true, status: true, config: true, secrets: true, secretLast4: true } });
+        row = await tx.integration.create({ data: { workspaceId, kind: input.kind, status, config: {} }, select: rowSelect });
       }
       const previousStatus = created ? 'NOT_CONFIGURED' : row.status;
       const config = { ...record(row.config) };
@@ -201,7 +208,9 @@ export async function saveIntegrationCredentials(ctx: AppCtx, input: SaveCredent
       }
 
       const routingField = ROUTING_FIELD[input.kind];
-      const routingKey = ctx.mode === 'live' && routingField && typeof config[routingField] === 'string' ? (config[routingField] as string) : undefined;
+      let routingKey = ctx.mode === 'live' && routingField && typeof config[routingField] === 'string' ? (config[routingField] as string) : undefined;
+      // T33: Resend posts to a per-integration URL; its routing key is ours, random and kept across writes.
+      if (ctx.mode === 'live' && input.kind === 'EMAIL_RESEND' && !row.routingKey) routingKey = newResendRoutingKey();
       await tx.integration.update({
         where: { id: row.id },
         data: {

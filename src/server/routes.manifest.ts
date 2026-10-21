@@ -816,6 +816,15 @@ export const ROUTES: readonly RouteEntry[] = [
     calls: [{ method: 'POST', body: { type: 'email.bounced' }, expect: all(401), note: 'unsigned DEMO provider event' }],
   },
   {
+    path: '/api/webhooks/email/[provider]/[routingKey]',
+    file: 'src/app/api/webhooks/email/[provider]/[routingKey]/route.ts',
+    kind: 'api',
+    owner: 'T33',
+    access: 'public',
+    params: { provider: 'resend', routingKey: 'rs_matrixprobematrixprobematrixprobe1' },
+    calls: [{ method: 'POST', body: { type: 'email.bounced', data: { email_id: 'x' } }, expect: all(404), note: 'Resend delivery to an unknown routing key; cookies are never read, nothing stored' }],
+  },
+  {
     path: '/api/unsubscribe',
     file: 'src/app/api/unsubscribe/route.ts',
     kind: 'api',
