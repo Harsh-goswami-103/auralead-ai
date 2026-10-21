@@ -17,6 +17,7 @@
 import type { IntegrationKind } from '@/lib/domain/enums';
 import type { Clock } from '@/lib/clock';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
+import { CAMPAIGN_METRICS_EVERY_MS, CAMPAIGN_METRICS_SYNC_JOB } from '@/server/services/campaigns/constants';
 
 export const INTEGRATION_HEALTH_JOB = 'integration.health';
 export const WA_QUALITY_CHECK_JOB = 'wa.qualityCheck';
@@ -28,15 +29,18 @@ export const SCHEDULE_EVERY_MS: Readonly<Record<string, number>> = {
   [INTEGRATION_HEALTH_JOB]: HOUR_MS,
   [WA_QUALITY_CHECK_JOB]: HOUR_MS,
   [WA_TEMPLATE_SYNC_JOB]: 6 * HOUR_MS,
+  // T35: Meta campaign metrics (ad account currency, insights) every 6 hours.
+  [CAMPAIGN_METRICS_SYNC_JOB]: CAMPAIGN_METRICS_EVERY_MS,
 };
 
 /** Kinds with a live connection tester (live-testers.ts); T33-T36 append theirs. */
-export const HEALTH_CHECKED_KINDS: ReadonlySet<IntegrationKind> = new Set(['WHATSAPP_CLOUD', 'AI_ANTHROPIC', 'AI_OPENAI']);
+export const HEALTH_CHECKED_KINDS: ReadonlySet<IntegrationKind> = new Set(['WHATSAPP_CLOUD', 'AI_ANTHROPIC', 'AI_OPENAI', 'META_ADS']);
 
 export function scheduledJobTypes(kind: IntegrationKind): string[] {
   const types: string[] = [];
   if (HEALTH_CHECKED_KINDS.has(kind)) types.push(INTEGRATION_HEALTH_JOB);
   if (kind === 'WHATSAPP_CLOUD') types.push(WA_QUALITY_CHECK_JOB, WA_TEMPLATE_SYNC_JOB);
+  if (kind === 'META_ADS') types.push(CAMPAIGN_METRICS_SYNC_JOB);
   return types;
 }
 
