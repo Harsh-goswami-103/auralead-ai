@@ -22,7 +22,7 @@ Column meanings:
 | Meta Marketing API (metrics, pause/resume) | Yes | Yes | Yes | No |
 | Resend (email send, webhooks) | Yes (inbound email not supported, ADR-102) | Yes | Yes | No |
 | SMTP (nodemailer) | Yes (no inbound, no bounce tracking) | Yes (local fake server) | Yes | No |
-| Google Sheets and Apps Script | No | No | Yes | No |
+| Google Sheets and Apps Script | Yes | Yes | Yes | No |
 | Google_Map_Extractor bridge (receiver, tokens, `extension-bridge/`) | Yes | Yes (contract and chaos tests, fake `chrome.*`) | Yes | No |
 | Anthropic (drafts) | Yes | Yes | Yes | No |
 | OpenAI (drafts) | Yes | Yes | Yes | No |
@@ -261,4 +261,54 @@ re-confirmation was **not** possible in T36 (no vendor copy in the build environ
 Unknown: whether the build a customer installs matches the inspected copy, what any current vendor build sends, and the
 vendor's terms. The bridge adds no host permission of its own beyond the AuraLead origin, never reads the licence key and never
 writes the vendor's storage; the token sits in the extension's storage and is readable by any code running in the extension.
+
+### Google Sheets and Apps Script (T34, checked 2026-10-20)
+
+How the pages were read: **not first-hand**. `developers.google.com` is blocked by the build environment's network policy, so
+the behaviour below comes from web-search snippets of Google's pages (and localized copies of them), third-party write-ups and
+the pinned `google-auth-library` 11.3.0 source in `node_modules` (read directly: the JWT client posts a signed RS256 assertion to
+`https://oauth2.googleapis.com/token` through its gaxios transport). Every behaviour is **UNVERIFIED** until a user-authorized
+live check. The fixtures in `tests/fixtures/sheets/documented-shape/` are documented-shape fixtures (`SOURCES.json` lists each
+one); none is recorded live traffic. The generated Apps Script is tested in node's `vm` against a stand-in of the Apps Script
+runtime (`tests/unit/sheets/apps-script-env.ts`), not against Google's runtime.
+
+Pages cited (not read first-hand):
+
+- Sheets API `spreadsheets.values.get`: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get
+  (snippets confirm `valueRenderOption`, that `dateTimeRenderOption` applies only when the render option is not
+  FORMATTED_VALUE, and SERIAL_NUMBER as days since 1899-12-30 with the time as a day fraction; mirrored at
+  https://docs.cloud.google.com/workflows/docs/reference/googleapis/sheets/v4/spreadsheets.values/get)
+- Sheets API `spreadsheets.get`: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/get
+- Service account OAuth (JWT bearer): https://developers.google.com/identity/protocols/oauth2/service-account
+- Sheets API limits: https://developers.google.com/sheets/api/limits
+- Apps Script Utilities (`computeHmacSignature(algorithm, value, key, charset)` returning `Byte[]`, `MacAlgorithm.HMAC_SHA_256`):
+  https://developers.google.com/apps-script/reference/utilities (localized copies only)
+- UrlFetchApp (`muteHttpExceptions`, `followRedirects`, `headers`, `payload`, `contentType`, `getResponseCode`):
+  https://developers.google.com/apps-script/reference/url-fetch/url-fetch-app and
+  https://developers.google.com/apps-script/reference/url-fetch/http-response
+- Installable triggers (`onFormSubmit` for a spreadsheet, time-driven): https://developers.google.com/apps-script/guides/triggers/installable
+- Apps Script quotas: https://developers.google.com/apps-script/guides/services/quotas
+- Not-shared and API-disabled 403s (community reports): https://discuss.google.dev/t/google-sheets-api-suddenly-returns-403-the-caller-does-not-have-permission-after-working-for-a-month-php/243640,
+  https://zenn.dev/catnose99/articles/d9b831b850ca3a?locale=en, https://www.mintlify.com/googleworkspace/cli/troubleshooting/api-not-enabled
+
+API version: Sheets API v4 (`https://sheets.googleapis.com/v4/...`), OAuth scope `https://www.googleapis.com/auth/spreadsheets.readonly`.
+
+| Behaviour | What the app does | Status |
+|---|---|---|
+| Access | A service account key (JSON) saved as an encrypted credential; the person shares the Sheet with the service account email (shown on the Sheets page with the masked key file). A Sheet URL alone grants nothing | Design (ADR-16) |
+| Token | `google-auth-library` JWT client, scope `spreadsheets.readonly`; its HTTP goes through `adapters/http/outbound.ts` (`fetchImplementation`), only to `oauth2.googleapis.com/token`, library retries off | Library behaviour read from source; endpoint UNVERIFIED live |
+| Connection test | `GET /v4/spreadsheets/{id}?fields=properties.timeZone,sheets.properties.title`, then `values.get` of `'<tab>'!1:1` (FORMATTED_VALUE). CONNECTED only on Google's answer with row 1 | UNVERIFIED |
+| Errors | 403 `PERMISSION_DENIED` = not shared (guidance names the service account); 403 naming `SERVICE_DISABLED` / `accessNotConfigured` / "has not been used in project" = API not enabled; 404 = unknown spreadsheet; 400 "Unable to parse range" = wrong tab; 401 and token `invalid_grant` = rejected key; 429 / 5xx / no answer never pass and never fail the credentials | UNVERIFIED error shapes |
+| Rows | `values.get` of `'<tab>'!<from>:<to>` with `UNFORMATTED_VALUE` + `SERIAL_NUMBER`; serial dates converted in the spreadsheet's time zone (`properties.timeZone`) | UNVERIFIED |
+| Mapping and drift | Header names normalized (NFKC, spaces folded); fingerprint = sha256 of the sorted set of names other than `auralead_event_id`; any rename/add/remove blocks sync and pushes (409 `HEADER_DRIFT` with the column diff) until the mapping is re-confirmed | Design (ADR-103) |
+| Preview | Dry run of the next 10 rows through the same mapping and normalizer; writes nothing | Design |
+| Sync now | Job `sheets.sync`: at most 200 rows after the last cursor, ingested via `ingestBatch` as ImportBatch `sheets-sync:<run>`; row key = the row's `auralead_event_id` cell (same key as the script), rows still waiting for their id are skipped and the cursor stops before them; a Sheet without that column gets flagged weak content-hash ids | Design (ADR-104) |
+| Apps Script push | `POST /api/webhooks/google-sheets`, headers `X-AuraLead-Key-Id`, `X-AuraLead-Timestamp` (Unix seconds), `X-AuraLead-Event-Id`, `X-AuraLead-Signature: v1=<hex HMAC-SHA256(secret, ts + "." + eventId + "." + body)>`; +/- 300 s (`REPLAY_WINDOW`); 256 KB and 50 rows (413); replayed event id = stored result; scoped by integration (E2); rate limit 120/min/integration after verification | Fixture- and vm-tested; real Apps Script delivery UNVERIFIED |
+| Script signing | `Utilities.computeHmacSignature(HMAC_SHA_256, message, secret, UTF_8)`, signed bytes converted with `& 0xff`; the JSON body is made pure ASCII (\u escapes) so the signed bytes cannot depend on UrlFetchApp's charset | UNVERIFIED (charset default not confirmed, so it is passed explicitly) |
+| Script retries | `muteHttpExceptions: true`, `followRedirects: false`; network errors, 429 (Retry-After honoured) and 5xx retried up to 4 attempts with exponential backoff and jitter in one run, re-signed, same event id; no retry on other 4xx; unsent rows wait in Script Properties (`AURALEAD_PENDING`, at most 200 ids) and a 15-minute time trigger sends them, 50 rows per push | Design |
+| Secret storage | Issued by the server (32 random bytes), shown once; the script prompts for it and stores it in Script Properties (`AURALEAD_SECRET`), never in a cell or in the script text. Rotation issues a new key id and secret | Design (ADR-105) |
+| Apps Script quotas | Script runtime 6 min per execution, Properties value 9 KB and 500 KB in total, 20 triggers per user per script (official quotas table, snippet); UrlFetch 20,000 calls/day (consumer) / 100,000 (Workspace) and trigger runtime 90 min/day (consumer) from third-party sources only | UNVERIFIED |
+| Triggers | Installable `onFormSubmit` for the spreadsheet and a time-driven trigger every 15 minutes; `e.range` is the submitted row. Duplicate firings are harmless (the row id is written once and the server dedupes by it) | UNVERIFIED trigger behaviour |
+| Event id column | The script appends a hidden `auralead_event_id` column (warning-only protection) and writes a UUID per row once. Where Google Forms puts columns for newly added questions relative to it is not confirmed | UNVERIFIED |
+| Reachability | Apps Script runs on Google's servers: APP_ORIGIN must be a public https address; the page warns otherwise | Design |
 

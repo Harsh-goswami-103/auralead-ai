@@ -106,6 +106,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'integration.quality.check': 'Quality and limit checked',
   'integration.quality.automation_paused': 'Automation paused: quality rating RED',
   'integration.quality.automation_resumed': 'Automation resumed: quality rating no longer RED',
+  'sheets.apps_script.secret': 'Apps Script signing secret issued',
 };
 
 /** Statuses a LIVE connection test can run on (stored, configured, not revoked). */

@@ -1,0 +1,14 @@
+{
+  "range": "'Form Responses 1'!A1:Z1",
+  "majorDimension": "ROWS",
+  "values": [
+    [
+      "Timestamp",
+      "Full name",
+      "Phone number",
+      "Email address",
+      "Interested in",
+      "WhatsApp updates"
+    ]
+  ]
+}

@@ -13,7 +13,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { FixedClock } from '@/lib/clock';
 import { IntegrationStatus } from '@/lib/domain/enums';
-import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
+import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, sheetsReadClient, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const REGISTRY = 'src/server/adapters/registry.ts';
@@ -28,6 +28,8 @@ const LIVE_MODULES = [
   'src/server/adapters/email/smtp.ts',
   // T35
   'src/server/adapters/meta/graph.ts',
+  // T34
+  'src/server/adapters/sheets/google.ts',
 ];
 
 function resolve(from: string, spec: string): string | null {
@@ -79,7 +81,7 @@ describe('LIVE never imports the demo transport in the registry path (static)', 
     const sf = source(REGISTRY);
     const liveFns = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && (s.name?.text ?? '').startsWith('live'));
     expect(liveFns.map((f) => f.name!.text).sort()).toEqual(
-      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveMetaLeadsClient', 'liveMetaMarketingClient', 'liveMetaToken', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
+      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveMetaLeadsClient', 'liveMetaMarketingClient', 'liveMetaToken', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSheetsClient', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
     );
     const used: string[] = [];
     for (const fn of liveFns) {
@@ -197,6 +199,21 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
             expect(marketing.value.adAccountId).toBe('510000000000001');
           } else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(marketing.code);
         }
+      }
+    }
+  });
+
+  it('Sheets (T34): DEMO never gets a client; LIVE gets the service account client only when configured', () => {
+    expect(sheetsReadClient({ mode: 'demo', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    const key = JSON.stringify({ type: 'service_account', client_email: 'reader@proj.iam.gserviceaccount.com', private_key: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n' });
+    const sheetCreds: CredentialState[] = [{ state: 'ok', values: { serviceAccountJson: key } }, { state: 'ok', values: { serviceAccountJson: 'not json' } }, { state: 'missing', fields: ['serviceAccountJson'] }, { state: 'unreadable', field: 'serviceAccountJson' }];
+    for (const status of IntegrationStatus) {
+      for (const credentials of sheetCreds) {
+        const r = sheetsReadClient({ mode: 'live', integration: { id: 'gs_1', kind: 'GOOGLE_SHEETS', status, config: { sheetId: 'x'.repeat(30) }, credentials }, clock });
+        if (r.ok) {
+          expect(r.value.serviceAccountEmail).toBe('reader@proj.iam.gserviceaccount.com');
+          expect(['CONFIGURED_UNVERIFIED', 'VERIFYING', 'CONNECTED', 'DEGRADED', 'ERROR']).toContain(status);
+        } else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
       }
     }
   });
