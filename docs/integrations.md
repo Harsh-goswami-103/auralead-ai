@@ -18,8 +18,8 @@ Column meanings:
 | WhatsApp Cloud API (send, templates, media) | Yes | Yes | Yes | No |
 | WhatsApp quality rating and messaging limit | Yes | Yes | Yes | No |
 | WhatsApp webhooks (inbound, statuses) | Yes | Yes | Yes | No |
-| Meta Lead Ads webhook and lead fetch | No | No | Yes | No |
-| Meta Marketing API (metrics, pause/resume) | No | No | Yes | No |
+| Meta Lead Ads webhook and lead fetch | Yes | Yes | Yes | No |
+| Meta Marketing API (metrics, pause/resume) | Yes | Yes | Yes | No |
 | Resend (email send, webhooks) | Yes (inbound email not supported, ADR-102) | Yes | Yes | No |
 | SMTP (nodemailer) | Yes (no inbound, no bounce tracking) | Yes (local fake server) | Yes | No |
 | Google Sheets and Apps Script | No | No | Yes | No |
@@ -143,3 +143,72 @@ self-signed certificate (`tests/fixtures/email/tls/`), never a real server.
 | Connection test | connect, TLS, AUTH, QUIT; no MAIL FROM, no message | Fixture-tested |
 | Bounces and inbound | **Bounces are not tracked and there is no inbound over SMTP**; replies go to the mailbox; disclosed on the setup page | Disclosed |
 | Preference | When Resend and SMTP are both CONNECTED, Resend sends (ADR-100) | Design choice |
+
+### Meta Lead Ads (T35, checked 2026-10-20 and 2026-10-21)
+
+How the pages were read: **not first-hand**. `developers.facebook.com` does not resolve from the build environment (a fetch
+of the Lead Ads retrieval page failed with `ENOTFOUND`), so the shapes below come from web-search snippets of Meta's pages and
+from third-party guides (LeadSync, Mixed Analytics, Tonkean). Every behaviour in this section is **UNVERIFIED** until a
+user-authorized live check produces evidence (plan section 13). The fixtures in `tests/fixtures/meta/documented-shape/` are
+documented-shape fixtures, not recorded live traffic (`SOURCES.json` lists each file's source).
+
+Pages cited (not read first-hand):
+
+- Webhooks for Lead Ads: https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-leadgen and
+  https://developers.facebook.com/docs/marketing-api/guides/lead-ads/quickstart/webhooks-integration/
+- Retrieving leads: https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving
+- Graph API error handling: https://developers.facebook.com/docs/graph-api/guides/error-handling
+- Graph API rate limiting: https://developers.facebook.com/docs/graph-api/overview/rate-limiting/
+- Versioning: https://developers.facebook.com/docs/graph-api/guides/versioning/ and https://developers.facebook.com/docs/graph-api/changelog/versions
+- Third-party, for the `filtering` syntax: https://leadsync.me/blog/meta-lead-gen-api-guide/ and
+  https://mixedanalytics.com/knowledge-base/import-facebook-leads-to-google-sheets/
+
+Graph API version: `META_GRAPH_VERSION` (for example `v24.0`). No default: unset means leads cannot be read (the job fails the
+event `INTEGRATION_NOT_CONFIGURED`, the connection test says so). Snippets: Graph versions are usable for at least two years after
+the next version ships; v24.0 (2025-10-08) and v25.0 (2026-02-18) list their expiry as TBD (UNVERIFIED).
+
+| Behaviour | What the app does | Status |
+|---|---|---|
+| Webhook verification | `GET /api/webhooks/meta-ads`: `hub.mode=subscribe`, `hub.verify_token` compared in constant time with `META_VERIFY_TOKEN`, the challenge echoed only if it matches `^[0-9A-Za-z_-]{1,128}$`, else 403 | Design per plan section 9 |
+| Webhook signature | `X-Hub-Signature-256: sha256=<hex HMAC-SHA256(META_APP_SECRET, raw body)>` over the bytes read once (1 MB cap). Re-serialized JSON (for example Devanagari as `\u` escapes) or one changed byte fails; failures are counted in `WebhookRejection`, never stored | UNVERIFIED (same scheme as the WhatsApp webhook) |
+| Delivery shape | `{object: "page", entry: [{id: <page id>, time, changes: [{field: "leadgen", value: {leadgen_id, page_id, form_id, ad_id, adgroup_id, created_time}}]}]}`; only `leadgen` changes are read; a change whose `page_id` differs from its entry is not stored | UNVERIFIED |
+| Routing and idempotency | By `page_id` through `Integration.routingKey` (set when a LIVE workspace saves its Page ID); unknown Pages are stored UNROUTED (30-day purge). One event per notification, key `meta:{page}:{leadgen}` scoped by the routed integration (E2) | Design |
+| Rate limit | `metaWebhook` 600 per minute per client address (before the signature check) and per routed integration (before anything is written); over it: 429 with Retry-After, counted, nothing stored | Design (single instance, plan section 9) |
+| Lead fetch | Worker job `meta.lead.fetch`: `GET /<version>/<leadgen id>?fields=id,created_time,ad_id,form_id,campaign_id,field_data,custom_disclaimer_responses` with `Authorization: Bearer <token>`; mapped with the form's MetaFormMapping (question keys, consent question and notice hash, P1) and ingested through `ingestBatch` (dedupe per leadgen id and contact) | UNVERIFIED |
+| Consent checkboxes | Each `custom_disclaimer_responses[]` entry becomes an answer keyed by its `checkbox_key` with the `is_checked` value, so a consent checkbox can be mapped like a question | UNVERIFIED (field and values) |
+| Errors | Code 190 or HTTP 401: integration set to CONFIGURED_UNVERIFIED ("Verification required"), job DEAD, not retried. Codes 3, 10, 200-299 or HTTP 403: "Missing permission: <name>" (Meta's name when the message has one, else the operation's: `leads_retrieval`), job DEAD. Codes 4, 17, 32, 613, 80000-80014 or HTTP 429: retry with `min(30 s * 2^(n-1), 1 h)` or Retry-After, 8 attempts. Code 100 or 404: the event is FAILED `LEAD_UNRETRIEVABLE` (no stub record, so a later backfill can still bring the lead in) | UNVERIFIED codes |
+| Unmapped form | The event is FAILED `MAPPING_NOT_FOUND` before Meta is called; the Meta page lists the form; map it, then backfill | Design |
+| Backfill from form since T | `GET /<version>/<form id>/leads?fields=...&limit=100&filtering=[{"field":"time_created","operator":"GREATER_THAN","value":<unix>}]`, paged by the `after` cursor only (the `next` URL is never followed), at most 10 pages per run, each page ingested as its own batch; on demand only (critic L-8), last 90 days | Filtering syntax from third-party guides: UNVERIFIED |
+| Lead retention | Meta keeps leads for 90 days (third-party snippet); the backfill refuses an older start | UNVERIFIED |
+| Permissions and access | `leads_retrieval`, `pages_show_list`, `pages_manage_metadata` (to subscribe the Page), and the app's access to the form in Leads Access Manager; App Review may be required for `leads_retrieval` | UNVERIFIED (App Review and Leads Access Manager behaviour not checked) |
+| Connection test | `GET /<graph version>/<page id>?fields=id,name` must return the configured Page id; with an ad account, `GET /<marketing version>/act_<id>?fields=id,account_id,name,currency,timezone_name,account_status` must return it with a currency | UNVERIFIED |
+
+### Meta Marketing API (T35, checked 2026-10-20 and 2026-10-21)
+
+How the pages were read: **not first-hand** (same restriction). Sources: search snippets of the Marketing API rate-limiting page,
+the effective_status webhook page and the Marketing API changelog, a Meta developer blog post on Insights metric changes, and
+third-party wrappers (pipeboard meta-ads-mcp, CData). Everything below is **UNVERIFIED**.
+
+- Rate limiting: https://developers.facebook.com/docs/marketing-api/overview/rate-limiting
+- Effective status: https://developers.facebook.com/documentation/ads-commerce/marketing-api/ads-webhooks/effective-status
+- Versioning and changelog: https://developers.facebook.com/docs/marketing-api/overview/versioning and
+  https://developers.facebook.com/docs/marketing-api/marketing-api-changelog
+- Insights metric changes: https://developers.facebook.com/blog/post/2024/08/07/ads-insights-api-unique-metric-updates/
+
+Marketing API version: `META_MARKETING_VERSION` (for example `v25.0`), separate from `META_GRAPH_VERSION`. No default: unset gates
+the sync and the pause/resume controls on configuration. Snippets: a previous Marketing API version stays supported for at least
+90 days after a new one ships (shorter than the Graph API's two years); v23.0 was listed as available until 2026-06-09 (UNVERIFIED).
+
+| Behaviour | What the app does | Status |
+|---|---|---|
+| Ad account | `GET /<version>/act_<id>?fields=id,account_id,name,currency,timezone_name,account_status`; the `currency` is stored on every campaign exactly as returned | UNVERIFIED |
+| Campaigns | `GET /<version>/act_<id>/campaigns?fields=id,name,status,configured_status,effective_status&limit=100`, at most 20 pages; `configured_status` (else `status`) and `effective_status` stored as raw strings (values such as ACTIVE, PAUSED, CAMPAIGN_PAUSED, IN_PROCESS, WITH_ISSUES not checked) | UNVERIFIED |
+| Insights | `GET /<version>/act_<id>/insights?level=campaign&date_preset=last_7d&use_unified_attribution_setting=true&fields=campaign_id,campaign_name,spend,actions,cost_per_action_type,date_start,date_stop,attribution_setting` | UNVERIFIED (`attribution_setting` as an insights field, `use_unified_attribution_setting`) |
+| Money (P6) | `spend` and the lead `cost_per_action_type` are decimal strings in the ad account currency; stored as integer minor units of that same currency (digits from the platform's ISO 4217 data, explicit half-up rounding), never converted; shown with "As of", the date window and the attribution setting ("attribution not reported" when absent) | Design; field formats UNVERIFIED |
+| Leads per campaign | The first of the action types `lead`, `onsite_conversion.lead_grouped`, `leadgen_grouped`; an absent action counts 0 (Meta omits zero-valued actions) | UNVERIFIED action types |
+| Sync | Manual "Sync campaigns" (once a minute) and `campaign.metricsSync` every 6 hours while the integration is CONNECTED or DEGRADED | Design |
+| Pause / resume | `POST /<version>/<campaign id>` form body `status=PAUSED` or `status=ACTIVE`, answer `{success: true}`; then `GET /<campaign id>?fields=id,name,status,configured_status,effective_status` read back. The CampaignAction is SENDING before the call; a timeout after the write, a 5xx or an unconfirmed 2xx is UNKNOWN and resolved by a delayed read-back; a definite refusal is FAILED with the reason and the campaign unchanged; 17/80004 and connection failures before the write retry | UNVERIFIED (endpoint and answer from secondary sources) |
+| Permissions | `ads_read` for reads, `ads_management` for pause/resume (named in the failure when Meta refuses) | UNVERIFIED |
+| Throttling codes | 4, 17, 32, 613, 80000-80014 (business use case limits) or HTTP 429; `X-Business-Use-Case-Usage` is not read | UNVERIFIED |
+| DEMO | "Sync campaigns" uses the demo stand-in (an INR ad account with two simulated campaigns, labelled Simulated); pause/resume changes the simulated campaign at once as a SIMULATED action; zero outbound | Demo-verified by tests |
+

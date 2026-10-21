@@ -13,7 +13,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { FixedClock } from '@/lib/clock';
 import { IntegrationStatus } from '@/lib/domain/enums';
-import { resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
+import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const REGISTRY = 'src/server/adapters/registry.ts';
@@ -26,6 +26,8 @@ const LIVE_MODULES = [
   // T33
   'src/server/adapters/email/resend.ts',
   'src/server/adapters/email/smtp.ts',
+  // T35
+  'src/server/adapters/meta/graph.ts',
 ];
 
 function resolve(from: string, spec: string): string | null {
@@ -77,7 +79,7 @@ describe('LIVE never imports the demo transport in the registry path (static)', 
     const sf = source(REGISTRY);
     const liveFns = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && (s.name?.text ?? '').startsWith('live'));
     expect(liveFns.map((f) => f.name!.text).sort()).toEqual(
-      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
+      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveMetaLeadsClient', 'liveMetaMarketingClient', 'liveMetaToken', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
     );
     const used: string[] = [];
     for (const fn of liveFns) {
@@ -173,5 +175,29 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
     expect(aiConnectionCheck({ mode: 'demo', kind: 'AI_ANTHROPIC', apiKey: 'k', modelId: null })).toMatchObject({ ok: false });
     expect(resendApiClient({ mode: 'demo', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
     expect(smtpConnectionCheck({ mode: 'demo', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    // T35: DEMO never gets a Meta Graph or Marketing API client, whatever is stored.
+    const integration = { id: 'm1', kind: 'META_ADS' as const, status: 'CONNECTED' as const, config: { pageId: '110000000000001', adAccountId: '510000000000001' }, credentials: creds[0]! };
+    const input = { mode: 'demo' as const, integration, graphVersion: 'v24.0', marketingVersion: 'v25.0', clock, usable: CHECKABLE_STATUSES };
+    expect(metaLeadsClient(input)).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(metaMarketingClient(input)).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+  });
+
+  it('LIVE Meta clients: only with a readable token, a usable status and the version each API needs (T35)', () => {
+    for (const status of IntegrationStatus) {
+      for (const credentials of creds) {
+        for (const [graphVersion, marketingVersion] of [['v24.0', 'v25.0'], [null, 'v25.0'], ['v24.0', null]] as const) {
+          const integration = { id: 'm1', kind: 'META_ADS' as const, status, config: { pageId: '110000000000001', adAccountId: 'act_510000000000001' }, credentials };
+          const input = { mode: 'live' as const, integration, graphVersion, marketingVersion, clock, usable: CHECKABLE_STATUSES };
+          const leads = metaLeadsClient(input);
+          const marketing = metaMarketingClient(input);
+          if (leads.ok) expect([CHECKABLE_STATUSES.has(status), credentials.state, graphVersion]).toEqual([true, 'ok', 'v24.0']);
+          else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(leads.code);
+          if (marketing.ok) {
+            expect([CHECKABLE_STATUSES.has(status), credentials.state, marketingVersion]).toEqual([true, 'ok', 'v25.0']);
+            expect(marketing.value.adAccountId).toBe('510000000000001');
+          } else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(marketing.code);
+        }
+      }
+    }
   });
 });

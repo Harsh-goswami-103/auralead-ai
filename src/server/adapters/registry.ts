@@ -18,6 +18,10 @@
  * Email keeps the same shape: DEMO gets the demo transport; LIVE gets the Resend transport (T33)
  * when the Resend integration is usable, else the SMTP transport, else INTEGRATION_NOT_CONFIGURED
  * or CREDENTIAL_UNREADABLE (ADR-100).
+ *
+ * Meta (T35): `metaLeadsClient` (META_GRAPH_VERSION) and `metaMarketingClient`
+ * (META_MARKETING_VERSION, needs the ad account ID) are LIVE only; DEMO is refused, and the Meta
+ * services use the demo adapter's simulated values there without any client.
  */
 import type { Clock } from '@/lib/clock';
 import { getConfig } from '@/lib/config';
@@ -29,6 +33,7 @@ import { checkSmtpConnection, createSmtpTransport, SMTP_PORTS, type SmtpCheckRes
 import { checkAnthropicConnection, checkOpenAiConnection, type AiCheckResult } from './ai/connection-check';
 import type { AiTransport } from './ai/port';
 import { createCloudApiClient, createCloudApiTransport, GRAPH_ID_RE, GRAPH_VERSION_RE, type CloudApiClient, type GraphHttp } from './whatsapp/cloud-api';
+import { adAccountDigits, createMetaLeadsClient, createMetaMarketingClient, type MetaLeadsClient, type MetaMarketingClient } from './meta/graph';
 import { createDemoWhatsAppTransport, createFileDemoOutbox, demoOutboxDir } from './whatsapp/demo';
 import type { WhatsAppTransport } from './whatsapp/port';
 
@@ -262,6 +267,77 @@ function liveSmtpCheck(input: { integration: IntegrationUse | null; clock: Clock
   const options = liveSmtpOptions(input.integration, input.clock, input.seams);
   if (!options.ok) return options;
   return { ok: true, value: () => checkSmtpConnection(options.value) };
+}
+
+// ---- Meta Lead Ads and Marketing API (T35) ------------------------------------------------------------
+
+export type MetaClientInput = {
+  mode: ProcessMode;
+  /** The workspace's META_ADS integration with its credentials decrypted (null when none is stored). */
+  integration: IntegrationUse | null;
+  /** META_GRAPH_VERSION (leads, Page) and META_MARKETING_VERSION (ad account, campaigns); null means not configured. */
+  graphVersion: string | null;
+  marketingVersion: string | null;
+  clock: Clock;
+  /** Statuses the operation may run on: reads take any checkable status, a campaign change only a verified one. */
+  usable: ReadonlySet<IntegrationStatus>;
+  graph?: GraphSeams;
+};
+
+/** A Graph client for the Page and its leads (META_GRAPH_VERSION). DEMO never gets one. */
+export function metaLeadsClient(input: MetaClientInput): Resolution<MetaLeadsClient> {
+  if (input.mode !== 'live') return problem('MODE_MISMATCH', 'DEMO never contacts a provider', input.integration?.id ?? null);
+  return liveMetaLeadsClient(input);
+}
+
+/** A Marketing API client for the configured ad account (META_MARKETING_VERSION). DEMO never gets one. */
+export function metaMarketingClient(input: MetaClientInput): Resolution<MetaMarketingClient> {
+  if (input.mode !== 'live') return problem('MODE_MISMATCH', 'DEMO never contacts a provider', input.integration?.id ?? null);
+  return liveMetaMarketingClient(input);
+}
+
+/** LIVE only: the access token of a usable META_ADS integration, or a typed problem. */
+function liveMetaToken(input: MetaClientInput): Resolution<{ integration: IntegrationUse; accessToken: string }> {
+  const integration = input.integration;
+  if (!integration || integration.kind !== 'META_ADS') return problem('INTEGRATION_NOT_CONFIGURED', 'no Meta Lead Ads integration is stored', null);
+  if (integration.credentials.state === 'unreadable') return problem('CREDENTIAL_UNREADABLE', 'the stored access token does not decrypt', integration.id, integration.credentials.field);
+  if (!input.usable.has(integration.status)) return problem('INTEGRATION_NOT_CONFIGURED', `the Meta Lead Ads integration is ${integration.status}`, integration.id);
+  const accessToken = integration.credentials.state === 'ok' ? integration.credentials.values.accessToken : undefined;
+  if (!accessToken) return problem('INTEGRATION_NOT_CONFIGURED', 'the access token is not saved', integration.id, 'accessToken');
+  return { ok: true, value: { integration, accessToken } };
+}
+
+function liveMetaLeadsClient(input: MetaClientInput): Resolution<MetaLeadsClient> {
+  const token = liveMetaToken(input);
+  if (!token.ok) return token;
+  const id = token.value.integration.id;
+  if (!input.graphVersion || !GRAPH_VERSION_RE.test(input.graphVersion)) return problem('INTEGRATION_NOT_CONFIGURED', 'META_GRAPH_VERSION is not configured on the server', id);
+  return {
+    ok: true,
+    value: createMetaLeadsClient({ mode: 'live', version: input.graphVersion, accessToken: token.value.accessToken, clock: input.clock, ...(input.graph?.http ? { http: input.graph.http } : {}), ...(input.graph?.baseUrl ? { baseUrl: input.graph.baseUrl } : {}) }),
+  };
+}
+
+function liveMetaMarketingClient(input: MetaClientInput): Resolution<MetaMarketingClient> {
+  const token = liveMetaToken(input);
+  if (!token.ok) return token;
+  const id = token.value.integration.id;
+  const adAccount = configString(token.value.integration.config, 'adAccountId');
+  const digits = adAccount ? adAccountDigits(adAccount) : null;
+  if (!digits) return problem('INTEGRATION_NOT_CONFIGURED', 'the ad account ID is not set', id, 'adAccountId');
+  if (!input.marketingVersion || !GRAPH_VERSION_RE.test(input.marketingVersion)) return problem('INTEGRATION_NOT_CONFIGURED', 'META_MARKETING_VERSION is not configured on the server', id);
+  return {
+    ok: true,
+    value: createMetaMarketingClient({
+      mode: 'live',
+      version: input.marketingVersion,
+      accessToken: token.value.accessToken,
+      adAccountId: digits,
+      clock: input.clock,
+      ...(input.graph?.http ? { http: input.graph.http } : {}),
+      ...(input.graph?.baseUrl ? { baseUrl: input.graph.baseUrl } : {}),
+    }),
+  };
 }
 
 // ---- AI connection checks ---------------------------------------------------------------------------

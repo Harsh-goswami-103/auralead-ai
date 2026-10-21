@@ -131,14 +131,19 @@ export const INTEGRATION_CATALOG: readonly IntegrationCatalogEntry[] = [
       { key: 'adAccountId', label: 'Ad account ID' },
     ],
     credentialFields: [{ key: 'accessToken', label: 'Page or system user access token' }],
-    demoNote: 'DEMO creates Meta leads with the simulator on the Meta page, which sets this integration up as a demo simulation. Meta is never contacted.',
+    demoNote: 'DEMO creates Meta leads with the simulator on the Meta page and simulated campaigns with "Sync campaigns", which set this integration up as a demo simulation. Meta is never contacted.',
     prerequisites: [
       'Connect the Facebook Page that owns the Instant Forms.',
-      'Grant leads_retrieval and pages_manage_metadata to the app (Meta App Review may be required).',
+      'Grant leads_retrieval, pages_show_list and pages_manage_metadata to the app (Meta App Review may be required); add ads_read and ads_management for campaign metrics and pause or resume.',
       'Give the app access to the forms in Leads Access Manager.',
+      'Subscribe the Page to the leadgen webhook field with the callback URL below and the verify token configured on the server.',
+      'Map each Instant Form’s questions (and its consent question) on the Meta page; leads from an unmapped form wait until it is mapped and backfilled.',
     ],
-    webhookPath: null,
-    disclosures: ['Google-Form-linked ads are not Meta Instant Forms: their rows arrive through Google Sheets.'],
+    webhookPath: '/api/webhooks/meta-ads',
+    disclosures: [
+      'Google-Form-linked ads are not Meta Instant Forms: their rows arrive through Google Sheets.',
+      'Spend and cost per lead are shown in the ad account’s own currency, never converted.',
+    ],
   },
   {
     kind: 'GOOGLE_SHEETS',

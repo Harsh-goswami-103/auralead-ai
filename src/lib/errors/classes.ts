@@ -167,6 +167,12 @@ export class IntegrationNotConfiguredError extends IntegrationError {
   static override readonly defaultCode: string = 'INTEGRATION_NOT_CONFIGURED';
   static override readonly defaultUserMessage: string = 'This integration is not configured. Set it up under Integrations.';
 }
+/** A provider write needs a verified integration (T35 campaign controls, AT14): 412, the adapter is not called. */
+export class IntegrationNotVerifiedError extends IntegrationError {
+  static override readonly status: number = 412;
+  static override readonly defaultCode: string = 'INTEGRATION_NOT_VERIFIED';
+  static override readonly defaultUserMessage: string = 'This integration has not been verified with the provider. Test the connection on its setup page first.';
+}
 export class CredentialDecryptError extends IntegrationError {
   static override readonly status: number = 500;
   static override readonly defaultCode: string = 'CREDENTIAL_DECRYPT_FAILED';

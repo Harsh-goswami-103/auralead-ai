@@ -22,6 +22,7 @@ import { aiConnectionCheck, whatsAppGraphClient, type EmailSeams, type GraphSeam
 import { classifyGraphReadFailure, describeGraphFailure, type GraphCall } from '@/server/adapters/whatsapp/cloud-api';
 import type { AppCtx } from '@/server/auth/context';
 import type { KeyRing } from '@/server/security/secrets';
+import { metaAdsTester } from '@/server/services/campaigns/meta-tester';
 import { loadIntegrationForUse } from './credentials';
 import { resendTester, smtpTester } from './email-testers';
 import { CREDENTIAL_UNREADABLE_CODE, CREDENTIAL_UNREADABLE_MESSAGE, type LiveConnectionTester, type LiveTesters, type LiveTestOutcome, type LiveTestStatus } from './types';
@@ -30,6 +31,8 @@ export type LiveAdapterDeps = {
   keyRing: KeyRing | null;
   /** META_GRAPH_VERSION; null means WhatsApp is not configurable on this server. */
   graphVersion: string | null;
+  /** META_MARKETING_VERSION (T35: Meta ad account and campaigns); null or absent means not configured. */
+  marketingVersion?: string | null;
   /** Test seams: a scripted Graph transport or a local base URL; an injected fetch for the AI SDKs. */
   graph?: GraphSeams;
   aiTransport?: AiTransport;
@@ -133,5 +136,7 @@ export function liveConnectionTesters(deps: LiveAdapterDeps): LiveTesters {
     AI_OPENAI: aiTester('AI_OPENAI', deps),
     EMAIL_RESEND: resendTester(deps),
     EMAIL_SMTP: smtpTester(deps),
+    // T35: GET the Page (Graph version) and, when configured, the ad account (Marketing version).
+    META_ADS: metaAdsTester(deps),
   };
 }

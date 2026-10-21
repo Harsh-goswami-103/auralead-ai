@@ -40,6 +40,7 @@ const EXPECTED: Record<string, { status: number; code: string; retryable: boolea
   ShareLinkGoneError: { status: 410, code: 'SHARE_LINK_GONE', retryable: false },
   IntegrationError: { status: 409, code: 'INTEGRATION_ERROR', retryable: false },
   IntegrationNotConfiguredError: { status: 409, code: 'INTEGRATION_NOT_CONFIGURED', retryable: false },
+  IntegrationNotVerifiedError: { status: 412, code: 'INTEGRATION_NOT_VERIFIED', retryable: false },
   CredentialDecryptError: { status: 500, code: 'CREDENTIAL_DECRYPT_FAILED', retryable: false },
   ModeMismatchError: { status: 409, code: 'MODE_MISMATCH', retryable: false },
   OutboundBlockedInDemoError: { status: 500, code: 'OUTBOUND_BLOCKED_IN_DEMO', retryable: false },
