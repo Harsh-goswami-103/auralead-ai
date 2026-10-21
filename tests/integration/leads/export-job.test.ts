@@ -288,6 +288,7 @@ describe('load limits (ADR-73)', () => {
 describe('search text retention (ADR-73)', () => {
   it('is dropped when an export expires, and never shown for an expired export', async () => {
     const owner = await ownerCtx(h);
+    await h.db.leadExport.deleteMany(); // fixed-clock createdAt ties plus the 10-row list cap would hide the new export
     const { export: requested } = await requestLeadExport(owner, { requestKey: 'export-q-0001', filters: { q: '+919810012345', sort: 'newest' } });
     await drain();
     expect((await listLeadExports(owner)).find((e) => e.id === requested.id)?.filters.q).toBe('+919810012345');
