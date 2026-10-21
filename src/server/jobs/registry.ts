@@ -24,6 +24,9 @@ import { leadExportJob, leadExportPurgeJob } from './handlers/lead-export';
 import { integrationHealthJob } from './handlers/integration-health';
 import { waQualityCheckJob } from './handlers/wa-quality-check';
 import { templateSyncJob } from './handlers/template-sync';
+import { metaLeadBackfillJob, metaLeadFetchJob } from './handlers/meta-lead-fetch';
+import { campaignActionJob, campaignReadBackJob } from './handlers/campaign-action';
+import { campaignMetricsSyncJob } from './handlers/campaign-metrics-sync';
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -71,6 +74,11 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   integrationHealthJob,
   waQualityCheckJob,
   templateSyncJob,
+  metaLeadFetchJob,
+  metaLeadBackfillJob,
+  campaignMetricsSyncJob,
+  campaignActionJob,
+  campaignReadBackJob,
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {

@@ -150,7 +150,7 @@ export const CREDENTIAL_FIELD_RULES: Readonly<Record<IntegrationKind, Readonly<R
     password: { required: true, hint: 'The SMTP account password.', check: (v) => (v.length >= 1 && v.length <= 512 && !CONTROL_RE.test(v) ? null : 'The password is 1 to 512 characters without line breaks.') },
   },
   META_ADS: {
-    accessToken: { required: true, hint: 'A Page or system user token with leads_retrieval.', check: token(20, 2048, 'The access token') },
+    accessToken: { required: true, hint: 'A Page or system user token with leads_retrieval (and ads_read, ads_management for campaigns).', check: token(20, 2048, 'The access token') },
   },
   GOOGLE_SHEETS: {
     serviceAccountJson: { required: true, hint: 'The whole JSON key file of the service account the Sheet is shared with.', check: serviceAccountJson, multiline: true },

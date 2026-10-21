@@ -815,6 +815,87 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { provider: 'demo' },
     calls: [{ method: 'POST', body: { type: 'email.bounced' }, expect: all(401), note: 'unsigned DEMO provider event' }],
   },
+  // ---- Meta Lead Ads webhook, campaign controls, form mappings and backfill (T35) --------------
+  {
+    path: '/api/webhooks/meta-ads',
+    file: 'src/app/api/webhooks/meta-ads/route.ts',
+    kind: 'api',
+    owner: 'T35',
+    access: 'public',
+    calls: [
+      { method: 'GET', query: { 'hub.mode': 'subscribe', 'hub.verify_token': 'matrix-probe', 'hub.challenge': '123' }, expect: all(403), note: 'verification with a wrong token' },
+      { method: 'POST', body: { object: 'page', entry: [] }, expect: all(401), note: 'unsigned delivery; cookies are never read' },
+    ],
+  },
+  {
+    path: '/api/app/campaigns/sync',
+    file: 'src/app/api/app/campaigns/sync/route.ts',
+    kind: 'api',
+    owner: 'T35',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'integrations.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "sync workspace B's campaigns (DEMO: simulated)",
+      },
+    ],
+  },
+  {
+    path: '/api/app/campaigns/[campaignId]/status',
+    file: 'src/app/api/app/campaigns/[campaignId]/status/route.ts',
+    kind: 'api',
+    owner: 'T35',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'campaigns.control',
+    params: { campaignId: 'matrix-unknown-campaign' },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), targetStatus: 'PAUSED', confirm: 'PAUSE', requestKey: 'matrix-request-0001' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'pause a campaign of workspace B (AT14)',
+      },
+    ],
+  },
+  {
+    path: '/api/app/meta/forms',
+    file: 'src/app/api/app/meta/forms/route.ts',
+    kind: 'api',
+    owner: 'T35',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'integrations.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), formId: '200000000000009', fields: { name: 'full_name', phone: 'phone_number' }, consent: null },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "map an Instant Form of workspace B (P1)",
+      },
+    ],
+  },
+  {
+    path: '/api/app/meta/backfill',
+    file: 'src/app/api/app/meta/backfill/route.ts',
+    kind: 'api',
+    owner: 'T35',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'integrations.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), formId: '200000000000009', since: '2026-10-10T00:00:00.000Z', requestKey: 'matrix-request-0002' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "backfill an Instant Form of workspace B (LIVE only)",
+      },
+    ],
+  },
   {
     path: '/api/webhooks/email/[provider]/[routingKey]',
     file: 'src/app/api/webhooks/email/[provider]/[routingKey]/route.ts',
