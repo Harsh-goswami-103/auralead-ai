@@ -21,9 +21,20 @@
  * send intent (FIRST_TOUCH, QUOTE_READY, FOLLOW_UP, CALL_ACK), says what each positional variable
  * holds, and maps each quick-reply button to QUOTE, CALL or STOP. At send time each mapped button
  * carries its stable payload id (ADR-62), set per send by `quickReplyPayloadsFor`.
+ *
+ * Authored templates (ADR-123, slice F4): a template written in the studio is matched by name and
+ * language like any other, and the sync stores its provider id, status, category and rejection
+ * reason (`rejected_reason`, when the list carries it). Local rows are never counted as missing: a
+ * DRAFT is never touched (a provider template with the same name and language is left unstored and
+ * counted as a draft conflict), and a SUBMITTING row is updated when the provider lists it. A
+ * SUBMITTING row the complete list does not contain, submitted at least a minute ago and with no
+ * submission job still queued or running, was never created: it goes back to DRAFT, audited
+ * `template.submit` FAILED NOT_FOUND_AFTER_SUBMIT, so the person can submit it again (never a
+ * blind resubmission by the app).
  */
 import type { Prisma, TemplateIntent } from '@/generated/prisma/client';
 import { parseTemplateMapping, pruneMapping, templateShape, variableSchemaOf, type QuickReplyIntentValue, type TemplateMapping } from '@/lib/domain/whatsapp-templates';
+import { isLocalTemplateStatus, TEMPLATE_DRAFT_STATUS, TEMPLATE_SUBMITTING_STATUS } from '@/lib/domain/lead-gen';
 import { DomainRuleError, NotFoundError, ProviderRejectedError, RateLimitedError, ValidationError } from '@/lib/errors';
 import { redactText } from '@/lib/redact';
 import type { TemplateMappingBody } from '@/lib/schemas/integrations';
@@ -35,6 +46,7 @@ import { withTx } from '@/server/db/tx';
 import { recordAudit, type AuditCtx, type AuditDb } from '@/server/services/audit/record';
 import { BUTTON_TEXT_FALLBACK, foldKeyword, QUICK_REPLY_PAYLOADS, STOP_KEYWORDS } from '@/server/services/messaging/quick-replies';
 import { loadIntegrationForUse } from './credentials';
+import { SUBMIT_RESOLVE_AFTER_MS, TEMPLATE_SUBMIT_JOB, templateSubmitJobKeyPrefix } from './template-jobs';
 import type { LiveAdapterDeps } from './live-testers';
 import type { IntegrationForAdapter, LiveTemplateSync, TemplateSyncResult } from './types';
 
@@ -44,7 +56,16 @@ export const TEMPLATE_SYNC_COOLDOWN_MS = 60_000;
 const MAX_STATUS_CHANGES_AUDITED = 50;
 const MAX_RAW = 64;
 
-export type FetchedTemplate = { providerId: string | null; name: string; language: string; status: string; category: string; components: Prisma.InputJsonValue };
+export type FetchedTemplate = {
+  providerId: string | null;
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  components: Prisma.InputJsonValue;
+  /** Meta's `rejected_reason` (raw); undefined when the list did not carry the field, null for none. */
+  rejectedReason?: string | null;
+};
 
 export type TemplateFetch =
   | { ok: true; templates: FetchedTemplate[]; complete: boolean }
@@ -64,7 +85,17 @@ export function parseProviderTemplate(value: unknown): FetchedTemplate | null {
   const status = raw(t.status);
   const category = raw(t.category);
   if (!name || !language || status === null || category === null) return null;
-  return { providerId: raw(t.id), name, language, status, category, components: (Array.isArray(t.components) ? t.components : []) as Prisma.InputJsonValue };
+  const reasonRaw = t.rejected_reason;
+  const reason = reasonRaw === undefined ? undefined : typeof reasonRaw === 'string' && reasonRaw.trim() !== '' && reasonRaw.trim().toUpperCase() !== 'NONE' ? reasonRaw.slice(0, 300) : null;
+  return {
+    providerId: raw(t.id),
+    name,
+    language,
+    status,
+    category,
+    components: (Array.isArray(t.components) ? t.components : []) as Prisma.InputJsonValue,
+    ...(reason !== undefined ? { rejectedReason: reason } : {}),
+  };
 }
 
 const FAILURE_CODES = {
@@ -107,17 +138,39 @@ export function suggestQuickReplyIntent(text: string): QuickReplyIntentValue | n
   return QUICK_REPLY_TEXTS.get(foldKeyword(text)) ?? null;
 }
 
-type TemplateDb = AuditDb & {
-  whatsAppTemplate: {
-    findMany(args: { where: { workspaceId: string; integrationId: string }; select: { id: true; name: true; language: true; status: true; category: true; components: true; variableMap: true; categoryHistory: true } }): PromiseLike<
-      Array<{ id: string; name: string; language: string; status: string; category: string; components: unknown; variableMap: unknown; categoryHistory: unknown }>
-    >;
-    create(args: { data: Prisma.WhatsAppTemplateUncheckedCreateInput }): PromiseLike<unknown>;
-    updateMany(args: { where: { id: string; workspaceId: string }; data: Prisma.WhatsAppTemplateUpdateManyMutationInput }): PromiseLike<{ count: number }>;
-  };
+type StoredTemplate = {
+  id: string;
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  components: unknown;
+  variableMap: unknown;
+  categoryHistory: unknown;
+  providerTemplateId: string | null;
+  rejectedReason: string | null;
+  submittedAt: Date | null;
 };
 
-export type AppliedSync = TemplateSyncResult & { statusChanges: Array<{ name: string; language: string; from: string; to: string }> };
+type TemplateDb = AuditDb & {
+  whatsAppTemplate: {
+    findMany(args: {
+      where: { workspaceId: string; integrationId: string };
+      select: { id: true; name: true; language: true; status: true; category: true; components: true; variableMap: true; categoryHistory: true; providerTemplateId: true; rejectedReason: true; submittedAt: true };
+    }): PromiseLike<StoredTemplate[]>;
+    create(args: { data: Prisma.WhatsAppTemplateUncheckedCreateInput }): PromiseLike<unknown>;
+    updateMany(args: { where: { id: string; workspaceId: string; status?: string }; data: Prisma.WhatsAppTemplateUpdateManyMutationInput }): PromiseLike<{ count: number }>;
+  };
+  job: { count(args: { where: { workspaceId: string; type: string; status: { in: Array<'QUEUED' | 'RUNNING'> }; idempotencyKey: { startsWith: string } } }): PromiseLike<number> };
+};
+
+export type AppliedSync = TemplateSyncResult & {
+  statusChanges: Array<{ name: string; language: string; from: string; to: string }>;
+  /** Provider templates whose name and language a local DRAFT holds (left unstored, the draft untouched). */
+  draftConflicts: number;
+  /** SUBMITTING rows the provider never created, set back to DRAFT. */
+  submitsUnconfirmed: number;
+};
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -135,13 +188,14 @@ export async function applyTemplateSync(
   const now = ctx.clock.now();
   const stored = await tx.whatsAppTemplate.findMany({
     where: { workspaceId: integration.workspaceId, integrationId: integration.id },
-    select: { id: true, name: true, language: true, status: true, category: true, components: true, variableMap: true, categoryHistory: true },
+    select: { id: true, name: true, language: true, status: true, category: true, components: true, variableMap: true, categoryHistory: true, providerTemplateId: true, rejectedReason: true, submittedAt: true },
   });
   const byKey = new Map(stored.map((t) => [`${t.name}\u0000${t.language}`, t]));
   const seen = new Set<string>();
   let created = 0;
   let updated = 0;
   let existing = 0;
+  let draftConflicts = 0;
   const statusChanges: AppliedSync['statusChanges'] = [];
 
   for (const t of fetched.templates) {
@@ -176,7 +230,15 @@ export async function applyTemplateSync(
       created += 1;
       continue;
     }
-    const changed = row.status !== t.status || row.category !== t.category || !sameJson(row.components, t.components);
+    // A local draft is the person's unsent work: never overwritten by a provider template of the same name.
+    if (row.status.trim().toUpperCase() === TEMPLATE_DRAFT_STATUS) {
+      draftConflicts += 1;
+      continue;
+    }
+    const rejectedReason = t.status.trim().toUpperCase() !== 'REJECTED' ? null : t.rejectedReason === undefined ? row.rejectedReason : t.rejectedReason;
+    const providerTemplateId = t.providerId ?? row.providerTemplateId;
+    const changed =
+      row.status !== t.status || row.category !== t.category || !sameJson(row.components, t.components) || rejectedReason !== row.rejectedReason || providerTemplateId !== row.providerTemplateId;
     const mapping = pruneMapping(parseTemplateMapping(row.variableMap), shape);
     const history = Array.isArray(row.categoryHistory) ? [...(row.categoryHistory as Prisma.InputJsonValue[])] : [];
     if (row.category !== t.category) history.push({ category: t.category, at: now.toISOString() });
@@ -184,22 +246,54 @@ export async function applyTemplateSync(
     await tx.whatsAppTemplate.updateMany({
       where: { id: row.id, workspaceId: integration.workspaceId },
       data: changed
-        ? { status: t.status, category: t.category, components: t.components, variableSchema: variableSchemaOf(shape, mapping), variableMap: mapping, categoryHistory: history, syncedAt: now }
+        ? { status: t.status, category: t.category, components: t.components, variableSchema: variableSchemaOf(shape, mapping), variableMap: mapping, categoryHistory: history, providerTemplateId, rejectedReason, syncedAt: now }
         : { syncedAt: now },
     });
     if (changed) updated += 1;
     else existing += 1;
   }
-  const missing = fetched.complete ? stored.filter((s) => !seen.has(`${s.name}\u0000${s.language}`)).length : 0;
+  const unseen = fetched.complete ? stored.filter((s) => !seen.has(`${s.name}\u0000${s.language}`)) : [];
+  // DRAFT and SUBMITTING rows are local: never missing (ADR-123).
+  const missing = unseen.filter((s) => !isLocalTemplateStatus(s.status)).length;
+  const submitsUnconfirmed = await resolveUnconfirmedSubmits(tx, ctx, integration, unseen, now);
 
   await recordAudit(tx, ctx, {
     action: 'integration.templates.sync',
     targetType: 'Integration',
     targetId: integration.id,
     workspaceId: integration.workspaceId,
-    summary: { kind: 'WHATSAPP_CLOUD', outcome: 'SYNCED', created, updated, existing, missing, complete: fetched.complete, statusChanges, trigger: opts.trigger },
+    summary: { kind: 'WHATSAPP_CLOUD', outcome: 'SYNCED', created, updated, existing, missing, complete: fetched.complete, statusChanges, draftConflicts, submitsUnconfirmed, trigger: opts.trigger },
   });
-  return { integrationId: integration.id, simulated: false, created, updated, existing, missing, statusChanges };
+  return { integrationId: integration.id, simulated: false, created, updated, existing, missing, statusChanges, draftConflicts, submitsUnconfirmed };
+}
+
+/**
+ * SUBMITTING rows that a complete provider list does not contain: when the submission is at least
+ * SUBMIT_RESOLVE_AFTER_MS old and no `wa.templateSubmit` job for it is still queued or running,
+ * Meta never created the template, so the row goes back to DRAFT (audited FAILED). Returns the count.
+ */
+async function resolveUnconfirmedSubmits(tx: TemplateDb, ctx: AuditCtx, integration: { id: string; workspaceId: string }, unseen: readonly StoredTemplate[], now: Date): Promise<number> {
+  let resolved = 0;
+  for (const row of unseen) {
+    if (row.status.trim().toUpperCase() !== TEMPLATE_SUBMITTING_STATUS) continue;
+    if (row.submittedAt === null || now.getTime() - row.submittedAt.getTime() < SUBMIT_RESOLVE_AFTER_MS) continue;
+    const inFlight = await tx.job.count({
+      where: { workspaceId: integration.workspaceId, type: TEMPLATE_SUBMIT_JOB, status: { in: ['QUEUED', 'RUNNING'] }, idempotencyKey: { startsWith: templateSubmitJobKeyPrefix(row.id) } },
+    });
+    if (inFlight > 0) continue;
+    const moved = await tx.whatsAppTemplate.updateMany({ where: { id: row.id, workspaceId: integration.workspaceId, status: row.status }, data: { status: TEMPLATE_DRAFT_STATUS } });
+    if (moved.count !== 1) continue;
+    resolved += 1;
+    await recordAudit(tx, ctx, {
+      action: 'template.submit',
+      targetType: 'WhatsAppTemplate',
+      targetId: row.id,
+      workspaceId: integration.workspaceId,
+      result: 'FAILED',
+      summary: { template: row.name, language: row.language, outcome: 'NOT_CREATED', errorCode: 'NOT_FOUND_AFTER_SUBMIT' },
+    });
+  }
+  return resolved;
 }
 
 /** Records a failed live sync (its own small transaction). */

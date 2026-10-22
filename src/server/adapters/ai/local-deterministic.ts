@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { generateLocalDraft } from './local/draft';
+import { generateLocalTemplateCopy } from './local/template-copy';
 import type { AiPort, AiRequest, AiResponse } from './port';
 
 export const LOCAL_GENERATOR_LABEL = 'local-deterministic' as const;
@@ -27,6 +28,7 @@ export const LOCAL_TASKS: Readonly<Record<string, LocalTaskGenerator>> = Object.
   lead_draft: generateLocalDraft,
   // ---- lead-gen F3 conversation_reply ----
   // ---- lead-gen F4 template_copy ----
+  template_copy: generateLocalTemplateCopy,
   // ---- lead-gen F5 handoff_summary ----
 });
 

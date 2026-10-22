@@ -1,0 +1,12 @@
+{
+  "error": {
+    "message": "Invalid parameter",
+    "type": "OAuthException",
+    "code": 100,
+    "error_subcode": 2388299,
+    "is_transient": false,
+    "error_user_title": "Variables can't be at the start or end of the template",
+    "error_user_msg": "Variables can't be at the start or end of the template.",
+    "fbtrace_id": "AbCdEfGhIjKlMnOp"
+  }
+}

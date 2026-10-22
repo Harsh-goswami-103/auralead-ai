@@ -25,7 +25,7 @@ import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClie
 
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
-
+import { whatsAppTemplateAdmin } from '@/server/adapters/registry';
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
 
@@ -49,7 +49,7 @@ const DEMO_MODULES = [
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  'src/server/adapters/whatsapp/template-admin-demo.ts',
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
 
@@ -80,7 +80,7 @@ const LIVE_MODULES = [
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  'src/server/adapters/whatsapp/template-admin.ts',
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
 
@@ -114,7 +114,7 @@ const LIVE_FUNCTIONS = [
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  'liveTemplateAdmin',
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
 
@@ -320,7 +320,42 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
 
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
+describe('template admin (ADR-123, slice F4)', () => {
+  const clock = new FixedClock('2026-10-23T06:00:00.000Z');
+  const creds: CredentialState[] = [
+    { state: 'ok', values: { accessToken: 'EAAGarchtesttoken000000000000000' } },
+    { state: 'missing', fields: ['accessToken'] },
+    { state: 'unreadable', field: 'accessToken' },
+  ];
 
+  it('DEMO gets the simulated WhatsApp Manager whatever is stored; a workspace of the other mode is refused', () => {
+    const demo = whatsAppTemplateAdmin({ mode: 'demo', workspaceMode: 'DEMO', integration: null, graphVersion: null, clock });
+    expect(demo.ok && demo.value).toMatchObject({ label: 'demo', simulated: true });
+    expect(whatsAppTemplateAdmin({ mode: 'demo', workspaceMode: 'LIVE', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(whatsAppTemplateAdmin({ mode: 'live', workspaceMode: 'DEMO', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+  });
+
+  it('LIVE: every status x credential state x graph version x WABA ID answers the Graph admin or a typed problem, never the demo admin', () => {
+    for (const status of IntegrationStatus) {
+      for (const credentials of creds) {
+        for (const graphVersion of ['v24.0', null]) {
+          for (const wabaId of ['209876543210987', null]) {
+            const config: Record<string, string> = { phoneNumberId: '109876543210987', appId: '309876543210987', ...(wabaId ? { wabaId } : {}) };
+            const r = whatsAppTemplateAdmin({ mode: 'live', workspaceMode: 'LIVE', integration: { id: 'int_1', kind: 'WHATSAPP_CLOUD', status, config, credentials }, graphVersion, clock });
+            if (r.ok) {
+              expect(r.value).toMatchObject({ label: 'graph', simulated: false, wabaId: '209876543210987' });
+              expect(['CONNECTED', 'DEGRADED']).toContain(status);
+              expect([credentials.state, graphVersion, wabaId]).toEqual(['ok', 'v24.0', '209876543210987']);
+            } else {
+              expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
+            }
+          }
+        }
+      }
+    }
+    expect(whatsAppTemplateAdmin({ mode: 'live', workspaceMode: 'LIVE', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+  });
+});
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
 

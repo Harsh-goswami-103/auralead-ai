@@ -48,7 +48,8 @@ import type { WhatsAppTransport } from './whatsapp/port';
 
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
-
+import { createGraphTemplateAdmin, type GraphTemplateAdmin } from './whatsapp/template-admin';
+import { createDemoTemplateAdmin, type DemoTemplateAdmin } from './whatsapp/template-admin-demo';
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
 
@@ -418,7 +419,38 @@ function liveSheetsClient(input: { integration: IntegrationUse | null; clock: Cl
 
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
+// Template studio (ADR-123): the template admin port. DEMO plays WhatsApp Manager (simulated, zero
+// network); LIVE writes templates through Graph on a verified WhatsApp integration with a WABA ID,
+// or answers a typed problem. LIVE never falls back to the demo admin.
 
+export type TemplateAdmin = GraphTemplateAdmin | DemoTemplateAdmin;
+
+export type TemplateAdminResolveInput = {
+  mode: ProcessMode;
+  workspaceMode: 'DEMO' | 'LIVE';
+  /** LIVE: the workspace's WHATSAPP_CLOUD integration, decrypted by the caller. Ignored in DEMO. */
+  integration: IntegrationUse | null;
+  graphVersion: string | null;
+  clock: Clock;
+  graph?: GraphSeams;
+};
+
+export function whatsAppTemplateAdmin(input: TemplateAdminResolveInput): Resolution<TemplateAdmin> {
+  if (!modeMatches(input.mode, input.workspaceMode)) return problem('MODE_MISMATCH', 'the workspace belongs to the other mode', input.integration?.id ?? null);
+  if (input.mode === 'demo') return { ok: true, value: createDemoTemplateAdmin() };
+  return liveTemplateAdmin(input);
+}
+
+/** LIVE only: the Graph template admin (verified integration, readable token, WABA ID, Graph version) or a typed problem. */
+function liveTemplateAdmin(input: TemplateAdminResolveInput): Resolution<TemplateAdmin> {
+  const options = liveCloudApiOptions(input, SEND_USABLE_STATUSES);
+  if (!options.ok) return options;
+  const integration = input.integration!;
+  if (options.value.wabaId === null) return problem('INTEGRATION_NOT_CONFIGURED', 'the WhatsApp Business Account ID is not set', integration.id, 'wabaId');
+  const appRaw = configString(integration.config, 'appId');
+  const appId = appRaw && GRAPH_ID_RE.test(appRaw) ? appRaw : null;
+  return { ok: true, value: createGraphTemplateAdmin({ ...options.value, wabaId: options.value.wabaId, appId }) };
+}
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
 
