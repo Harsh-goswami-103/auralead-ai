@@ -103,7 +103,7 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ w
                           Google Maps extension
                         </ChipTitle>
                       </h3>
-                      <p className="text-sm text-fg-2">Scraped businesses arrive in batches signed with a workspace ingestion token. Tokens, batches and per-row results are on the extension hub.</p>
+                      <p className="text-sm text-fg-2">Businesses the extension collects arrive in batches signed with a workspace ingestion token. Tokens, batches and per-row results are on the extension hub.</p>
                       <Link href={`/dashboard/employee/${encodeURIComponent(ws)}/extension`} className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'w-fit' })}>
                         Open extension hub
                         <ArrowRight aria-hidden="true" />

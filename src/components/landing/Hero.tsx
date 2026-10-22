@@ -44,7 +44,7 @@ export function Hero({ mode }: { mode: LandingMode }) {
             Leads in. <span className="text-gradient pb-1">Quotes out.</span>
           </Reveal>
           <Reveal as="p" delay={0.14} className="max-w-[34rem] text-md text-fg-2 sm:text-lg sm:leading-7">
-            Capture and score every lead, send versioned quotes with a real PDF, and reply on WhatsApp and email only where consent allows it.
+            Find businesses through Google Places or your own Excel list, chat with them on WhatsApp where consent allows it, hand converted leads to the client, and close with a versioned quote and a real PDF.
           </Reveal>
           <Reveal delay={0.22} className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
             <GlowFrame className="w-full sm:w-auto">
@@ -72,7 +72,7 @@ export function Hero({ mode }: { mode: LandingMode }) {
               )}
             </p>
             <ul aria-label="Lead sources in, channels out" className="flex flex-wrap items-center gap-2 sm:hidden">
-              {(['sheets', 'meta', 'maps'] as const).map((s) => (
+              {(['GOOGLE_PLACES', 'FILE_IMPORT', 'sheets', 'meta', 'maps'] as const).map((s) => (
                 <li key={s}>
                   <SourceChip source={s} withIcon />
                 </li>

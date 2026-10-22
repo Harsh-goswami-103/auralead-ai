@@ -38,7 +38,7 @@ const ICONS: Record<SimulationSource, typeof FileSpreadsheet> = { sheets: FileSp
 const DESCRIPTIONS: Record<SimulationSource, string> = {
   sheets: 'Form responses pushed by the Apps Script, with a WhatsApp consent answer on every other row.',
   meta: 'Instant Form leads, one webhook event per lead, with the form’s consent question.',
-  gmaps: 'Businesses scraped by the Maps extension. Maps leads never carry WhatsApp consent.',
+  gmaps: 'Businesses collected by the Maps extension. Maps leads never carry WhatsApp consent.',
 };
 
 /** Per-source tints from the shared source palette (patterns/source-style: chart-2 / chart-4 / chart-1). */

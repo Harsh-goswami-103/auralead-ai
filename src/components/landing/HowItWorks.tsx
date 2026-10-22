@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * "How it works" (plan T30, 06-design §11.7): the pipeline Source -> AuraLead core -> Score ->
+ * "How it works" (plan T30, 06-design §11.7). It opens with the lead-gen flow Find, Chat, Hand
+ * over, Quote (StoryFlow, ADR-126), then shows the pipeline Source -> AuraLead core -> Score ->
  * Quote -> Message, each stage labelled with what the product really does (PRD: normalize and
  * dedupe by contact key, explainable heuristic score, prices from the price list and never from
  * AI, versioned quote and real PDF, approval by default, consent + 24h window + suppression
@@ -22,6 +23,7 @@ import { ChromaBorder } from '@/components/visual/ChromaBorder';
 import { GridPattern } from '@/components/visual/Patterns';
 import { Reveal, Stagger, StaggerItem } from '@/components/visual/Reveal';
 import { SectionIntro } from './SectionIntro';
+import { StoryFlow } from './StoryFlow';
 
 /** `modeFact` closes the facts list with the line that differs by mode (ADR-116: LIVE never mentions the demo). */
 type Stage = {
@@ -41,9 +43,9 @@ const PIPELINE_STAGES: readonly Stage[] = [
     key: 'capture',
     title: 'Capture',
     icon: Inbox,
-    lead: 'Leads arrive from Google Sheets (an Apps Script you paste in), Meta Lead Ads and the Maps extension.',
+    lead: 'Leads arrive from a Google Places search, an Excel or CSV import, Google Sheets (an Apps Script you paste in), Meta Lead Ads and the Maps extension.',
     facts: ['Every payload is authenticated, size-checked and replay-protected'],
-    modeFact: { demo: 'DEMO simulates each source end to end', live: 'Every delivery is recorded per source in the lead console' },
+    modeFact: { demo: 'DEMO simulates every provider end to end', live: 'Every delivery is recorded per source in the lead console' },
     tint: 'text-zest',
     hairline: 'bg-zest',
     chip: 'border-zest/30 bg-zest/10',
@@ -135,6 +137,8 @@ function ChipNode({ nodeRef, children }: { nodeRef: RefObject<HTMLSpanElement | 
 
 function PipelineRail() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const placesRef = useRef<HTMLSpanElement>(null);
+  const importRef = useRef<HTMLSpanElement>(null);
   const sheetsRef = useRef<HTMLSpanElement>(null);
   const metaRef = useRef<HTMLSpanElement>(null);
   const mapsRef = useRef<HTMLSpanElement>(null);
@@ -151,6 +155,12 @@ function PipelineRail() {
     >
       <GridPattern fade="radial" size={32} />
       <div className="flex flex-col items-start gap-4">
+        <ChipNode nodeRef={placesRef}>
+          <SourceChip source="GOOGLE_PLACES" withIcon className="py-1" />
+        </ChipNode>
+        <ChipNode nodeRef={importRef}>
+          <SourceChip source="FILE_IMPORT" withIcon className="py-1" />
+        </ChipNode>
         <ChipNode nodeRef={sheetsRef}>
           <SourceChip source="sheets" withIcon className="py-1" />
         </ChipNode>
@@ -199,9 +209,11 @@ function PipelineRail() {
           <SourceChip source="EMAIL_INBOUND" withIcon className="py-1" />
         </ChipNode>
       </div>
-      <AnimatedBeam containerRef={containerRef} fromRef={sheetsRef} toRef={coreRef} curvature={-24} fromColor="var(--chart-2-hi)" toColor="var(--aura)" duration={4.2} />
-      <AnimatedBeam containerRef={containerRef} fromRef={metaRef} toRef={coreRef} fromColor="var(--chart-4-hi)" toColor="var(--aura)" duration={4.2} delay={0.7} />
-      <AnimatedBeam containerRef={containerRef} fromRef={mapsRef} toRef={coreRef} curvature={24} fromColor="var(--chart-1-hi)" toColor="var(--aura)" duration={4.2} delay={1.4} />
+      <AnimatedBeam containerRef={containerRef} fromRef={placesRef} toRef={coreRef} curvature={-36} fromColor="var(--chart-1-hi)" toColor="var(--aura)" duration={4.2} delay={0.35} />
+      <AnimatedBeam containerRef={containerRef} fromRef={importRef} toRef={coreRef} curvature={-18} fromColor="var(--chart-2-hi)" toColor="var(--aura)" duration={4.2} delay={1.05} />
+      <AnimatedBeam containerRef={containerRef} fromRef={sheetsRef} toRef={coreRef} fromColor="var(--chart-2-hi)" toColor="var(--aura)" duration={4.2} />
+      <AnimatedBeam containerRef={containerRef} fromRef={metaRef} toRef={coreRef} curvature={18} fromColor="var(--chart-4-hi)" toColor="var(--aura)" duration={4.2} delay={0.7} />
+      <AnimatedBeam containerRef={containerRef} fromRef={mapsRef} toRef={coreRef} curvature={36} fromColor="var(--chart-1-hi)" toColor="var(--aura)" duration={4.2} delay={1.4} />
       <AnimatedBeam containerRef={containerRef} fromRef={coreRef} toRef={scoreRef} fromColor="var(--aura)" toColor="var(--volt-hi)" duration={3.6} delay={0.4} width={3} />
       <AnimatedBeam containerRef={containerRef} fromRef={scoreRef} toRef={quoteRef} fromColor="var(--volt-hi)" toColor="var(--aura)" duration={3.6} delay={1.1} width={3} />
       <AnimatedBeam containerRef={containerRef} fromRef={quoteRef} toRef={whatsappRef} curvature={18} fromColor="var(--flare-ice)" toColor="var(--flare)" duration={4} delay={1.8} />
@@ -219,8 +231,9 @@ export function HowItWorks({ mode }: { mode: LandingMode }) {
           accent="aura"
           eyebrow="How it works"
           title="One pipeline, labelled with what really happens"
-          description="Every lead takes the same five steps. Each label below is what the product does, not a promise."
+          description="Find, chat, hand over, quote: that is the work. Underneath, every lead takes the same five steps, and each label below is what the product does, not a promise."
         />
+        <StoryFlow />
         <Reveal inView variant="fade">
           <PipelineRail />
         </Reveal>

@@ -23,7 +23,7 @@ export function ClosingCta({ mode }: { mode: LandingMode }) {
           id="closing-title"
           className="max-w-3xl font-display text-[28px] leading-9 font-semibold tracking-[-0.02em] text-balance text-fg-1 sm:text-4xl sm:leading-[44px] lg:text-5xl lg:leading-[56px]"
         >
-          {mode === 'demo' ? 'Follow one lead from form fill to signed quote.' : 'Pick up where your team left off.'}
+          {mode === 'demo' ? 'Follow one lead from a Maps search to a signed quote.' : 'Pick up where your team left off.'}
         </h2>
         <p className="max-w-xl text-md text-pretty text-fg-2 sm:text-lg sm:leading-7">
           {mode === 'demo'

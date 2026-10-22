@@ -263,7 +263,7 @@ function JobFlow() {
 function DemoSimulators() {
   return (
     <ul aria-label="Simulated sources and providers" className="mt-auto flex flex-wrap gap-2">
-      {['sheets', 'meta', 'maps', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND'].map((source) => (
+      {['GOOGLE_PLACES', 'sheets', 'meta', 'maps', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND'].map((source) => (
         <li key={source} className="inline-flex items-center gap-1.5">
           <SourceChip source={source} withIcon />
           <ModeChip simulated />
@@ -277,7 +277,7 @@ function DemoSimulators() {
 function ConnectedSources() {
   return (
     <ul aria-label="Sources and channels you connect" className="mt-auto flex flex-wrap gap-2">
-      {['sheets', 'meta', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND'].map((source) => (
+      {['GOOGLE_PLACES', 'sheets', 'meta', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND'].map((source) => (
         <li key={source}>
           <SourceChip source={source} withIcon />
         </li>
@@ -287,8 +287,8 @@ function ConnectedSources() {
 }
 
 const PANELS: readonly { name: string; who: string; dot: string }[] = [
-  { name: 'Client', who: 'Owners: leads, inbox, pricing, quotations', dot: 'bg-aura' },
-  { name: 'Operator', who: 'Employees: lead console, approvals, sources', dot: 'bg-zest' },
+  { name: 'Client', who: 'Owners: handed-over leads, inbox, pricing, quotations', dot: 'bg-aura' },
+  { name: 'Operator', who: 'Employees: lead finder, inbox, templates, approvals', dot: 'bg-zest' },
   { name: 'Platform admin', who: 'Workspaces, people, jobs, audit', dot: 'bg-flare' },
 ];
 
@@ -317,7 +317,7 @@ export function FeatureBento({ mode }: { mode: LandingMode }) {
           <StaggerItem inView className="lg:col-span-2">
             <SpotlightCard as="article" className={card('zest')}>
               <CardHead icon={ShieldCheck} accent="zest" title="Consent before every send">
-                WhatsApp needs channel-specific opt-in evidence. Scraped numbers and form fills are not opt-in.
+                WhatsApp needs channel-specific opt-in evidence. A number on a Maps listing or a form fill is not opt-in.
               </CardHead>
               <CheckList tint="text-zest" items={['Opt-in evidence on record', 'Inside the 24-hour window, or an approved template', 'Not suppressed or unsubscribed']} />
               <div className="mt-auto">
@@ -379,15 +379,15 @@ export function FeatureBento({ mode }: { mode: LandingMode }) {
             {mode === 'demo' ? (
               <SpotlightCard as="article" className={card('zest')}>
                 <CardHead icon={FlaskConical} accent="zest" title="A demo you can click through">
-                  Fictitious businesses in Delhi NCR, Mumbai and Bengaluru, with a simulator for every source and provider. In DEMO mode nothing leaves the
-                  app, and every simulated status says so.
+                  Fictitious businesses in Delhi NCR, Mumbai, Bengaluru and Indore, with a simulator for every source and provider. In DEMO mode nothing
+                  leaves the app, and every simulated status says so.
                 </CardHead>
                 <DemoSimulators />
               </SpotlightCard>
             ) : (
               <SpotlightCard as="article" className={card('zest')}>
                 <CardHead icon={KeyRound} accent="zest" title="Your own provider accounts">
-                  WhatsApp Cloud API, Resend or SMTP email, Meta Lead Ads, Google Sheets and your AI provider connect with each workspace&apos;s own
+                  WhatsApp Cloud API, Google Places, Resend or SMTP email, Meta Lead Ads, Google Sheets and your AI provider connect with each workspace&apos;s own
                   credentials, stored encrypted. Every integration shows its status: connected, verification required or limited.
                 </CardHead>
                 <ConnectedSources />

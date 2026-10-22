@@ -34,7 +34,7 @@ const MODE_PRINCIPLE: Record<LandingMode, Principle> = {
 const PRINCIPLES: readonly Principle[] = [
   {
     title: 'Consent first',
-    body: 'WhatsApp needs opt-in evidence for that channel, and Maps leads start without it. Email permission is tracked separately, and a Stop is honoured at once.',
+    body: 'WhatsApp needs opt-in evidence for that channel, and businesses found on Maps start without it. Email permission is tracked separately, and a Stop is honoured at once.',
     icon: ShieldCheck,
     tint: 'border-aura/30 bg-aura/12 text-aura',
     hairline: 'bg-aura',
