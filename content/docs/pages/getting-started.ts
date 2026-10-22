@@ -6,7 +6,7 @@ export const gettingStarted: DocPage = {
   summary:
     'Install AuraLead AI on your own machine, load the seeded demo businesses and walk a simulated lead all the way to an accepted quotation. Nothing in the demo contacts a real provider.',
   appliesTo: ['DEMO'],
-  checked: '2026-10-20',
+  checked: '2026-10-22',
   sections: [
     {
       id: 'requirements',
@@ -83,7 +83,7 @@ export const gettingStarted: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'In DEMO, `/login` lists three seeded identities instead of a password form. The floating **Demo role** button at the bottom right switches identity on any page. None of this exists in a LIVE build.',
+          text: 'In DEMO, `/login` lists four seeded identities instead of a password form. The floating **Demo role** button at the bottom right switches identity on any page. None of this exists in a LIVE build.',
         },
         {
           kind: 'table',
@@ -97,17 +97,23 @@ export const gettingStarted: DocPage = {
               'Command center for the workspace, Pricing, Quotations and the Inbox, with every capability in her own workspace.',
             ],
             [
+              '**Codecraft client**',
+              'Aarav Mehta, owner of Codecraft Web Studio',
+              'Client panel, `/dashboard/user`',
+              'The same client panel for a web-development studio in Indore: leads imported from a simulated Google Places search, their WhatsApp chats and one lead the operator has handed over, with every capability in his own workspace.',
+            ],
+            [
               '**Employee**',
               'Imran Qureshi',
               'Operator panel, `/dashboard/employee`',
-              'Assignments, the lead console and approval queue of each assigned workspace: Smile Avenue Dental Clinic with every capability and a 10% discount cap, Kesari Crafts Online with a narrower set and a 15% cap (a third assignment is inactive).',
+              'Assignments, the lead console and approval queue of each assigned workspace: Smile Avenue Dental Clinic with the standard operator capabilities and a 10% discount cap, Kesari Crafts Online with a narrower set and a 15% cap, and Codecraft Web Studio with every capability except `consent.import` and a 10% cap (a fourth assignment is inactive).',
             ],
             ['**Super admin**', 'Meera Krishnan', 'Platform admin, `/dashboard/admin`', 'Global metrics, Jobs and queue (including the global outbound pause) and Webhooks. No tenant records.'],
           ],
         },
         {
           kind: 'paragraph',
-          text: 'The seed holds five invented businesses: Smile Avenue Dental Clinic and Kesari Crafts Online (Delhi NCR), IronPulse Fitness Studio (Mumbai), NestKey Realty Advisors and PixelChai Design Studio (Bengaluru). Every contact uses a reserved test domain, so nothing is deliverable. [Roles and panels](/docs/roles-and-panels) describes each panel in full.',
+          text: 'The seed holds six invented businesses: Smile Avenue Dental Clinic and Kesari Crafts Online (Delhi NCR), IronPulse Fitness Studio (Mumbai), NestKey Realty Advisors and PixelChai Design Studio (Bengaluru), and Codecraft Web Studio (Indore). Codecraft Web Studio also has a simulated WhatsApp connection with its own templates (approved, pending and rejected), a finished simulated Google Places search, leads with recorded WhatsApp opt-ins and open chats, and one lead handed over to its owner. Every contact uses a reserved test domain, so nothing is deliverable. [Roles and panels](/docs/roles-and-panels) describes each panel in full.',
         },
       ],
     },
