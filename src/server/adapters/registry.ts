@@ -37,6 +37,25 @@ import { createCloudApiClient, createCloudApiTransport, GRAPH_ID_RE, GRAPH_VERSI
 import { adAccountDigits, createMetaLeadsClient, createMetaMarketingClient, type MetaLeadsClient, type MetaMarketingClient } from './meta/graph';
 import { createDemoWhatsAppTransport, createFileDemoOutbox, demoOutboxDir } from './whatsapp/demo';
 import type { WhatsAppTransport } from './whatsapp/port';
+// Lead-gen suite adapters (docs/handoff/lead-gen-suite-plan.md §6): each slice imports only inside its block.
+// ---- lead-gen F1 finder ----
+
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----
 
 export type ProcessMode = 'demo' | 'live';
 
@@ -384,3 +403,26 @@ function liveSheetsClient(input: { integration: IntegrationUse | null; clock: Cl
   if (!spreadsheetId) return problem('INTEGRATION_NOT_CONFIGURED', 'the spreadsheet ID is not set', integration.id);
   return { ok: true, value: createGoogleSheetsClient({ mode: 'live', serviceAccount, spreadsheetId, clock: input.clock, ...(input.sheets?.http ? { http: input.sheets.http } : {}) }) };
 }
+
+// ---- Lead-gen suite resolvers (docs/handoff/lead-gen-suite-plan.md §6) --------------------------------
+// Each slice adds its resolver inside its own block. A LIVE branch is a `live*` function that never
+// references a demo module (tests/unit/arch/registry-live.test.ts lists it in LIVE_FUNCTIONS).
+
+// ---- lead-gen F1 finder ----
+
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----

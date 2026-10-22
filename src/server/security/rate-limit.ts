@@ -30,6 +30,15 @@ export const RATE_LIMIT_POLICIES = {
   appsScript: { limit: 120, windowMs: 60_000 },
   metaWebhook: { limit: 600, windowMs: 60_000 },
   aiDraft: { limit: 30, windowMs: 60_000 },
+  // Lead-gen suite (docs/handoff/lead-gen-suite-plan.md §4 B3):
+  /** Lead Finder run starts per workspace: each run makes paid Places calls (ADR-118). */
+  finderRun: { limit: 10, windowMs: 3_600_000 },
+  /** Spreadsheet uploads and import confirmations (bodies up to about 7 MB, ADR-120). */
+  leadImport: { limit: 10, windowMs: 60_000 },
+  /** Template submissions per workspace, far below Meta's own per-account creation limit (ADR-123). */
+  templateSubmit: { limit: 20, windowMs: 3_600_000 },
+  /** Lead handoffs per person (ADR-124; a second handoff of a lead is 409 anyway). */
+  handoff: { limit: 30, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitPolicyName = keyof typeof RATE_LIMIT_POLICIES;

@@ -95,6 +95,19 @@
   --chart-seq-5: #0bddf3;
   --chart-seq-6: #9bf2ff;
 
+  /* Chat skin (ADR-121): the WhatsApp-like thread and conversation views only. Its own hues, never a
+     reused status, panel or chart token. Message text is text-1 or text-2 (text-3 is too faint on
+     an outgoing bubble); times and tick labels use --chat-meta; links stay aura and buttons stay the
+     aura action color. --chat-accent marks the chat (unread count, window-open chip, header
+     hairline) with ink (--accent-fg) on its fills; --chat-tick-read is the read tick and may color
+     its own "Read" label. */
+  --chat-wallpaper: #0b141a; /* conversation background */
+  --chat-bubble-in: #202c33; /* the customer's messages */
+  --chat-bubble-out: #144d37; /* the business's messages */
+  --chat-accent: #00a884;
+  --chat-tick-read: #53bdeb;
+  --chat-meta: #aebac1;
+
   /* Radii */
   --r-xs: 4px;
   --r-sm: 6px;

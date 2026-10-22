@@ -7,6 +7,8 @@
  *   flare flare-ice zest ice     panel signatures and sparks
  *   panel / panel-2              the current panel's signature hues ([data-panel] in tokens.css)
  *   chart-1..4(-hi), chart-other chart series in fixed entity order
+ *   chat-*                       the WhatsApp-like chat skin only (ADR-121): wallpaper, bubble-in,
+ *                                bubble-out, accent, tick-read, meta
  *   accent                       shadcn's hover surface (bg-3), NOT the aura token
  *   ai                           AI provenance only; demo: demo banner and Simulated chips only
  *   success/warning/danger/info  status tones (always with icon + label, never decorative)
@@ -118,6 +120,12 @@
   --color-chart-4: var(--chart-4);
   --color-chart-4-hi: var(--chart-4-hi);
   --color-chart-other: var(--chart-other);
+  --color-chat-wallpaper: var(--chat-wallpaper);
+  --color-chat-bubble-in: var(--chat-bubble-in);
+  --color-chat-bubble-out: var(--chat-bubble-out);
+  --color-chat-accent: var(--chat-accent);
+  --color-chat-tick-read: var(--chat-tick-read);
+  --color-chat-meta: var(--chat-meta);
   --color-paper: var(--paper);
   --color-ink-1: var(--ink-1);
   --color-ink-2: var(--ink-2);

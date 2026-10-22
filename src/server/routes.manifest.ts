@@ -1979,4 +1979,25 @@ export const ROUTES: readonly RouteEntry[] = [
       },
     ],
   },
+
+  // ---- Lead-gen suite (docs/handoff/lead-gen-suite-plan.md §5): each slice appends its entries only
+  // inside its own block, with its owner (F1 T40, F2 T41, F3 T42, F4 T43, F5 T44, F6 T45) --------
+  // ---- lead-gen F1 finder ----
+
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 ];
