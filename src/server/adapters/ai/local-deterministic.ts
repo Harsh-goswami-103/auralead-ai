@@ -14,6 +14,8 @@
 import { createHash } from 'node:crypto';
 import { generateLocalDraft } from './local/draft';
 import type { AiPort, AiRequest, AiResponse } from './port';
+// lead-gen F3: conversation_reply (ADR-122)
+import { generateLocalConversationReply } from './local/conversation-reply';
 
 export const LOCAL_GENERATOR_LABEL = 'local-deterministic' as const;
 export const LOCAL_GENERATOR_MODEL = 'local-deterministic-v1';
@@ -26,6 +28,7 @@ export type LocalTaskGenerator = (input: LocalTaskInput) => unknown;
 export const LOCAL_TASKS: Readonly<Record<string, LocalTaskGenerator>> = Object.freeze({
   lead_draft: generateLocalDraft,
   // ---- lead-gen F3 conversation_reply ----
+  conversation_reply: generateLocalConversationReply,
   // ---- lead-gen F4 template_copy ----
   // ---- lead-gen F5 handoff_summary ----
 });
