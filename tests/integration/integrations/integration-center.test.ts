@@ -68,7 +68,7 @@ describe('Integration center (DEMO)', () => {
   it('a workspace where the assignment lacks integrations.manage reads the center but cannot manage', async () => {
     const center = await getIntegrationCenter(await employeeCtx(h, WS_KESARI_SLUG));
     expect(center.canManage).toBe(false);
-    expect(center.cards).toHaveLength(7);
+    expect(center.cards).toHaveLength(8);
   });
 
   it('needs leads.read to read at all (403)', async () => {

@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   Inbox,
   Mail,
+  MapPinned,
   Megaphone,
   MessageCircle,
   PauseCircle,
@@ -35,6 +36,7 @@ export const KIND_ICONS: Readonly<Record<IntegrationKind, LucideIcon>> = {
   GOOGLE_SHEETS: FileSpreadsheet,
   AI_ANTHROPIC: Bot,
   AI_OPENAI: Bot,
+  GOOGLE_PLACES: MapPinned,
 };
 
 export type RawStatusEntry = { label: string; tone: StatusTone; icon: LucideIcon };

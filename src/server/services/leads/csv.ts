@@ -56,6 +56,8 @@ export const LEAD_SOURCE_CSV_LABELS: Readonly<Record<LeadSource, string>> = {
   WHATSAPP_INBOUND: 'WhatsApp',
   EMAIL_INBOUND: 'Email',
   MANUAL: 'Manual',
+  GOOGLE_PLACES: 'Google Places',
+  FILE_IMPORT: 'File import',
 };
 
 export const WEBSITE_STATUS_CSV_LABELS: Readonly<Record<WebsiteStatus, string>> = {
@@ -65,6 +67,7 @@ export const WEBSITE_STATUS_CSV_LABELS: Readonly<Record<WebsiteStatus, string>> 
   UNREACHABLE: 'Unreachable',
   BLOCKED: 'Blocked by the safety check',
   VERIFIED_ABSENT: 'No website',
+  NOT_LISTED: 'No website listed',
 };
 
 export const LEAD_CSV_HEADER: readonly string[] = [

@@ -62,7 +62,7 @@ describe('loadUserHome', () => {
     expect(home.scoring).toEqual({ version: 1, createdAt: new Date(SEED_NOW.getTime() - 120 * 86_400_000) });
     expect(home.pipeline).toMatchObject({ version: 1, approvalMode: 'HUMAN', stages: ['Ingestion', 'Score', 'Draft', 'Approval', 'Delivery'] });
     expect(home.settings).toMatchObject({ taxMode: 'CONFIGURED', taxLabel: 'GST', taxBps: 1800, maxDiscountBps: 1500, quoteValidityDays: 15, autoSendEnabled: false });
-    expect(home.capabilityCount).toBe(15);
+    expect(home.capabilityCount).toBe(20);
   });
 
   it('refuses a non-USER context', async () => {

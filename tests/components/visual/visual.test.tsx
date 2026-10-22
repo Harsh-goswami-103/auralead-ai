@@ -590,6 +590,12 @@ describe('source styles and SourceChip', () => {
     expect(SOURCE_STYLES.GMAPS_EXTENSION.dotClass).toContain('chart-1');
     expect(SOURCE_STYLES.WHATSAPP_INBOUND.dotClass).toContain('chart-3');
     expect(SOURCE_STYLES.MANUAL.dotClass).toContain('chart-other');
+    // Lead-gen sources share their family's hue and differ by label and icon (ADR-118, ADR-120).
+    expect(SOURCE_STYLES.GOOGLE_PLACES.dotClass).toContain('chart-1');
+    expect(SOURCE_STYLES.FILE_IMPORT.dotClass).toContain('chart-2');
+    expect([SOURCE_STYLES.GOOGLE_PLACES.label, SOURCE_STYLES.FILE_IMPORT.label]).toEqual(['Google Places', 'File import']);
+    expect(SOURCE_STYLES.GOOGLE_PLACES.icon).not.toBe(SOURCE_STYLES.GMAPS_EXTENSION.icon);
+    expect(SOURCE_STYLES.FILE_IMPORT.icon).not.toBe(SOURCE_STYLES.GOOGLE_SHEETS.icon);
     expect(sourceStyle('sheets')).toBe(SOURCE_STYLES.GOOGLE_SHEETS);
     expect(sourceStyle('gmaps')).toBe(sourceStyle('maps'));
   });

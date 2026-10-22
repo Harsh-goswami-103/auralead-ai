@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { IntegrationKind } from '@/lib/domain/enums';
 import { catalogEntry, INTEGRATION_CATALOG, INTEGRATION_KIND_ORDER, integrationKindFromSlug, integrationSlug } from '@/lib/domain/integrations';
+import { checkConfigValue, checkCredentialValue, CONFIG_FIELD_RULES, configRule, CREDENTIAL_FIELD_RULES, credentialRule } from '@/lib/schemas/integrations';
 
 const ROOT = path.resolve(__dirname, '../../..');
 
@@ -38,6 +39,40 @@ describe('integration catalog', () => {
       expect(e.prerequisites.length).toBeGreaterThan(0);
       for (const f of [...e.configFields, ...e.credentialFields]) expect(f.key).toMatch(/^[a-z][A-Za-z0-9]*$/);
     }
+  });
+
+  it('has a field rule for every catalog field and no rule without a field', () => {
+    for (const e of INTEGRATION_CATALOG) {
+      expect(Object.keys(CONFIG_FIELD_RULES[e.kind]).sort(), e.kind).toEqual(e.configFields.map((f) => f.key).sort());
+      expect(Object.keys(CREDENTIAL_FIELD_RULES[e.kind]).sort(), e.kind).toEqual(e.credentialFields.map((f) => f.key).sort());
+    }
+  });
+
+  it('describes Google Places as a lead source with an API key, no webhook and the Maps terms line (ADR-118)', () => {
+    const places = catalogEntry('GOOGLE_PLACES');
+    expect(places).toMatchObject({ slug: 'google-places', group: 'sources', provider: 'Google', webhookPath: null });
+    expect(places.configFields).toEqual([]);
+    expect(places.credentialFields.map((f) => f.key)).toEqual(['apiKey']);
+    expect(places.demoNote).toMatch(/Google is never contacted/);
+    expect(places.disclosures).toContain('Results from Google Maps. Use is subject to the Google Maps Additional Terms of Service and the Google Privacy Policy.');
+    expect(credentialRule('GOOGLE_PLACES', 'apiKey')?.required).toBe(true);
+    expect(checkCredentialValue('GOOGLE_PLACES', 'apiKey', 'AIzaSyD-a-forty-character-looking-key-123', 'live')).toBeNull();
+    expect(checkCredentialValue('GOOGLE_PLACES', 'apiKey', 'short', 'live')).not.toBeNull();
+    expect(checkCredentialValue('GOOGLE_PLACES', 'apiKey', 'AIzaSyD-a-forty-character-looking-key-123', 'demo')).not.toBeNull();
+  });
+
+  it('adds the optional WhatsApp app ID and display number (ADR-123, ADR-125) and no longer says templates are never written here', () => {
+    const wa = catalogEntry('WHATSAPP_CLOUD');
+    expect(wa.configFields.map((f) => f.key)).toEqual(['phoneNumberId', 'wabaId', 'businessPortfolioId', 'appId', 'displayPhoneNumber']);
+    expect(configRule('WHATSAPP_CLOUD', 'appId')?.required).toBe(false);
+    expect(configRule('WHATSAPP_CLOUD', 'displayPhoneNumber')?.required).toBe(false);
+    expect(checkConfigValue('WHATSAPP_CLOUD', 'appId', '1234567890123456')).toBeNull();
+    expect(checkConfigValue('WHATSAPP_CLOUD', 'appId', 'app-1')).not.toBeNull();
+    expect(checkConfigValue('WHATSAPP_CLOUD', 'displayPhoneNumber', '+919812345678')).toBeNull();
+    for (const bad of ['9812345678', '+0912345678', '+91 98123 45678', '+91981234567890123']) {
+      expect(checkConfigValue('WHATSAPP_CLOUD', 'displayPhoneNumber', bad), bad).not.toBeNull();
+    }
+    expect(wa.prerequisites.join(' ')).not.toMatch(/never written here/);
   });
 
   it('lists a webhook path only where the receiver route exists', () => {

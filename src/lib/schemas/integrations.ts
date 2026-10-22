@@ -74,6 +74,8 @@ export type FieldRule = {
 
 const NO_SPACE_RE = /^\S+$/;
 const DIGITS_RE = /^\d{5,32}$/;
+/** E.164: a plus sign and 8 to 15 digits, the first not 0. */
+const E164_RE = /^\+[1-9]\d{7,14}$/;
 const HOST_RE = /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
 const EMAIL_RE = /^[^\s@]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
@@ -109,6 +111,16 @@ export const CONFIG_FIELD_RULES: Readonly<Record<IntegrationKind, Readonly<Recor
     phoneNumberId: { required: true, hint: 'WhatsApp Manager > Phone numbers: the phone number ID (not the phone number).', check: digits('The phone number ID') },
     wabaId: { required: true, hint: 'The WhatsApp Business Account ID that owns the number and its templates.', check: digits('The WhatsApp Business Account ID') },
     businessPortfolioId: { required: false, hint: 'Optional. Business Settings > Business info.', check: digits('The business portfolio ID') },
+    appId: {
+      required: false,
+      hint: 'Optional, for PDF brochure headers on templates submitted from here: the Meta app ID (App settings > Basic).',
+      check: digits('The app ID'),
+    },
+    displayPhoneNumber: {
+      required: false,
+      hint: 'Optional, for click-to-chat links: the business number customers see, in international format (for example +919812345678).',
+      check: (v) => (E164_RE.test(v) ? null : 'Enter the number in international format, such as +919812345678.'),
+    },
   },
   EMAIL_RESEND: {
     fromDomain: { required: true, hint: 'A domain verified in Resend.', check: host('The sending domain') },
@@ -138,6 +150,7 @@ export const CONFIG_FIELD_RULES: Readonly<Record<IntegrationKind, Readonly<Recor
   AI_OPENAI: {
     modelId: { required: true, hint: 'The model ID to draft with, exactly as OpenAI lists it.', check: (v) => (/^[A-Za-z0-9._:/-]{1,128}$/.test(v) ? null : 'The model ID is 1 to 128 letters, digits and . _ : / -.') },
   },
+  GOOGLE_PLACES: {},
 };
 
 /** Credential rules per kind and field (keys of `Integration.secrets`), for LIVE values. */
@@ -173,6 +186,9 @@ export const CREDENTIAL_FIELD_RULES: Readonly<Record<IntegrationKind, Readonly<R
   },
   AI_OPENAI: {
     apiKey: { required: true, hint: 'An API key from the OpenAI dashboard.', check: token(20, 512, 'The API key') },
+  },
+  GOOGLE_PLACES: {
+    apiKey: { required: true, hint: 'A Google Cloud API key restricted to the Places API (New).', check: token(20, 512, 'The API key') },
   },
 };
 

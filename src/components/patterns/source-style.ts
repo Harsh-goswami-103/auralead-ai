@@ -3,12 +3,15 @@
  * and color wherever it appears (lead tables, inbox, simulator, charts). Colors follow the chart
  * palette order so chips match legends: Google Sheets = zest (chart-2), Meta Lead Ads = volt
  * (chart-4), Maps extension = aura (chart-1), WhatsApp = flare (chart-3), Email = ice (neutral,
- * kept off the info status hue), Manual and anything unknown = chart-other. Color is never the
- * only signal: every use renders the icon or dot together with the text label. Accepts LeadSource
- * values and the DEMO simulator keys (sheets, meta, gmaps; `maps` is accepted as an alias).
+ * kept off the info status hue), Manual and anything unknown = chart-other. The palette has four
+ * category hues, so the two lead-gen sources share the hue of their family and differ by label
+ * and icon: Google Places = aura like the Maps extension (both Maps listings), File import = zest
+ * like Google Sheets (both spreadsheets). Color is never the only signal: every use renders the
+ * icon or dot together with the text label. Accepts LeadSource values and the DEMO simulator keys
+ * (sheets, meta, gmaps; `maps` is accepted as an alias).
  */
 import type { LucideIcon } from 'lucide-react';
-import { FileSpreadsheet, Mail, MapPin, Megaphone, MessageCircle, PenLine } from 'lucide-react';
+import { FileSpreadsheet, FileUp, Mail, MapPin, MapPinned, Megaphone, MessageCircle, PenLine } from 'lucide-react';
 import type { LeadSource } from '@/lib/domain/enums';
 import type { SimulationSource } from '@/lib/schemas/webhooks';
 
@@ -61,6 +64,20 @@ const EMAIL: SourceStyle = {
   chipClass: 'border-ice/30 bg-ice/8 text-fg-1',
   iconClass: 'text-ice',
 };
+const PLACES: SourceStyle = {
+  label: 'Google Places',
+  icon: MapPinned,
+  dotClass: 'bg-chart-1-hi',
+  chipClass: 'border-chart-1-hi/35 bg-chart-1/12 text-fg-1',
+  iconClass: 'text-chart-1-hi',
+};
+const FILE_IMPORT: SourceStyle = {
+  label: 'File import',
+  icon: FileUp,
+  dotClass: 'bg-chart-2-hi',
+  chipClass: 'border-chart-2-hi/35 bg-chart-2/12 text-fg-1',
+  iconClass: 'text-chart-2-hi',
+};
 const MANUAL: SourceStyle = {
   label: 'Manual',
   icon: PenLine,
@@ -76,6 +93,8 @@ export const SOURCE_STYLES: Readonly<Record<SourceKey, SourceStyle>> = {
   WHATSAPP_INBOUND: WHATSAPP,
   EMAIL_INBOUND: EMAIL,
   MANUAL,
+  GOOGLE_PLACES: PLACES,
+  FILE_IMPORT,
   sheets: SHEETS,
   meta: META,
   gmaps: MAPS,

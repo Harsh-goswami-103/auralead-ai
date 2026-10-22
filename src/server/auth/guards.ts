@@ -12,8 +12,10 @@ import { hasRecentReauth } from './session';
 export const OWNER_CAPABILITIES: ReadonlySet<Capability> = new Set(CAPABILITIES);
 
 /**
- * A workspace MEMBER works leads, drafts, quotes and sends, but does not manage integrations,
- * automation, scoring, pipeline, pricing overrides, exports or approvals.
+ * A workspace MEMBER works leads, drafts, quotes and sends and imports lead files, but does not
+ * manage integrations, automation, scoring, pipeline, pricing overrides, exports or approvals,
+ * run paid finder searches, import consent (ADR-120: owner only), author templates or hand
+ * leads over.
  */
 export const MEMBER_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
   'leads.read',
@@ -21,6 +23,7 @@ export const MEMBER_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>(
   'drafts.generate',
   'quotes.edit',
   'dispatch.send',
+  'leads.import',
 ]);
 
 type AnyCtx = Pick<Ctx, 'actor' | 'workspaceId' | 'capabilities'>;

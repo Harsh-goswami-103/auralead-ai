@@ -84,6 +84,7 @@ Each entry: decision, why, alternatives considered, reversibility (1 = locked in
 - **Decision:** Ship only `extension-bridge/` (saas-sync.js, options page, one-line `importScripts` patch guide, manifest key list, example payloads) plus contract tests with a fake `chrome.*`. Commit no code from either Google_Map_Extractor copy. The bridge honors the vendor licence gate (sync disabled when `_auth.hasValidKey !== true`). Sub-question default: do not run the 50-record unlicensed tier. Report "contract verified, live extension not verified".
 - **Why:** Neither copy has a LICENSE file; the stripped copy circumvents a commercial paywall; the PRD forbids changing licensing or authentication. Vendor telemetry is disclosed in `/docs/extension` as "observed in the copy inspected on <date>".
 - **Alternatives:** B build on the stripped copy (rejected: legal exposure); C original with a purchased key (recommended production posture, needs the user's key); D own extractor (scope change).
+- **Amended by:** ADR-118: businesses are also found through the official Google Places API (New), with the terms handling stated there; the bridge is unchanged.
 - **Reversibility:** 4.
 
 ### ADR-14 Email for Maps leads: opt-in, or attested B2B manual-only (user decision D4 / M2, 2026-10-15)
@@ -95,7 +96,7 @@ Each entry: decision, why, alternatives considered, reversibility (1 = locked in
 ### ADR-15 Consent captured at ingestion; re-opt-in ordering (P1, P13, O2, A16, A19)
 - **Decision:** Sheets and Meta form mappings may define a consent field (column or question key, truthy values, verbatim notice text hashed). A truthy value creates `ConsentRecord(basis=OPT_IN, source=SHEETS_FORM|META_FORM, evidence, noticeTextHash, collectedAt=submission time)`. No mapping or falsy value means no consent. Maps leads get no WhatsApp consent. Inbound WhatsApp creates service-window consent only. A suppression is cleared only by a new OPT_IN record with `collectedAt > suppression.createdAt` strictly; backfilled or undated evidence never clears it.
 - **Why:** Without capture, no Sheets or Meta lead could ever become WhatsApp-eligible; without strict ordering, a delayed form row could silently undo a Stop. ConsentRecord carries `noticeVersion`, `noticeTextHash`, `withdrawnAt`, `withdrawalMethod` now so DPDP notice duties do not need a migration later.
-- **Amended by:** ADR-37: "newer than the suppression" means newer than the latest Stop for that contact and channel, and suppression rows are append-only history.
+- **Amended by:** ADR-37: "newer than the suppression" means newer than the latest Stop for that contact and channel, and suppression rows are append-only history. ADR-120: consent from a file import never clears a suppression.
 - **Alternatives:** manual employee grant only (rejected: dead messaging path).
 - **Reversibility:** 2.
 
@@ -109,6 +110,7 @@ Each entry: decision, why, alternatives considered, reversibility (1 = locked in
 - **Decision:** Templates are synced from the WABA on demand and on template status webhooks, stored with raw status, category and category history, then mapped to intents (first_touch, quote_ready, follow_up, call_ack) and variable sources. Authoring and submission happen in WhatsApp Manager, linked from docs. DEMO seeds approved and rejected templates.
 - **Why:** PRD says "template config" and "actually approved templates"; in-app submission adds a review workflow outside scope.
 - **Alternatives:** in-app authoring (rejected under HOLD SCOPE).
+- **Amended by:** ADR-123: templates can be authored and submitted from the template studio; synced templates keep working as described here.
 - **Reversibility:** 4.
 
 ### ADR-18 AI: no silent fallback in LIVE; strip-and-flag proposals (C12, C13, A24-A26)
@@ -407,6 +409,7 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
     - The new helper `src/server/jobs/handlers/lead-job-support.ts` (payload parse and job ctx) is outside the listed handler names.
   - **ScoreBreakdown component** (ADR-49 deferred it to T12) is not built here: T12's Owns list has no component path, and the plan gives the lead detail sheet with ScoreBreakdown to T26. The data and caption it needs are in place.
 - **Why:** The plan fixes the goals (pure explainable score, versioned config, rescore job, SSRF contract, WebsiteStatus rules, SCORE stage in the executor) but not these mechanics, and it has no column for the stored text. Covered by `tests/unit/scoring/score.test.ts`, `tests/unit/security/safe-fetch.test.ts`, `tests/integration/enrichment/enrich-job.test.ts` and `tests/integration/scoring/score-stage.test.ts`.
+- **Amended by:** ADR-119: `NOT_LISTED` is a third known website state.
 - **Reversibility:** 4.
 
 ### ADR-54 Source simulators and webhook persistence details (T11)
@@ -724,6 +727,7 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
     - No routes: `/api/app/conversations/**` belongs to T22, which wraps these services.
 - **Why:** The plan fixes the intents, takeover at dispatch, `modeVersion` and the escalation duty, but not what escalation does to the thread, where the toggle lives, how a newer inbound reaches a queued reply, or who increments the unanswered count.
 - **Covered by:** `tests/unit/ai/reply-guard.test.ts`, `tests/integration/messaging/{takeover-race,auto-send-audit}.test.ts`, `tests/integration/ai/auto-reply-guard.test.ts`.
+- **Amended by:** ADR-122: in AUTO, `service_faq` answers may come from the `conversation_reply` model task; every other intent keeps the fixed texts above.
 - **Reversibility:** 4.
 
 ### ADR-64 Admin inspector, fresh authentication, global pause, backup/restore and lead erasure (T24)
@@ -757,6 +761,7 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
   - **Nav:** "Inbox" (user, primary) and "Approvals" (employee, primary) appended to `panel-nav.ts`. Matrix fixtures `workspaceB.approvalId` and `inbox.unknownConversationId` appended.
 - **Why:** The plan fixes the screens, the boundary behaviour, the P15 transition and the test list, but T22 owns no service, route for quotes, or quote component path, and the existing services had no reject, queue read model, composer approval or manual-send operation.
 - **Covered by:** `tests/integration/inbox/inbox.test.ts`, `tests/integration/approvals/approval-queue.test.ts`, `tests/integration/quotes/manual-send.test.ts`, `tests/components/inbox/composer.test.tsx`, `tests/components/approvals/{approval-actions,quote-share-panel}.test.tsx`, `tests/e2e/inbox/{window-boundary,takeover}.spec.ts`, `tests/e2e/approvals/approve-send.spec.ts`, `tests/e2e/quotes/manual-share.spec.ts`, the tenant matrix (15 new manifest entries).
+- **Amended by:** ADR-121: the inbox and conversation routes also accept EMPLOYEE with a `workspaceSlug`.
 - **Reversibility:** 4.
 
 ### ADR-66 UI v2 "Aurora": colorful, animated, cinematic redesign (owner request, 2026-10-20)
@@ -871,6 +876,7 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Decision:** ADR-17 says "DEMO seeds approved and rejected templates". They are created by "Sync templates" on the WhatsApp setup page (`POST /api/app/integrations/whatsapp/templates/sync`, `services/integrations/templates.ts`): in DEMO the demo adapter plays WhatsApp Manager, creates the workspace's SIMULATED WhatsApp integration when absent (no routing key, the inbox simulator's shape) and every demo template that is absent (`quote_ready_v1` UTILITY APPROVED QUOTE_READY, `welcome_first_touch` MARKETING APPROVED FIRST_TOUCH, `call_back_ack` UTILITY APPROVED CALL_ACK, `festive_offer_blast` MARKETING REJECTED), with raw strings, positional variables and their sources; a stored template is never overwritten; audited `integration.templates.sync` (simulated). Afterwards the approval queue and the inbox composer offer WhatsApp sends (the gap progress.md recorded). LIVE needs a CONNECTED or DEGRADED WhatsApp integration and the live sync T32 registers (422 otherwise).
 - **Why:** The base seed is shared by the M3 tests and the T22 e2e, which assert the no-template state (`approval-queue.test.ts`, `inbox.test.ts`, `approve-send.spec.ts`), and several fixtures create the workspace's WhatsApp integration themselves (unique per workspace and kind). A sync on demand is also how templates arrive in LIVE, so DEMO shows the real flow.
 - **Covered by:** `tests/integration/integrations/templates.test.ts` (including the approval item offering WhatsApp after the sync), `tests/components/integrations/source-actions.test.tsx`.
+- **Amended by:** ADR-123 (authored templates) and ADR-126 (the presentation workspace seeds its templates).
 - **Reversibility:** 5.
 
 ### ADR-82 Pipeline editor mechanics (T28)
@@ -1216,3 +1222,136 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Why:** The owner asked for the product to present and run as a production product; a fresh install opened the demo with seeded sample businesses. The plan (ADR-04, E12) made DEMO the default, so this is a deviation.
 - **Covered by:** `tests/unit/config/env.test.ts`, `tests/unit/config/env-load.test.ts`, `tests/unit/landing/landing-page.test.ts`, `tests/unit/docs/docs-render.test.ts`, `tests/unit/docs/content.test.ts`.
 - **Reversibility:** 5 (defaults and copy only; DEMO is one env line away).
+
+### ADR-117 Spreadsheet module: XLSX on fflate and RFC 4180 CSV (owner request, 2026-10-23)
+- **Decision:**
+  - `src/lib/spreadsheet/` (`index.ts`, `types.ts`, `xlsx.ts`, commit 91f8bea) is the one place that reads and writes spreadsheets, framework-free and pure (bytes in, rows out; no I/O, no clock). `writeXlsx` writes one worksheet with every value an inline string or a number and a bold header row; text is never written as a formula, so a cell such as `=HYPERLINK(...)` stays text. The zip timestamp is fixed, so the output is deterministic.
+  - `readTable(bytes, fileName)` reads an upload: an `.xlsx` workbook when the bytes carry the zip signature (first sheet in workbook order; shared strings, inline strings, `str`, booleans and numbers; every value comes back as a string; formulas, formatting and Excel date serials are not interpreted), otherwise UTF-8 CSV through `parseCsv` (RFC 4180: comma separated, double-quote escaping, BOM tolerated, LF or CRLF). The apostrophe our own CSV export puts before formula characters is removed on the way in. Trailing empty rows and columns are trimmed.
+  - Limits (`SPREADSHEET_LIMITS`): 5 MB per file, 40 MB inflated per workbook part and in total (zip bomb guard), 10,000 rows, 64 columns. Failures are `SpreadsheetError` with the codes `NOT_A_WORKBOOK`, `TOO_LARGE`, `TOO_MANY_ROWS`, `MALFORMED_CSV`, `EMPTY_FILE`; the import routes (ADR-120) answer them as 422.
+  - New dependency `fflate@0.8.3`, pinned exactly (ADR-01).
+- **Why:** The owner asked for Excel import and "Download Excel" (ADR-118, ADR-120). The plan has no spreadsheet library.
+- **Alternatives:** `exceljs` (rejected: a large dependency tree for one sheet of strings); the npm `xlsx` package (rejected: the npm release carries an unpatched CVE and newer versions are published only outside npm).
+- **Covered by:** `tests/unit/lib/spreadsheet.test.ts`.
+- **Reversibility:** 4.
+
+### ADR-118 Lead Finder on Google Places API (New) (owner request, 2026-10-23; amends ADR-13's scope note)
+- **Decision:**
+  - **Provider.** A workspace searches Google Places with keywords x locations. LIVE calls Text Search, `POST https://places.googleapis.com/v1/places:searchText`, with `X-Goog-Api-Key` and a field mask of only `places.id`, `places.displayName`, `places.primaryTypeDisplayName`, `places.nationalPhoneNumber`, `places.internationalPhoneNumber`, `places.websiteUri`, `places.rating`, `places.userRatingCount`, `places.formattedAddress`, `places.addressComponents`, `places.googleMapsUri`, `places.attributions` and `nextPageToken`. Reviews and photos are never requested. One HTTP call per job; up to 3 pages of 20 results per query. The key is the workspace's own encrypted `GOOGLE_PLACES` integration credential (`apiKey`, T32 envelope). The extension bridge path of ADR-13 is unchanged; ADR-13's "D own extractor (scope change)" alternative is now taken for Places only, through Google's official API.
+  - **Google Maps Platform terms handling.** This reduces risk; it is not a licence, and the owner remains responsible for the Places API terms of their own key.
+    - (a) **24-hour working copy.** Finder results carry `contentExpiresAt` = fetch time + 24 h. `leadFinder.purge` nulls the Places content columns (name, category, phone, website, rating, review count, address, city, state, pincode, attributions) and keeps `placeId`, keyword, location, `websiteListed`, website-sourced emails and `importedLeadId`. Expired rows show "Details expired" and **Refresh** (Place Details by place ID with the same field mask; needs `finder.run` because it is a paid call). Latitude and longitude are never stored.
+    - (b) **Attribution.** LIVE shows "Google Maps" and the returned attributions wherever Places content appears (finder grid, run detail, lead fields that came from Places), plus the line "Results from Google Maps. Use is subject to the Google Maps Additional Terms of Service and the Google Privacy Policy." DEMO results are not Google content: they show the Simulated chip and no Google attribution.
+    - (c) **Export.** LIVE "Download Excel" contains the place ID, a Maps link built from the place ID, keyword, location, the workspace's own columns (imported, lead id, stage) and website-sourced emails only. DEMO exports the full simulated columns.
+    - (d) **Imported leads** keep `Lead.placeId`. Places-sourced fields (phone, rating, review count, address, pincode, category) carry `Lead.placesContentExpiresAt` = import time + 30 days; `leads.placesExpire` nulls them unless the contact was confirmed first-party (`Lead.contactConfirmedAt` / `contactConfirmedVia`: an inbound WhatsApp from the number, a recorded opt-in, an email match on the business's own website, or an audited operator "Confirm details").
+  - **DEMO** uses a deterministic simulated provider `demoPlace(seed, {keyword, location})` (new `src/lib/demo/places.ts`, slice F1) that echoes the keyword and location; every row is flagged `simulated`. DEMO makes zero outbound calls.
+  - **Email extraction** (opt-in per run). LIVE fetches the listed site's home page and at most two same-host contact pages through `safeFetch`, honours robots.txt, sends an identifying User-Agent, one request per host at a time, 8 s and 1 MB per page, at most 3 sites per job. It stores `{address, sourceUrl, kind: ROLE | PERSONAL | FREEMAIL}` and drops placeholders and the run's blacklist. DEMO addresses use the existing `@demo-leads.in` convention.
+  - **Lead source.** New `LeadSource GOOGLE_PLACES`; provider key `GOOGLE_PLACES:<placeId>`; phones dedupe across sources as today. Places leads get no WhatsApp consent (ADR-15 unchanged): they are reached by call, attested B2B email (ADR-14) or click-to-chat (ADR-125) until they engage. Scoring treats `GOOGLE_PLACES` like `GMAPS_EXTENSION` (a listing, no inbound action).
+  - **Not in the hourly health check:** a connection test is a paid call, so `GOOGLE_PLACES` is not added to the scheduled integration checks.
+  - **Capabilities of the suite.** `CAPABILITIES` grows from 15 to 20: `finder.run` (this ADR), `leads.import` and `consent.import` (ADR-120), `templates.manage` (ADR-123), `leads.handoff` (ADR-124). A workspace OWNER holds all of them; a MEMBER gains `leads.import` only; the seeded operator of the presentation workspace gets all except `consent.import` (ADR-126).
+  - **Schema (Foundation-A, migration `<ts>_lead_gen_suite`).** Tenant models `LeadFinderRun` (status `LeadFinderRunStatus`, `requestKey` unique per workspace, counts, `simulated`) and `LeadFinderResult` (composite foreign key to its run, Restrict; unique `(workspaceId, runId, placeId)`; filterable columns `hasPhone`, `websiteListed`, `emailCount`, `importedLeadId` (a plain column, no foreign key), `contentExpiresAt`), `IntegrationKind GOOGLE_PLACES` with its catalog entry (slug `google-places`, group sources) and field rules, and `Lead.placeId`, `placesContentExpiresAt`, `contactConfirmedAt`, `contactConfirmedVia`, `pincode`. `createdAt` on the new tables has no database default: services write the injected clock's time (as `SheetSyncRun` does).
+  - **Slice F1** owns the adapter (`src/server/adapters/places/**`), services, jobs (`leadFinder.search`, `leadFinder.emails`, `leadFinder.purge`, `leads.placesExpire`), routes and the finder page.
+- **Why:** The owner wants operators to find businesses on Google Maps inside the product. The Places API is the official route; scraping Maps pages or copying them into the database is what the Maps terms forbid.
+- **Alternatives:** scraping Google Maps (rejected: terms and ADR-13's reasons); keeping Places content indefinitely (rejected: the Maps terms grant no storage period beyond place IDs); fetching Places content only on view and storing nothing (the strictest option; rejected for now because the grid, filters and import need a working copy).
+- **Covered by:** `tests/unit/lib/domain-enums.test.ts`, `tests/unit/integrations/catalog.test.ts`, `tests/unit/scoring/score.test.ts`, `tests/integration/db/lead-gen-migration.test.ts`; slice F1 adds its contract, service, job, route and component tests under `tests/**/finder/**`.
+- **Reversibility:** 3 (tables), 4 (the rest).
+
+### ADR-119 `WebsiteStatus NOT_LISTED` (owner request, 2026-10-23; amends ADR-53)
+- **Decision:**
+  - New `WebsiteStatus NOT_LISTED`: the source says the listing has no website. Ingestion sets it only when the record says `websiteListed: false` and carries no URL (a Places result without `websiteUri` when `websiteUri` was in the field mask). Nothing else sets it: enrichment never sets it and is a no-op for it (there is no URL to check); a person's `VERIFIED_ABSENT` stays the stronger statement.
+  - It is a **known** scoring input (ADR-53 listed only REACHABLE and VERIFIED_ABSENT as known): with `websitePreference 'ABSENT'` it earns full website points like `VERIFIED_ABSENT` (label "No website listed"); with `'PRESENT'` (the default) it is a known 0.
+  - Label "No website listed", identical on screen (`WEBSITE_LABELS`) and in the CSV export (`WEBSITE_STATUS_CSV_LABELS`).
+- **Why:** The client sells websites: a business whose Maps listing has no website is exactly the lead it wants, and the listing saying so is evidence, unlike UNKNOWN.
+- **Covered by:** `tests/unit/scoring/score.test.ts`, `tests/components/leads/lead-detail-parts.test.tsx` (labels); slice B1 adds the ingestion and enrichment tests.
+- **Reversibility:** 4.
+
+### ADR-120 Lead import from Excel or CSV (owner request, 2026-10-23; amends ADR-15 for one source)
+- **Decision:**
+  - New `LeadSource FILE_IMPORT` and `ConsentSource FILE_IMPORT`; tenant model `LeadImport` (status `LeadImportStatus` PREVIEW, QUEUED, RUNNING, SUCCEEDED, FAILED, EXPIRED; `requestKey` unique per workspace; counts accepted, duplicates, review, rejected, consentRecorded; `rejections`; `dataSource ImportDataSource`; the consent notice text and its hash; `expiresAt`). `LeadExport.format` (`csv` default, or `xlsx`) lets the lead export write either format.
+  - **Upload.** Base64 in a JSON body (5 MB file; the route's `maxBodyBytes` about 7 MB), parsed by `readTable` (ADR-117); `SpreadsheetError` answers 422. Parsed rows are written to `STORAGE_DIR/imports/<workspaceId>/<importId>.json`, never to the database, and deleted on completion or by `leads.importPurge` at `expiresAt` (24 h). At most 2,000 rows per import. Rejections store the row number, a code and the field name only, never the cell values.
+  - **Mapping.** `IMPORT_MAPPABLE_FIELDS` (new `src/lib/schemas/lead-import.ts`, slice F2): name, phone, email, website, address, city, category, rating, reviewCount, pincode, consent, consentDate. Header synonyms suggest a mapping; the person confirms it on a preview (header and 20 rows).
+  - **Processing.** A `leads.import` job, 200 rows per chunk through `ingestBatch` (source FILE_IMPORT), so dedupe, merge review, scoring and pipeline pinning are the same as every other source.
+  - **Consent column (compliance rules).** A consent column is honoured only when all of these hold; otherwise it is ignored and no consent is recorded:
+    - the person holds `consent.import` (OWNER only: not in MEMBER's set, not given to seeded operators);
+    - `dataSource` is `OWN_CUSTOMERS` or `OWN_FORM_OR_EVENT` (`PUBLIC_DIRECTORY` and `THIRD_PARTY_LIST` ignore the column);
+    - a notice text is given that contains the workspace's business name and the word "WhatsApp" (stored verbatim with its hash);
+    - the attestation below is accepted;
+    - a consent-date column is mapped, and no consent date is in the future.
+
+    Then `captureIngestionConsent` records an OPT_IN MARKETING WhatsApp consent with evidence `{importId, row, attestedBy, noticeHash}`, but a FILE_IMPORT consent **never clears a suppression**: the capture passes a backfilled flag, `clearSuppressionForConsent` answers the new outcome `BACKFILLED_SOURCE`, audited `suppression.clear_refused`, and contacts with an active suppression get no consent and are counted `SUPPRESSED_CONTACT`. Attestation text: "I confirm that each row marked as consented is a person who, on the date given, agreed to receive WhatsApp messages from <business> about <purpose> after seeing the notice below; that <business> collected this list itself (it was not bought or scraped); and that I can produce the evidence on request. I understand this import will not re-subscribe anyone who has replied STOP."
+  - **Capabilities:** `leads.import` (OWNER and MEMBER) to import; `consent.import` (OWNER only) for the consent column.
+  - **Slice F2** owns the services, jobs (`leads.import`, `leads.importPurge`), routes, pages, the sample workbook and the export format; Foundation-A added the enums, the `LeadImport` table and `LeadExport.format`.
+- **Why:** Operators already hold lists in Excel. ADR-15 lets consent arrive only through mapped Sheets or Meta forms; a file is weaker evidence (the uploader controls every cell), so consent from it needs a named data source, an owner's attestation and the rule that it never re-subscribes anyone who said Stop (DPDP s.6(10): the business must be able to prove notice and consent).
+- **Alternatives:** no consent from files at all (kept as the default: without `consent.import` and the attestation the column is ignored); rows stored in the database (rejected: data minimization, and a preview needs only 20 rows).
+- **Covered by:** `tests/integration/db/lead-gen-migration.test.ts` (`LeadExport.format` default); slice F2 adds the upload, mapping, job, purge, consent and export tests.
+- **Reversibility:** 3 (table), 4 (the rest).
+
+### ADR-121 Operator inbox and WhatsApp-style chat (owner request, 2026-10-23; amends ADR-65)
+- **Decision:**
+  - Inbox pages in both panels: `/dashboard/user/inbox` (as today) and `/dashboard/employee/<ws>/inbox`. The routes `/api/app/messages`, `/api/app/messages/drafts` and `/api/app/conversations/[conversationId]/{mode,takeover,resume}` accept USER and EMPLOYEE with an optional `workspaceSlug` resolved through `consoleContext` (ADR-58); capabilities are checked in the services, as before. ADR-65's "inbox and conversation routes are USER only" no longer holds.
+  - **Look.** WhatsApp-like thread list and conversation (bubbles, ticks, window countdown, a template-only composer when the 24-hour window is closed) from new `--chat-*` tokens (wallpaper, incoming, outgoing, accent, tick-read, meta text) with contrast tests. Ticks always keep a text label (status is icon plus label).
+  - **DEMO ticks.** A DEMO send is settled as today; a one-line hook after the DEMO settle enqueues a `wa.demoStatus` job that writes simulated delivered and read statuses for the workspace's own sends, labelled simulated. LIVE statuses come only from Meta's webhooks.
+  - **Automatic replies control.** It is the existing `WorkspaceSettings.autoSendEnabled` setting (`setWorkspaceAutoSend`, capability `automation.manage`), labelled truthfully "Automatic sending: AI replies and automated pipeline sends", because the same switch also gates pipeline POLICY_AUTO deliveries.
+  - `Conversation.escalatedAt` (Foundation-A) records when an automated thread needs a person while staying AUTO (ADR-122); it feeds "Needs you".
+  - **Slice F3** owns the inbox components, pages, the widened routes, `wa.demoStatus` and the settle hook.
+- **Why:** The operator who finds and messages a lead must be able to chat with it; today only the client panel has an inbox.
+- **Covered by:** `tests/integration/db/lead-gen-migration.test.ts` (`escalatedAt` column); slice F3 adds the route matrix entries, inbox and component tests.
+- **Reversibility:** 4.
+
+### ADR-122 AI replies inside the 24-hour window (owner request, 2026-10-23; amends ADR-63)
+- **Decision:**
+  - In AUTO, `classifyReplyIntent` (reply guard) stays the pre-gate. **Only `service_faq`** goes to a new model task `conversation_reply`: workspace catalog facts only, the last 12 messages passed as untrusted data, strict JSON `{reply, intent, escalate}`, the T14 output policy. If the model reports an intent other than `service_faq`, or `escalate: true`, the fixed `FIXED_REPLIES.handoff` is sent instead.
+  - `out_of_scope`, complaint, human_request and stop keep ADR-63's fixed deflection and escalation; the model is never called for them. `quote_request` and `call_request` keep their fixed acknowledgements and set `Conversation.escalatedAt` (feeds "Needs you") while the thread stays AUTO.
+  - **Disclosure.** The first automated reply in each window starts with "<Business>'s automated assistant. Reply HUMAN to talk to a person." ("human" already matches the reply guard's HUMAN rule.)
+  - **Limits.** Replies only inside the 24-hour window; at most 4 consecutive automated replies, then the thread escalates.
+  - **Providers.** LIVE with a workspace AI integration uses it; LIVE without one keeps the reply guard's fixed texts (label `reply-guard`), never a silent model fallback (ADR-18). DEMO uses `local-deterministic` (keyword-aware over the catalog, labelled "Local template").
+  - `reply.auto` becomes job kind `ai`: it reads and calls the model outside the transaction, then re-checks aiMode, humanTakeover, `Lead.handedOverAt`, the window, consent and that its message is still the latest inbound, and queues the reply in the fenced final transaction (no provider call inside a transaction, ADR-60).
+  - This supersedes the note in `src/server/services/ai/reply-guard.ts` that the guard "never asks a model" for FAQ answers. Meta's 2026 terms forbid general-purpose assistants on WhatsApp, which is why every other intent stays fixed.
+  - **Slice F3** owns `conversation-reply`, the reply job and their tests.
+- **Why:** The owner wants AI to answer service questions in the chat; the compliance review limits that to catalog answers with escalation for everything else.
+- **Covered by:** slice F3 adds the contract tests (scripted AI port; `out_of_scope` never calls the port), the DEMO local branch tests and the reply job tests.
+- **Reversibility:** 4.
+
+### ADR-123 Template studio: authoring and submitting WhatsApp templates (owner request, 2026-10-23; amends ADR-17 and ADR-81)
+- **Decision:**
+  - `WhatsAppTemplate` gains `origin` (`TemplateOrigin` SYNCED, the default for every existing row, or AUTHORED), `providerTemplateId`, `rejectedReason`, `submittedBy`, `submittedAt`, `headerMediaId` (composite foreign key to the new tenant model `MediaAsset`, Restrict), `copyGeneratorLabel` and `utilityTrigger`; `syncedAt` becomes nullable and an unsynced template reads "Not synced yet". `status` stays a raw provider string; a local draft uses `DRAFT` (never sendable) and a submission in flight `SUBMITTING`.
+  - **Category first.** The person chooses the category before generating; the `template_copy` AI task receives it and cannot change it. UTILITY requires a "sent when" trigger (`utilityTrigger`: the customer asked in the thread, a meeting was booked, a quote was issued) and shows a warning for promotional words (offer, discount, free, % off, brochure, launch). MARKETING templates get a STOP quick-reply button by default, mapped to the existing STOP payload. A brochure is MARKETING; a brochure the lead asks for inside the window goes as a free-form document reply (ADR-97), not a template.
+  - **Header** NONE, TEXT or DOCUMENT (a PDF brochure `MediaAsset`, 5 MB). IMAGE headers are deferred.
+  - **LIVE submit** runs as a `wa.templateSubmit` job: SUBMITTING, then a resumable upload (WHATSAPP_CLOUD config `appId`) for a document header, then `POST /<wabaId>/message_templates`, then PENDING with the provider id. A timeout is resolved by a sync by name and language, never by a blind retry. A `wa.templateSync` keyed `wa.templateSync:<integrationId>:submit:<templateId>` follows at least 60 s later. Sync matches authored rows by name and language and never counts DRAFT or SUBMITTING rows as missing.
+  - **DEMO submit**: PENDING, then a `wa.templateReview` job after 30 s approves it (or rejects a name containing `reject`, with a reason), labelled Simulated.
+  - **Sending.** With `headerMediaId` set the MediaAsset is the document header (LIVE uploads it per send to `/<phoneNumberId>/media`, as the quote PDF path does today); otherwise DOCUMENT still means the quote PDF. Template-admin calls live on a new port `src/server/adapters/whatsapp/template-admin.ts` (plus `template-admin-demo.ts`), not on `WhatsAppTransport`.
+  - **Consent unchanged:** every template category needs OPT_IN + MARKETING. Per-lead variables come from `resolveLeadTemplateVariables` (sources `lead.firstName`, `lead.displayName`, `lead.city`, `lead.category`, `workspace.name`) in bulk sends and the composer.
+  - Capability `templates.manage`. The WHATSAPP_CLOUD catalog prerequisite no longer says templates are "never written here".
+  - **Slice F4** owns the authoring and media services, the template-admin port, the submit and review jobs, routes and pages; Foundation-A added the columns, `MediaAsset`, `TemplateOrigin`, `MediaAssetKind` and the optional `appId` config field.
+- **Why:** The owner asked to create and get templates approved from the product. ADR-17 kept authoring in WhatsApp Manager under HOLD SCOPE; the scope changed.
+- **Covered by:** `tests/integration/db/lead-gen-migration.test.ts` (existing templates become `origin SYNCED`, `Message.templateId` survives the table rebuild), `tests/unit/integrations/catalog.test.ts`; slice F4 adds the authoring, Graph contract (scripted), DEMO review and sending tests.
+- **Reversibility:** 3 (columns), 4 (the rest).
+
+### ADR-124 Lead handoff to the client (owner request, 2026-10-23)
+- **Decision:**
+  - Capability `leads.handoff`; tenant model `LeadHandoff` (one per lead: unique `(workspaceId, leadId)`, composite foreign key to Lead, Restrict; `status` `HandoffStatus` HANDED_OVER or ACKNOWLEDGED; note, AI summary with `summaryGeneratorLabel` and `summaryStatus`) and `Lead.handedOverAt` (indexed).
+  - `handOverLead` runs in one transaction: stage CAS on `stageVersion` (to CONVERTED unless the lead is already later), every open conversation set to `aiMode OFF` with `humanTakeover` under a `modeVersion` CAS, the lead's PENDING outbound approvals invalidated, its open pipeline execution halted, the LeadHandoff row, and a PII-free `lead.handoff` audit. A second handoff of the same lead is 409.
+  - The `handoff.summary` job (kind ai) writes the summary: DEMO local, LIVE the workspace AI integration, or `summaryStatus NOT_CONFIGURED` without one.
+  - **Client side:** a command-center count, a `handedOver` leads filter, an inbox filter with a badge and a timeline event, and Acknowledge.
+  - **Guard.** `assertNotHandedOver` refuses EMPLOYEE actors with 409 `HANDED_OVER` at `queueOutboundMessage` and at conversation mode changes. It is not an eligibility reason code (the eligibility table and the documentation's reason list stay as they are).
+  - Slice B1 adds the guard (`src/server/services/leads/handoff-guard.ts`); slice F5 owns the handoff service, routes, summary job and client surfaces.
+- **Why:** The owner's story ends with the operator passing a converted lead to the client, who closes the deal through the existing quote flow; after that the operator and the AI must stop messaging the lead.
+- **Covered by:** `tests/integration/db/lead-gen-migration.test.ts` (schema); slice F5 adds the atomicity (a CAS conflict writes nothing), second-handoff 409, guard and summary tests.
+- **Reversibility:** 3 (table), 4 (the rest).
+
+### ADR-125 Reach-out panel: recorded opt-in and click-to-chat (owner request, 2026-10-23)
+- **Decision:**
+  - `WorkspaceSettings.whatsappOptInNotice` and `privacyContact` (Foundation-A). Recording a WhatsApp MARKETING opt-in requires the notice text (prefilled from the setting; it must contain the business name) and `evidence.method`, one of CALL_VERBAL, WRITTEN_FORM, WEBSITE_FORM, IN_PERSON, WHATSAPP_THREAD.
+  - **Click-to-chat link** `https://wa.me/<displayPhoneNumber digits>?text=<prefill>`, from the new optional WHATSAPP_CLOUD config field `displayPhoneNumber` (E.164). A prefill that folds to a START or STOP keyword is refused. The link is presented for the business's own channels (email signature, website, visiting card): the lead starts the conversation, which opens the service window (ADR-15 inbound consent) without a marketing opt-in.
+  - **Slice F5** owns the panel, the settings route and the opt-in recording changes.
+- **Why:** Places and plain-import leads have no WhatsApp opt-in, so the story needs a lawful way to start a chat: the business's own published link, or a recorded opt-in with its notice and how it was obtained (Meta requires an opt-in naming the business; DPDP s.5 and s.6 require notice and provable consent).
+- **Covered by:** `tests/integration/db/lead-gen-migration.test.ts` (columns), `tests/unit/integrations/catalog.test.ts` (config field); slice F5 adds the notice, method and keyword-prefill tests.
+- **Reversibility:** 4.
+
+### ADR-126 Presentation seed for DEMO (owner request, 2026-10-23; amends ADR-81)
+- **Decision:**
+  - A sixth DEMO workspace `codecraft-web` (Codecraft Web Studio, Indore) and a fourth DEMO persona `client` (Aarav Mehta, OWNER of codecraft-web), so the client panel of the handoff story is reachable from the role switcher. The operator persona is assigned there with every operator capability except `consent.import`.
+  - Its own scoring version (`websitePreference 'ABSENT'`, web-development target categories); a SIMULATED WHATSAPP_CLOUD integration with seeded web-development templates (approved, pending, and rejected with a reason), which ADR-81 kept out of the base seed; a finished simulated finder run; leads; open-window conversations; one handed-over lead.
+  - The existing workspaces and the tenant-matrix fixtures do not change. Every new seeded time column is in `REBASE_COLUMNS`, so `npm run demo:refresh` keeps windows and expiries current; seeded JSON carries no timestamps.
+  - **Slice F6** owns the seed, the persona and the presentation copy.
+- **Why:** The presentation needs a web-development client with data in every step of the story, without changing the fixtures the existing tests rely on.
+- **Covered by:** slice F6 updates `tests/integration/seed/determinism.test.ts`, `tests/integration/auth/demo-isolation.test.ts` and `tests/unit/arch/live-bundle.test.ts`.
+- **Reversibility:** 5 (DEMO data only).

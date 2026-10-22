@@ -27,6 +27,8 @@ describe('domain enums', () => {
     const fromSchema = prismaEnums();
     const shared = [...fromSchema.keys()].filter((name) => name in enums);
     expect(shared).toEqual(expect.arrayContaining(['AppMode', 'JobStatus', 'JobAttemptOutcome']));
+    // The lead-gen suite's enums (ADR-118 .. ADR-124) are mirrored too.
+    expect(shared).toEqual(expect.arrayContaining(['LeadFinderRunStatus', 'LeadImportStatus', 'ImportDataSource', 'HandoffStatus', 'TemplateOrigin', 'MediaAssetKind']));
     for (const name of shared) {
       expect((enums as Record<string, unknown>)[name], name).toEqual(fromSchema.get(name));
     }
@@ -49,12 +51,22 @@ describe('domain enums', () => {
     expect(enums.DispatchState).toEqual(['QUEUED', 'SENDING', 'SENT', 'FAILED', 'SKIPPED', 'AMBIGUOUS', 'CANCELLED']);
   });
 
-  it('lists the fifteen capabilities of plan §5.2', () => {
+  it('carry the lead-gen values (ADR-118 .. ADR-120)', () => {
+    expect(enums.LeadSource).toEqual(expect.arrayContaining(['GOOGLE_PLACES', 'FILE_IMPORT']));
+    expect(enums.WebsiteStatus).toContain('NOT_LISTED');
+    expect(enums.IntegrationKind).toContain('GOOGLE_PLACES');
+    expect(enums.ConsentSource).toContain('FILE_IMPORT');
+    expect(enums.ImportDataSource).toEqual(['OWN_CUSTOMERS', 'OWN_FORM_OR_EVENT', 'PUBLIC_DIRECTORY', 'THIRD_PARTY_LIST']);
+  });
+
+  it('lists the fifteen capabilities of plan §5.2 and the five of the lead-gen suite (ADR-118)', () => {
     expect(CAPABILITIES).toEqual([
       'leads.read', 'leads.write', 'leads.export', 'drafts.generate', 'quotes.edit', 'pricing.override', 'approvals.decide',
       'dispatch.send', 'automation.manage', 'integrations.manage', 'campaigns.control', 'extension.manage', 'sheets.manage',
       'scoring.manage', 'pipeline.manage',
+      'finder.run', 'leads.import', 'consent.import', 'templates.manage', 'leads.handoff',
     ]);
+    expect(CAPABILITIES).toHaveLength(20);
     expect(isCapability('leads.read')).toBe(true);
     expect(isCapability('leads.delete')).toBe(false);
     expect(isCapability(42)).toBe(false);

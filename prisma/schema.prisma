@@ -69,6 +69,10 @@ enum LeadSource {
   WHATSAPP_INBOUND
   EMAIL_INBOUND
   MANUAL
+  /// Lead Finder (ADR-118): a Google Places search result imported by an operator.
+  GOOGLE_PLACES
+  /// An uploaded Excel or CSV file (ADR-120).
+  FILE_IMPORT
 }
 
 enum WebsiteStatus {
@@ -78,6 +82,8 @@ enum WebsiteStatus {
   UNREACHABLE
   BLOCKED
   VERIFIED_ABSENT
+  /// The source says the listing has no website (ADR-119); set by ingestion only.
+  NOT_LISTED
 }
 
 enum SourceRecordStatus {
@@ -132,6 +138,8 @@ enum ConsentSource {
   START_KEYWORD
   MANUAL_EVIDENCE
   EMPLOYEE_ATTESTATION
+  /// An attested consent column of a file import (ADR-120); never clears a suppression.
+  FILE_IMPORT
 }
 
 enum SuppressionReason {
@@ -264,6 +272,8 @@ enum IntegrationKind {
   GOOGLE_SHEETS
   AI_ANTHROPIC
   AI_OPENAI
+  /// Google Places API (New) for the Lead Finder (ADR-118).
+  GOOGLE_PLACES
 }
 
 enum IntegrationStatus {
@@ -429,6 +439,11 @@ model Workspace {
   bulkRuns               BulkRun[]
   leadExports            LeadExport[]
   metaLeadBackfills      MetaLeadBackfill[]
+  leadFinderRuns         LeadFinderRun[]
+  leadFinderResults      LeadFinderResult[]
+  leadImports            LeadImport[]
+  leadHandoffs           LeadHandoff[]
+  mediaAssets            MediaAsset[]
 }
 
 model WorkspaceSettings {
@@ -453,6 +468,10 @@ model WorkspaceSettings {
   internalEmailDailyCap      Int?
   /// Fixed INR.
   currencyDisplay            String    @default("INR")
+  /// ADR-125: the WhatsApp opt-in notice prefilled when a person records an opt-in; names the business.
+  whatsappOptInNotice        String?
+  /// ADR-125: who to contact about personal data (shown with the opt-in notice).
+  privacyContact             String?
   updatedAt                  DateTime  @updatedAt
   updatedBy                  String?
 }
@@ -613,6 +632,19 @@ model Lead {
   pipelineConfigVersion   PipelineConfigVersion? @relation(fields: [workspaceId, pipelineConfigVersionId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
   firstSource             LeadSource
   simulated               Boolean                @default(false)
+  /// Postal code (ADR-118, ADR-120).
+  pincode                 String?
+  /// Google Places place ID (ADR-118): may be kept indefinitely; the Maps link is built from it.
+  placeId                 String?
+  /// ADR-118 (d): Places-sourced fields are nulled by `leads.placesExpire` after this time unless
+  /// the contact was confirmed first-party (contactConfirmedAt).
+  placesContentExpiresAt  DateTime?
+  contactConfirmedAt      DateTime?
+  /// How the contact became first-party data (ADR-118 (d)): an inbound WhatsApp, a recorded
+  /// opt-in, a match on the business's own website, or an operator's audited confirmation.
+  contactConfirmedVia     String?
+  /// Set when the lead was handed over to the client (ADR-124).
+  handedOverAt            DateTime?
   mergedIntoLeadId        String?
   mergedInto              Lead?                  @relation("LeadMerge", fields: [workspaceId, mergedIntoLeadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
   mergedFrom              Lead[]                 @relation("LeadMerge")
@@ -627,6 +659,7 @@ model Lead {
   callRequests       CallRequest[]
   pipelineExecutions PipelineExecution[]
   aiDrafts           AiDraft[]
+  handoff            LeadHandoff?
 
   @@unique([workspaceId, id])
   @@index([workspaceId, salesStage, createdAt])
@@ -635,6 +668,9 @@ model Lead {
   @@index([workspaceId, phoneE164])
   @@index([workspaceId, emailNormalized])
   @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, handedOverAt])
+  @@index([workspaceId, placeId])
+  @@index([workspaceId, placesContentExpiresAt])
 }
 
 model LeadContactKey {
@@ -1089,6 +1125,8 @@ model Conversation {
   /// Null while the conversation is open; the partial unique allows one open conversation per
   /// lead and channel (ADR-47).
   closedAt                DateTime?
+  /// ADR-121/122: an automated thread that needs a person while it stays AUTO (feeds Needs you).
+  escalatedAt             DateTime?
   createdAt               DateTime           @default(now())
 
   messages     Message[]
@@ -1219,22 +1257,36 @@ model CallRequest {
 }
 
 model WhatsAppTemplate {
-  id              String          @id @default(cuid(2))
-  workspaceId     String
-  integrationId   String
-  integration     Integration     @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
-  name            String
-  language        String
+  id                 String          @id @default(cuid(2))
+  workspaceId        String
+  integrationId      String
+  integration        Integration     @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  name               String
+  language           String
   /// Raw provider string, never an enum (12.3).
-  category        String
+  category           String
   /// Raw provider string, never an enum (12.3).
-  status          String
-  components      Json
-  variableSchema  Json
-  intent          TemplateIntent?
-  variableMap     Json
-  categoryHistory Json
-  syncedAt        DateTime
+  status             String
+  components         Json
+  variableSchema     Json
+  intent             TemplateIntent?
+  variableMap        Json
+  categoryHistory    Json
+  /// Null for an authored template that was never synced ("Not synced yet", ADR-123).
+  syncedAt           DateTime?
+  /// ADR-123: SYNCED from WhatsApp Manager, or AUTHORED in the template studio.
+  origin             TemplateOrigin  @default(SYNCED)
+  providerTemplateId String?
+  rejectedReason     String?
+  submittedBy        String?
+  submittedAt        DateTime?
+  /// A PDF brochure used as the DOCUMENT header (ADR-123); null means a DOCUMENT header carries the quote PDF.
+  headerMediaId      String?
+  headerMedia        MediaAsset?     @relation(fields: [workspaceId, headerMediaId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Generator of the body copy when AI wrote it (anthropic, openai, local-deterministic).
+  copyGeneratorLabel String?
+  /// UTILITY only: when the template is sent (ADR-123).
+  utilityTrigger     String?
 
   messages Message[]
 
@@ -1711,6 +1763,8 @@ model LeadExport {
   purgedAt         DateTime?
   downloadCount    Int              @default(0)
   lastDownloadedAt DateTime?
+  /// csv or xlsx (ADR-120).
+  format           String           @default("csv")
 
   @@unique([workspaceId, id])
   @@unique([workspaceId, requestKey])
@@ -1813,4 +1867,229 @@ model SheetSyncRun {
   @@unique([workspaceId, id])
   @@unique([integrationId], map: "SheetSyncRun_one_open_per_integration", where: raw("\"status\" IN ('QUEUED', 'RUNNING')"))
   @@index([workspaceId, integrationId, createdAt])
+}
+
+// ---- Lead-gen suite (ADR-118 .. ADR-126) ---------------------------------------------------------
+
+/// LeadFinderRun.status: QUEUED until the first `leadFinder.search` job starts, RUNNING while
+/// keyword x location cells are searched, then SUCCEEDED, PARTIAL (some cells failed), FAILED or
+/// CANCELLED.
+enum LeadFinderRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+/// LeadImport.status: PREVIEW after the upload (rows parked in a storage file), QUEUED once the
+/// mapping is confirmed, RUNNING while `leads.import` ingests, SUCCEEDED or FAILED when it
+/// settles, EXPIRED when `leads.importPurge` removed an unconfirmed preview.
+enum LeadImportStatus {
+  PREVIEW
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+}
+
+/// Where an imported list came from (ADR-120). A consent column is honoured only for the
+/// business's own lists (OWN_CUSTOMERS, OWN_FORM_OR_EVENT).
+enum ImportDataSource {
+  OWN_CUSTOMERS
+  OWN_FORM_OR_EVENT
+  PUBLIC_DIRECTORY
+  THIRD_PARTY_LIST
+}
+
+enum HandoffStatus {
+  HANDED_OVER
+  ACKNOWLEDGED
+}
+
+/// WhatsAppTemplate.origin (ADR-123).
+enum TemplateOrigin {
+  SYNCED
+  AUTHORED
+}
+
+enum MediaAssetKind {
+  IMAGE
+  DOCUMENT
+}
+
+/// One Lead Finder search (ADR-118): keywords x locations against Google Places (LIVE) or the
+/// deterministic simulated provider (DEMO, `simulated`). Progress is counted in cells (one
+/// keyword x location pair each).
+model LeadFinderRun {
+  id             String              @id @default(cuid(2))
+  workspaceId    String
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// Client idempotency key: a repeated request (double click, retry) returns the same run.
+  requestKey     String
+  /// userId of the person who started the run.
+  requestedBy    String
+  /// string[]: the search keywords, in the order given.
+  keywords       Json
+  /// string[]: the locations, in the order given.
+  locations      Json
+  /// Results requested per keyword x location cell (20, 40 or 60).
+  maxPerQuery    Int
+  /// Opt-in website email extraction for this run.
+  extractEmails  Boolean             @default(false)
+  /// string[]: addresses or domains never stored for this run.
+  emailBlacklist Json
+  status         LeadFinderRunStatus @default(QUEUED)
+  cellsTotal     Int                 @default(0)
+  cellsDone      Int                 @default(0)
+  resultsFound   Int                 @default(0)
+  emailsFound    Int                 @default(0)
+  simulated      Boolean             @default(false)
+  errorCode      String?
+  createdAt      DateTime
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  cancelledAt    DateTime?
+
+  results LeadFinderResult[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, requestKey])
+  @@index([workspaceId, createdAt])
+}
+
+/// One place found by a run (ADR-118). The Places content columns (name .. attributions) are a
+/// 24-hour working copy: `leadFinder.purge` nulls them after `contentExpiresAt` and keeps placeId,
+/// keyword, location, websiteListed, the website-sourced emails and importedLeadId. Filters use
+/// the real columns (hasPhone, websiteListed, emailCount, importedLeadId), never JSON.
+model LeadFinderResult {
+  id               String        @id @default(cuid(2))
+  workspaceId      String
+  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  runId            String
+  run              LeadFinderRun @relation(fields: [workspaceId, runId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  placeId          String
+  keyword          String
+  location         String
+  name             String?
+  category         String?
+  phoneRaw         String?
+  hasPhone         Boolean
+  website          String?
+  /// False when the source says the listing has no website (ADR-119); kept after the purge.
+  websiteListed    Boolean
+  /// Rating x10 (4.5 stars is 45).
+  ratingX10        Int?
+  reviewCount      Int?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  /// The provider attributions returned with the place, shown with its content (LIVE).
+  attributions     Json?
+  /// [{ address, sourceUrl, kind: ROLE | PERSONAL | FREEMAIL }] found on the listed website.
+  emails           Json
+  emailCount       Int           @default(0)
+  emailStatus      String
+  simulated        Boolean       @default(false)
+  contentExpiresAt DateTime?
+  /// The lead this place was imported as (a plain column, no foreign key; erasure nulls it).
+  importedLeadId   String?
+  importedAt       DateTime?
+  createdAt        DateTime
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, runId, placeId])
+  @@index([workspaceId, runId])
+  @@index([workspaceId, importedLeadId])
+  @@index([workspaceId, contentExpiresAt])
+}
+
+/// One Excel or CSV upload (ADR-120). Parsed rows live in a storage file (`storagePath`, relative
+/// to STORAGE_DIR), never in the database; `rejections` holds { row, code, field? } only.
+model LeadImport {
+  id                String            @id @default(cuid(2))
+  workspaceId       String
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  /// Client idempotency key: a repeated upload request returns the same import.
+  requestKey        String
+  requestedBy       String
+  fileName          String
+  sheetName         String
+  sha256            String
+  rowCount          Int
+  /// string[]: the header row as read.
+  header            Json
+  /// The confirmed column mapping (field to column).
+  mapping           Json?
+  dataSource        ImportDataSource?
+  consentAttested   Boolean           @default(false)
+  consentAttestedBy String?
+  consentNoticeText String?
+  consentNoticeHash String?
+  status            LeadImportStatus  @default(PREVIEW)
+  accepted          Int               @default(0)
+  duplicates        Int               @default(0)
+  review            Int               @default(0)
+  rejected          Int               @default(0)
+  consentRecorded   Int               @default(0)
+  rejections        Json
+  storagePath       String?
+  createdAt         DateTime
+  expiresAt         DateTime
+  finishedAt        DateTime?
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, requestKey])
+  @@index([workspaceId, createdAt])
+}
+
+/// A lead handed over to the client (ADR-124): one per lead.
+model LeadHandoff {
+  id                    String        @id @default(cuid(2))
+  workspaceId           String
+  workspace             Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  leadId                String
+  lead                  Lead          @relation(fields: [workspaceId, leadId], references: [workspaceId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// userId of the operator who handed the lead over.
+  fromUserId            String
+  note                  String?
+  summary               String?
+  summaryGeneratorLabel String?
+  /// READY, PENDING, NOT_CONFIGURED or FAILED.
+  summaryStatus         String
+  status                HandoffStatus @default(HANDED_OVER)
+  acknowledgedBy        String?
+  acknowledgedAt        DateTime?
+  createdAt             DateTime
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, leadId])
+  @@index([workspaceId, status, createdAt])
+}
+
+/// An uploaded file used in messages (ADR-123), such as a PDF brochure template header. The
+/// bytes live at `storagePath` (relative to STORAGE_DIR); `providerHandle` is the provider's
+/// upload handle, obtained at `providerHandleAt`.
+model MediaAsset {
+  id               String         @id @default(cuid(2))
+  workspaceId      String
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  kind             MediaAssetKind
+  fileName         String
+  mimeType         String
+  byteSize         Int
+  sha256           String
+  storagePath      String
+  uploadedBy       String
+  providerHandle   String?
+  providerHandleAt DateTime?
+  createdAt        DateTime
+
+  templates WhatsAppTemplate[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, createdAt])
 }

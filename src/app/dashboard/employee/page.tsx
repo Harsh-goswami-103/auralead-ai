@@ -51,6 +51,11 @@ const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
   'sheets.manage': 'Manage Google Sheets',
   'scoring.manage': 'Manage scoring',
   'pipeline.manage': 'Manage the pipeline',
+  'finder.run': 'Run the lead finder',
+  'leads.import': 'Import lead files',
+  'consent.import': 'Import consent from files',
+  'templates.manage': 'Manage WhatsApp templates',
+  'leads.handoff': 'Hand leads over to the client',
 };
 
 /**
@@ -58,9 +63,9 @@ const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
  * order); the area name is always written, so the hue is never the only cue.
  */
 const CAPABILITY_AREAS: ReadonlyArray<{ key: string; label: string; icon: LucideIcon; chip: string; prefixes: readonly string[] }> = [
-  { key: 'leads', label: 'Leads', icon: Users, chip: 'bg-chart-1/16 text-chart-1-hi ring-chart-1-hi/30', prefixes: ['leads.'] },
+  { key: 'leads', label: 'Leads', icon: Users, chip: 'bg-chart-1/16 text-chart-1-hi ring-chart-1-hi/30', prefixes: ['leads.', 'finder.', 'consent.'] },
   { key: 'quotes', label: 'Quotations', icon: FileText, chip: 'bg-chart-2/18 text-chart-2-hi ring-chart-2-hi/30', prefixes: ['quotes.', 'pricing.', 'approvals.'] },
-  { key: 'messages', label: 'Messages', icon: MessagesSquare, chip: 'bg-chart-3/16 text-chart-3-hi ring-chart-3-hi/30', prefixes: ['drafts.', 'dispatch.', 'campaigns.'] },
+  { key: 'messages', label: 'Messages', icon: MessagesSquare, chip: 'bg-chart-3/16 text-chart-3-hi ring-chart-3-hi/30', prefixes: ['drafts.', 'dispatch.', 'campaigns.', 'templates.'] },
   { key: 'sources', label: 'Sources', icon: Plug, chip: 'bg-chart-4/18 text-chart-4-hi ring-chart-4-hi/30', prefixes: ['integrations.', 'sheets.', 'extension.'] },
   { key: 'setup', label: 'Setup', icon: Settings2, chip: 'bg-bg-3 text-fg-2 ring-border-strong', prefixes: [] },
 ];

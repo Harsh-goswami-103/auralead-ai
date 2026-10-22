@@ -31,10 +31,15 @@ export async function removeDir(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
-/** Runs `prisma migrate deploy` against `url` in a child process; throws with its output on failure. */
-export function migrateDeploy(url: string): Promise<void> {
+/**
+ * Runs `prisma migrate deploy` against `url` in a child process; throws with its output on failure.
+ * `configPath` points the CLI at another Prisma config (for example one whose migrations directory
+ * stops before a migration under test); without it the repository's prisma.config.ts applies.
+ */
+export function migrateDeploy(url: string, options: { configPath?: string } = {}): Promise<void> {
+  const args = [PRISMA_CLI, 'migrate', 'deploy', ...(options.configPath ? ['--config', options.configPath] : [])];
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [PRISMA_CLI, 'migrate', 'deploy'], {
+    const child = spawn(process.execPath, args, {
       cwd: REPO_ROOT,
       env: { ...process.env, DATABASE_URL: url, PRISMA_HIDE_UPDATE_MESSAGE: '1', CHECKPOINT_DISABLE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],

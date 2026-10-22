@@ -96,6 +96,8 @@ export const WEBSITE_LABELS: Readonly<Record<string, string>> = {
   UNREACHABLE: 'Unreachable',
   BLOCKED: 'Blocked by the safety check',
   VERIFIED_ABSENT: 'No website',
+  /** ADR-119: the source listing has no website (equal to the CSV label). */
+  NOT_LISTED: 'No website listed',
 };
 
 /** AiDraft.trigger. */

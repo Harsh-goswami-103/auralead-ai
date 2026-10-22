@@ -2,6 +2,7 @@
 // versioned ScoringConfigVersion. Every point is explained by a reason, unknown inputs contribute
 // 0 and are listed separately, and the caption says what the number is not.
 import { describe, expect, it } from 'vitest';
+import { LeadSource, WebsiteStatus } from '@/lib/domain/enums';
 import { SCORE_CAPTION, SCORE_INPUTS, parseScoringConfig, scoringConfigSchema, type ScoringConfig } from '@/lib/schemas/scoring';
 import { scoreLead, type ScoreInput } from '@/server/services/scoring/score';
 import { SCORING_V1 } from '../../../prisma/seed/fixtures/configs';
@@ -88,17 +89,50 @@ describe('scoreLead', () => {
     expect(result.score).toBe(15);
   });
 
-  it('treats only REACHABLE and VERIFIED_ABSENT as known website states', () => {
-    const statuses = ['UNKNOWN', 'PRESENT_UNVERIFIED', 'REACHABLE', 'UNREACHABLE', 'BLOCKED', 'VERIFIED_ABSENT'] as const;
-    const known = statuses.filter((s) => scoreLead({ ...BARE, websiteStatus: s }, V1).reasons.some((r) => r.input === 'websiteStatus'));
-    expect(known).toEqual(['REACHABLE', 'VERIFIED_ABSENT']);
-    const pts = (s: (typeof statuses)[number], cfg = V1) => scoreLead({ ...BARE, websiteStatus: s }, cfg).reasons.find((r) => r.input === 'websiteStatus')!.points;
+  it('treats only REACHABLE, VERIFIED_ABSENT and NOT_LISTED as known website states', () => {
+    const known = WebsiteStatus.filter((s) => scoreLead({ ...BARE, websiteStatus: s }, V1).reasons.some((r) => r.input === 'websiteStatus'));
+    expect(known).toEqual(['REACHABLE', 'VERIFIED_ABSENT', 'NOT_LISTED']);
+    const pts = (s: WebsiteStatus, cfg = V1) => scoreLead({ ...BARE, websiteStatus: s }, cfg).reasons.find((r) => r.input === 'websiteStatus')!.points;
     expect(pts('REACHABLE')).toBe(20);
     expect(pts('VERIFIED_ABSENT')).toBe(0);
+    expect(pts('NOT_LISTED')).toBe(0);
     // A workspace that sells websites can prefer leads without one.
     const absentPreferred = withConfig({ websitePreference: 'ABSENT' });
     expect(pts('REACHABLE', absentPreferred)).toBe(0);
     expect(pts('VERIFIED_ABSENT', absentPreferred)).toBe(20);
+    expect(pts('NOT_LISTED', absentPreferred)).toBe(20);
+  });
+
+  it('explains a listing without a website as "No website listed" (ADR-119)', () => {
+    const preferPresent = scoreLead({ ...BARE, websiteStatus: 'NOT_LISTED' }, V1);
+    expect(preferPresent.reasons.find((r) => r.input === 'websiteStatus')).toEqual({ input: 'websiteStatus', points: 0, maxPoints: 20, label: 'No website listed' });
+    expect(preferPresent.unknownInputs.map((u) => u.input)).not.toContain('websiteStatus');
+    const preferAbsent = scoreLead({ ...BARE, websiteStatus: 'NOT_LISTED' }, withConfig({ websitePreference: 'ABSENT' }));
+    expect(preferAbsent.reasons.find((r) => r.input === 'websiteStatus')).toEqual({ input: 'websiteStatus', points: 20, maxPoints: 20, label: 'No website listed' });
+    expect(preferAbsent.score).toBe(preferAbsent.reasons.reduce((s, r) => s + r.points, 0));
+  });
+
+  it('scores a Google Places lead like a Maps listing and gives a file import its own unknown reason', () => {
+    const maps = scoreLead(BARE, V1).reasons.find((r) => r.input === 'sourceIntent');
+    const places = scoreLead({ ...BARE, firstSource: 'GOOGLE_PLACES' }, V1);
+    expect(places.reasons.find((r) => r.input === 'sourceIntent')).toEqual(maps);
+    expect(maps).toEqual({ input: 'sourceIntent', points: 0, maxPoints: 5, label: 'Found on a Maps listing; no inbound action' });
+
+    const imported = scoreLead({ ...BARE, firstSource: 'FILE_IMPORT' }, V1);
+    expect(imported.reasons.find((r) => r.input === 'sourceIntent')).toBeUndefined();
+    expect(imported.unknownInputs.find((u) => u.input === 'sourceIntent')).toEqual({ input: 'sourceIntent', reasonCode: 'SOURCE_FILE_IMPORT', label: 'Source: imported from a file' });
+    // Manual leads keep their own code.
+    expect(scoreLead({ ...BARE, firstSource: 'MANUAL' }, V1).unknownInputs.find((u) => u.input === 'sourceIntent')?.reasonCode).toBe('SOURCE_MANUAL');
+  });
+
+  it('gives every lead source a known intent or a source-specific unknown reason', () => {
+    for (const source of LeadSource) {
+      const result = scoreLead({ ...BARE, firstSource: source }, V1);
+      const reason = result.reasons.find((r) => r.input === 'sourceIntent');
+      const unknown = result.unknownInputs.find((u) => u.input === 'sourceIntent');
+      expect(Boolean(reason) !== Boolean(unknown), source).toBe(true);
+      if (unknown) expect(unknown.reasonCode, source).toMatch(/^SOURCE_/);
+    }
   });
 
   it('scales rating and review count, and matches categories only against configured targets', () => {

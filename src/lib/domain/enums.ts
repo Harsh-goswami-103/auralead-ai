@@ -11,8 +11,8 @@ export const MembershipRole = e('OWNER', 'MEMBER');
 export const UserStatus = e('INVITED', 'ACTIVE', 'DISABLED');
 export const WorkspaceStatus = e('ACTIVE', 'SUSPENDED');
 export const SalesStage = e('NEW', 'CONTACTED', 'REPLIED', 'QUOTE_SENT', 'CONVERTED', 'LOST');
-export const LeadSource = e('GOOGLE_SHEETS', 'META_ADS', 'GMAPS_EXTENSION', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND', 'MANUAL');
-export const WebsiteStatus = e('UNKNOWN', 'PRESENT_UNVERIFIED', 'REACHABLE', 'UNREACHABLE', 'BLOCKED', 'VERIFIED_ABSENT');
+export const LeadSource = e('GOOGLE_SHEETS', 'META_ADS', 'GMAPS_EXTENSION', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND', 'MANUAL', 'GOOGLE_PLACES', 'FILE_IMPORT');
+export const WebsiteStatus = e('UNKNOWN', 'PRESENT_UNVERIFIED', 'REACHABLE', 'UNREACHABLE', 'BLOCKED', 'VERIFIED_ABSENT', 'NOT_LISTED');
 export const SourceRecordStatus = e('ACCEPTED', 'DUPLICATE', 'REVIEW', 'REJECTED', 'UNRETRIEVABLE');
 export const ImportBatchStatus = e('RECEIVED', 'PROCESSING', 'COMPLETED', 'PARTIAL', 'FAILED');
 export const MergeReviewStatus = e('OPEN', 'MERGED', 'KEPT_SEPARATE', 'DISMISSED');
@@ -20,7 +20,7 @@ export const ContactKeyKind = e('PHONE', 'EMAIL', 'PROVIDER');
 export const Channel = e('WHATSAPP', 'EMAIL');
 export const ConsentPurpose = e('MARKETING', 'SERVICE_CONVERSATION');
 export const ConsentBasis = e('OPT_IN', 'INBOUND_MESSAGE', 'B2B_ATTESTED');
-export const ConsentSource = e('SHEETS_FORM', 'META_FORM', 'INBOUND_MESSAGE', 'START_KEYWORD', 'MANUAL_EVIDENCE', 'EMPLOYEE_ATTESTATION');
+export const ConsentSource = e('SHEETS_FORM', 'META_FORM', 'INBOUND_MESSAGE', 'START_KEYWORD', 'MANUAL_EVIDENCE', 'EMPLOYEE_ATTESTATION', 'FILE_IMPORT');
 export const SuppressionReason = e('STOP_BUTTON', 'STOP_KEYWORD', 'UNSUBSCRIBE', 'HARD_BOUNCE', 'COMPLAINT', 'MARKETING_STOPPED', 'MANUAL');
 export const QuoteStatus = e('DRAFT', 'APPROVED', 'SENT', 'VIEWED', 'ACCEPTED', 'EXPIRED', 'CANCELLED');
 export const DiscountKind = e('NONE', 'PERCENT_BPS', 'FLAT_PAISE');
@@ -37,7 +37,9 @@ export const StageRunStatus = e('PENDING', 'RUNNING', 'DONE', 'SKIPPED', 'FAILED
 export const JournalAction = e('STOP', 'CLEAR');
 export const JobStatus = e('QUEUED', 'RUNNING', 'SUCCEEDED', 'DEAD', 'CANCELLED');
 export const JobAttemptOutcome = e('SUCCEEDED', 'RETRYABLE', 'FATAL', 'AMBIGUOUS', 'LEASE_LOST', 'DEFERRED');
-export const IntegrationKind = e('WHATSAPP_CLOUD', 'EMAIL_RESEND', 'EMAIL_SMTP', 'META_ADS', 'GOOGLE_SHEETS', 'AI_ANTHROPIC', 'AI_OPENAI');
+export const IntegrationKind = e(
+  'WHATSAPP_CLOUD', 'EMAIL_RESEND', 'EMAIL_SMTP', 'META_ADS', 'GOOGLE_SHEETS', 'AI_ANTHROPIC', 'AI_OPENAI', 'GOOGLE_PLACES',
+);
 export const IntegrationStatus = e(
   'NOT_CONFIGURED', 'CONFIGURED_UNVERIFIED', 'VERIFYING', 'CONNECTED', 'DEGRADED', 'ERROR', 'REVOKED', 'SIMULATED',
 );
@@ -49,6 +51,13 @@ export const CampaignActionState = e('PENDING', 'SENDING', 'SUCCEEDED', 'FAILED'
 export const QuoteViewKind = e('FETCH', 'BEACON');
 export const AuditResult = e('SUCCESS', 'DENIED', 'FAILED');
 export const PipelineApprovalMode = e('HUMAN', 'POLICY_AUTO');
+// Lead-gen suite (ADR-118 .. ADR-124).
+export const LeadFinderRunStatus = e('QUEUED', 'RUNNING', 'SUCCEEDED', 'PARTIAL', 'FAILED', 'CANCELLED');
+export const LeadImportStatus = e('PREVIEW', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'EXPIRED');
+export const ImportDataSource = e('OWN_CUSTOMERS', 'OWN_FORM_OR_EVENT', 'PUBLIC_DIRECTORY', 'THIRD_PARTY_LIST');
+export const HandoffStatus = e('HANDED_OVER', 'ACKNOWLEDGED');
+export const TemplateOrigin = e('SYNCED', 'AUTHORED');
+export const MediaAssetKind = e('IMAGE', 'DOCUMENT');
 
 type Of<T extends readonly string[]> = T[number];
 export type AppMode = Of<typeof AppMode>;
@@ -93,6 +102,12 @@ export type CampaignActionState = Of<typeof CampaignActionState>;
 export type QuoteViewKind = Of<typeof QuoteViewKind>;
 export type AuditResult = Of<typeof AuditResult>;
 export type PipelineApprovalMode = Of<typeof PipelineApprovalMode>;
+export type LeadFinderRunStatus = Of<typeof LeadFinderRunStatus>;
+export type LeadImportStatus = Of<typeof LeadImportStatus>;
+export type ImportDataSource = Of<typeof ImportDataSource>;
+export type HandoffStatus = Of<typeof HandoffStatus>;
+export type TemplateOrigin = Of<typeof TemplateOrigin>;
+export type MediaAssetKind = Of<typeof MediaAssetKind>;
 
 /** Capabilities granted through EmployeeAssignment; a workspace OWNER holds all of them (§5.2). */
 export const CAPABILITIES = e(
@@ -111,6 +126,12 @@ export const CAPABILITIES = e(
   'sheets.manage',
   'scoring.manage',
   'pipeline.manage',
+  // Lead-gen suite (ADR-118, ADR-120, ADR-123, ADR-124).
+  'finder.run',
+  'leads.import',
+  'consent.import',
+  'templates.manage',
+  'leads.handoff',
 );
 export type Capability = Of<typeof CAPABILITIES>;
 

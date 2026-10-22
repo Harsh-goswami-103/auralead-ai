@@ -26,7 +26,7 @@ describe('workspace overview', () => {
     const ironpulse = seedId('workspace', 'ironpulse-fitness');
     expect(overview.pendingApprovals).toBe(await h.db.approval.count({ where: { workspaceId: ironpulse, status: 'PENDING' } }));
     expect(overview.pendingApprovals).toBeGreaterThanOrEqual(1);
-    expect(overview.integrations).toEqual({ total: 7, connected: 0, simulated: 0, attention: 0, notConfigured: 7 });
+    expect(overview.integrations).toEqual({ total: 8, connected: 0, simulated: 0, attention: 0, notConfigured: 8 });
     expect(overview.pipeline).toEqual({ version: 1, approvalMode: 'HUMAN' });
   });
 
@@ -43,7 +43,7 @@ describe('workspace overview', () => {
       });
     }
     const overview = await getWorkspaceOverview(await employeeCtx(h));
-    expect(overview.integrations).toEqual({ total: 7, connected: 0, simulated: 1, attention: 1, notConfigured: 5 });
+    expect(overview.integrations).toEqual({ total: 8, connected: 0, simulated: 1, attention: 1, notConfigured: 6 });
     expect(overview.newLeads7d).toBe(await h.db.lead.count({ where: { workspaceId: WS_A, mergedIntoLeadId: null, createdAt: { gte: new Date(now.getTime() - 7 * 86_400_000) } } }));
     expect(overview.newLeads7d).toBeGreaterThanOrEqual(1);
   });
@@ -54,6 +54,6 @@ describe('workspace overview', () => {
     const overview = await getWorkspaceOverview(await userCtx(h.db, h.clock, 'arjun', 'pixelchai-studio'));
     expect(overview.pendingApprovals).toBeNull();
     expect(overview.newLeads7d).toBeNull();
-    expect(overview.integrations.total).toBe(7);
+    expect(overview.integrations.total).toBe(8);
   });
 });
