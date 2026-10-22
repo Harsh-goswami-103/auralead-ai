@@ -1,6 +1,6 @@
 /**
- * GET /api/app/leads/exports/[exportId]/download?workspaceSlug= (T26, ADR-70): the CSV file of a
- * READY export, for the person who requested it only (anyone else: 404). 409 while it is being
+ * GET /api/app/leads/exports/[exportId]/download?workspaceSlug= (T26, ADR-70): the CSV or Excel
+ * file (ADR-120, typed by the export's format) of a READY export, for the person who requested it only (anyone else: 404). 409 while it is being
  * prepared, 410 once it expired (24 h after it was written). Every download is audited. Served as
  * an attachment with nosniff and no caching. Needs `leads.export`.
  */
@@ -18,7 +18,7 @@ export const GET = withRoute({ auth: 'session', roles: ['USER', 'EMPLOYEE'] }, a
   return new Response(new Uint8Array(file.bytes), {
     status: 200,
     headers: {
-      'content-type': 'text/csv; charset=utf-8',
+      'content-type': file.contentType,
       'content-length': String(file.bytes.length),
       'content-disposition': `attachment; filename="${file.fileName}"`,
       'x-content-type-options': 'nosniff',

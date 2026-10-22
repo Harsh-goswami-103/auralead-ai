@@ -1,8 +1,8 @@
 /**
  * `leads.export` and `leads.exportPurge` (T26, ADR-70). Payload v1 `{ exportId }`, workspace jobs.
  *
- * - `leads.export` reads the export's filters, builds the CSV with the unscoped job client (the
- *   workspace bound explicitly), writes the file outside any transaction (local disk, no provider
+ * - `leads.export` reads the export's filters and format, builds the CSV or Excel file (ADR-120)
+ *   with the unscoped job client (the workspace bound explicitly), writes the file outside any transaction (local disk, no provider
  *   call), then in the fenced settle marks the export READY, schedules the purge at its expiry and
  *   audits it. A write failure is retried with backoff; on the last attempt the export is marked
  *   FAILED so the panel stops waiting. A replay of a finished export does nothing. When the settle
@@ -19,11 +19,12 @@ import { getConfig } from '@/lib/config';
 import { redactText } from '@/lib/redact';
 import { LEAD_EXPORT_ROW_CAP } from '@/lib/schemas/leads';
 import {
-  buildLeadExportCsv,
+  buildLeadExportFile,
   completeLeadExport,
   deleteExportFile,
   expireLeadExport,
   exportFiltersOf,
+  exportFormatOf,
   exportNeedsPurge,
   failLeadExport,
   LEAD_EXPORT_JOB,
@@ -61,15 +62,19 @@ export function createLeadExportJob(options: Options = {}): JobDefinition {
       if (filters === null) {
         return { outcome: 'succeeded', finalTx: (tx) => failLeadExport(tx, ctx, { exportId: row.id, workspaceId, errorCode: 'EXPORT_FILTERS_INVALID' }) };
       }
+      const format = exportFormatOf(row.format);
+      if (format === null) {
+        return { outcome: 'succeeded', finalTx: (tx) => failLeadExport(tx, ctx, { exportId: row.id, workspaceId, errorCode: 'EXPORT_FORMAT_INVALID' }) };
+      }
 
       let file: { path: string; sha256: string; bytes: number };
       let rowCount: number;
       let truncated: boolean;
       try {
-        const built = await buildLeadExportCsv(job.db, workspaceId, filters, rowCap);
+        const built = await buildLeadExportFile(job.db, workspaceId, filters, format, rowCap);
         rowCount = built.rowCount;
         truncated = built.truncated;
-        file = writeExportFile(storageDir(), leadExportRelPath(workspaceId, row.id, 'csv'), Buffer.from(built.csv, 'utf8'));
+        file = writeExportFile(storageDir(), leadExportRelPath(workspaceId, row.id, format), built.bytes);
       } catch (error) {
         const message = redactText(error instanceof Error ? error.message : String(error));
         if (job.job.attempts < job.job.maxAttempts) return { outcome: 'retry', errorCode: 'EXPORT_WRITE_FAILED', error: message };

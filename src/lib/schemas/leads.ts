@@ -147,10 +147,16 @@ export type LeadStageResult = { lead: { id: string; salesStage: SalesStage; stag
 /** A client-generated key per export click: a double click or retry returns the same export. */
 export const LeadExportRequestKey = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'requestKey must be 8-64 letters, digits, _ or -');
 
+/** File formats of a lead export (ADR-120): CSV (the default) or an Excel workbook. */
+export const LEAD_EXPORT_FORMATS = ['csv', 'xlsx'] as const;
+export type LeadExportFormat = (typeof LEAD_EXPORT_FORMATS)[number];
+export const LEAD_EXPORT_FORMAT_LABELS: Readonly<Record<LeadExportFormat, string>> = { csv: 'CSV', xlsx: 'Excel' };
+
 export const LeadExportBody = z.object({
   workspaceSlug: workspaceSlugField.optional(),
   requestKey: LeadExportRequestKey,
   filters: LeadFilters.default({ sort: 'newest' }),
+  format: z.enum(LEAD_EXPORT_FORMATS).default('csv'),
 });
 export type LeadExportBody = z.output<typeof LeadExportBody>;
 
@@ -166,6 +172,7 @@ export type LeadExportStatus = 'QUEUED' | 'READY' | 'FAILED' | 'EXPIRED';
 
 export type LeadExportDto = {
   id: string;
+  format: LeadExportFormat;
   status: LeadExportStatus;
   /** READY whose expiry passed reads EXPIRED even before the purge job ran. */
   effectiveStatus: LeadExportStatus;
