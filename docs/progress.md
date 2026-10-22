@@ -126,6 +126,32 @@ Gate, run 2026-10-20 (Linux container):
 - `prisma.config.ts` resolves only the data paths, so `prisma generate` in `npm ci` no longer needs the secrets.
 - README quick start is the LIVE install; DEMO moved under "Development mode".
 
+## Lead-gen suite: foundation baseline (2026-10-23)
+
+Integration checkout `claude/lead-gen-suite`. Foundation-A (`7d703e9`, `61b4352`), then Foundation-B merged with `git merge --no-ff` in plan order, no conflicts:
+- `c9f21b4` merge `lg/b1` (data: ingest fields, erase coverage, rebase columns, handoff guard)
+- `e2a5d95` merge `lg/b2` (AI: `run-task`, local task dispatcher, `AiProvenance`, `AiActionButton`)
+- `d7a1cb5` merge `lg/b3` (shared constants, per-lead template variables, chat tokens, rate limits, anchor blocks)
+- `c24d1a6` integration: the dispatcher test reads the AI task names from `LEAD_GEN_AI_TASKS`; ADR-127 records the Foundation-B deviations the implementers left to the integrator.
+
+Baseline at `d7a1cb5`, run alone on Windows 11 (Node 22.23.2) after `prisma generate`, nothing else running (`c24d1a6` then changed one test assertion and docs; typecheck, lint and that file, 11/11, pass):
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` | 290 files, 3257 tests, all passed, 0 failed, 0 skipped (187 s) |
+
+No failing files. Known flake: `tests/unit/arch/lint-rules.test.ts` can hit its 5 s timeout under heavy parallel load; it passed in this run. The container-only failures listed under the Aurora gate (`with-tx-retry`, `spike/teardown`, `seed/determinism`) do not occur on Windows.
+
+Carried to the slices (details in `docs/handoff/lead-gen-b1.md`, `-b2.md`, `-b3.md`):
+- **F1:** an erased place keeps its finder rows (place ID, keyword, location), so Refresh could fetch the listing again; there is no erased marker column (a schema request if needed). "Lead finder" goes first in `WORKSPACE_SECTIONS`; the integrator reorders it after the F1 merge.
+- **F2:** `leadExportFileName` and the download content type still assume csv. The import job must recheck in every chunk that the import is RUNNING and `storagePath` is set, because `lead:erase` can end it mid-run.
+- **F3:** take the read-only state from `Lead.handedOverAt` (an operator in a closed window gets 422 `SEND_REFUSED` before the guard's 409). `reply.auto` runs with a `system:` initiator, which the guard never refuses, so it must recheck `handedOverAt` itself (ADR-122).
+- **F4:** B1 edited `services/bulk/bulk.ts` (`classifyRows` gained a last parameter `byEmployee`) and `messaging/dispatch.ts` (four guard calls). `BulkTemplateVariables` still hard-codes 200 instead of `TEMPLATE_VARIABLE_MAX_LENGTH`.
+- **F5:** `handOverLead` must call the takeover and mode functions before it sets `handedOverAt` (the guard refuses the operator afterwards), or update conversations directly under the `modeVersion` compare-and-set.
+- **F6:** `REBASE_COLUMNS` lists only `escalatedAt` for Conversation; seeded open-window chats need Conversation `createdAt`, `lastInboundProviderAt` and Message `createdAt`, `providerTs`. The rate-limit table in `content/docs` lacks `finderRun`, `leadImport`, `templateSubmit` and `handoff`.
+- **AI tasks (F3, F4, F5):** `LOCAL_TASKS` anchors are single lines (one entry under each), not begin/end blocks; use the names in `LEAD_GEN_AI_TASKS`. Activity icons (`FAMILIES`) have no anchor, so a new action prefix falls back to the History icon. `defaultAiDeps()` duplicates `defaultDraftDeps()` (kept for existing importers).
+
 ## Unresolved / carried forward
 
 - `npm run test:e2e`: specs exist for smoke, the panel flows and `visual/webgl-fallback`; the rest of the visual projects (responsive, a11y, states) get specs in T31. In this Linux container Playwright 1.64's own browser build is not installed; the run above used the preinstalled Chromium through a throwaway config with `launchOptions.executablePath`.
