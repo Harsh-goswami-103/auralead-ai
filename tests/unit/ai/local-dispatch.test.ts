@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { LEAD_GEN_AI_TASKS } from '@/lib/domain/lead-gen';
 import { generateLocalDraft } from '@/server/adapters/ai/local/draft';
 import { createLocalDeterministicAdapter, LOCAL_GENERATOR_MODEL, LOCAL_TASKS } from '@/server/adapters/ai/local-deterministic';
 import type { AiRequest } from '@/server/adapters/ai/port';
@@ -84,7 +85,8 @@ describe('LOCAL_TASKS', () => {
   });
 
   it('only names known AI tasks', () => {
-    for (const task of Object.keys(LOCAL_TASKS)) expect(['lead_draft', 'conversation_reply', 'template_copy', 'handoff_summary']).toContain(task);
+    const known: string[] = ['lead_draft', ...Object.values(LEAD_GEN_AI_TASKS)];
+    for (const task of Object.keys(LOCAL_TASKS)) expect(known).toContain(task);
   });
 
   it('carries one anchor per slice task for its single line', () => {
