@@ -16,6 +16,10 @@
  *    audit row; one -> DUPLICATE linked to that lead, which is not modified; several -> REVIEW with
  *    an OPEN MergeReview and no write to the candidates.
  * 4. Consent capture from the mapping (P1) for ACCEPTED and DUPLICATE records.
+ * A new lead keeps the record's PIN code and website status (NOT_LISTED when the source says the
+ * listing has no website, ADR-119). A GOOGLE_PLACES lead also keeps its place ID (`Lead.placeId`,
+ * from `providerId` or `fields.placeId`, also its PROVIDER key) and gets `placesContentExpiresAt`
+ * = now + 30 days (ADR-118 (d)). A duplicate never modifies the existing lead.
  * Ingestion never enqueues scoring, enrichment or drafting directly (E9): the pipeline executor
  * runs those stages.
  */
@@ -36,6 +40,14 @@ import { openMergeReview } from './merge-review';
 import { normalizeLeadFields } from './normalize';
 
 export type { IngestBatchInput } from '@/lib/schemas/ingest';
+
+/**
+ * ADR-118 (d): the Places-sourced fields of a lead imported from Google Places (phone, rating,
+ * review count, address, PIN code, category) carry `Lead.placesContentExpiresAt` = ingestion time
+ * + 30 days; `leads.placesExpire` (slice F1) nulls them then unless the contact was confirmed.
+ */
+export const PLACES_CONTENT_TTL_DAYS = 30;
+export const PLACES_CONTENT_TTL_MS = PLACES_CONTENT_TTL_DAYS * 86_400_000;
 
 export type IngestDeps = {
   /** SUPPRESSION_PEPPER: consent records carry the same contact key as suppressions (C17). */
@@ -278,7 +290,10 @@ async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: I
     return result('REJECTED', normalized.reasonCode, rejected.id, null, { outcome: 'NONE', reason: 'REJECTED' });
   }
   const lead = normalized.lead;
-  const keys = contactKeysFor(lead, source, record.providerId);
+  // A Places record may carry its place ID as fields.placeId instead of providerId (the schema
+  // refuses a record whose two values differ). Other sources never set Lead.placeId.
+  const placeId = source === 'GOOGLE_PLACES' ? (record.providerId ?? record.fields.placeId ?? null) : null;
+  const keys = contactKeysFor(lead, source, record.providerId ?? placeId ?? undefined);
   const matches = await findMatchingLeadIds(tx as never, keys);
 
   const captureConsent = (leadId: string) =>
@@ -326,8 +341,11 @@ async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: I
       websiteStatus: lead.websiteStatus,
       address: lead.address,
       city: lead.city,
+      pincode: lead.pincode,
       rating: lead.rating,
       reviewCount: lead.reviewCount,
+      placeId,
+      placesContentExpiresAt: source === 'GOOGLE_PLACES' ? new Date(now.getTime() + PLACES_CONTENT_TTL_MS) : null,
       scoreReasons: [],
       unknownInputs: [],
       pipelineConfigVersionId: pipeline?.id ?? null,

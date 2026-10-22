@@ -69,7 +69,7 @@ export function createLeadExportJob(options: Options = {}): JobDefinition {
         const built = await buildLeadExportCsv(job.db, workspaceId, filters, rowCap);
         rowCount = built.rowCount;
         truncated = built.truncated;
-        file = writeExportFile(storageDir(), leadExportRelPath(workspaceId, row.id), Buffer.from(built.csv, 'utf8'));
+        file = writeExportFile(storageDir(), leadExportRelPath(workspaceId, row.id, 'csv'), Buffer.from(built.csv, 'utf8'));
       } catch (error) {
         const message = redactText(error instanceof Error ? error.message : String(error));
         if (job.job.attempts < job.job.maxAttempts) return { outcome: 'retry', errorCode: 'EXPORT_WRITE_FAILED', error: message };

@@ -7,7 +7,8 @@
  *    classifies every selected row as ELIGIBLE, SKIPPED or FAILED, so eligible + skipped + failed
  *    == selected. Eligibility is the shared dispatch eligibility function (`checkDispatchEligibility`)
  *    with sendIntent BULK, the same function the dispatch preflight re-runs at send time. A row the
- *    action cannot apply to at all (lead gone or merged, no contact on the channel) is FAILED. A row
+ *    action cannot apply to at all (lead gone or merged, no contact on the channel, or, in an
+ *    operator's run, handed over to the client: HANDED_OVER, ADR-124) is FAILED. A row
  *    whose only reasons are deferrable (pauses, internal cap) is ELIGIBLE and marked `deferred`: its
  *    dispatch waits instead of being dropped.
  *  - `requestBulkRun` (approvals.decide + dispatch.send: confirming a bulk send approves and sends)
@@ -43,6 +44,7 @@ import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
 import type { JobHandlerContext } from '@/server/jobs/types';
 import { recordAudit } from '@/server/services/audit/record';
+import { isEmployeeActor } from '@/server/services/leads/handoff-guard';
 import { queueOutboundMessage } from '@/server/services/messaging/dispatch';
 import { checkDispatchEligibility, REASON_LABELS, type DispatchKind } from '@/server/services/messaging/eligibility';
 
@@ -59,6 +61,8 @@ export const BULK_FAILURE_LABELS = {
   LEAD_NOT_FOUND: 'The lead no longer exists',
   LEAD_MERGED: 'The lead was merged into another lead',
   CONTACT_MISSING: 'No contact for this channel',
+  /** ADR-124: an operator's bulk send leaves out leads handed over to the client. */
+  HANDED_OVER: 'Handed over to the client',
 } as const;
 
 export function bulkReasonLabel(code: string): string {
@@ -90,11 +94,14 @@ function parseInput<T>(schema: { safeParse(input: unknown): { success: true; dat
   throw new ValidationError({ code: 'BULK_INPUT_INVALID', message, userMessage: message });
 }
 
-/** Classifies each lead, in selection order, for the action (read only). */
-async function classifyRows(db: ReadDb, ctx: AppCtx, leadIds: readonly string[], params: Params, deps: BulkDeps): Promise<Classified[]> {
+/**
+ * Classifies each lead, in selection order, for the action (read only). `byEmployee`: the run is an
+ * operator's, so a lead handed over to the client is a FAILED row (ADR-124; not an eligibility reason).
+ */
+async function classifyRows(db: ReadDb, ctx: AppCtx, leadIds: readonly string[], params: Params, deps: BulkDeps, byEmployee: boolean): Promise<Classified[]> {
   const leads = await db.lead.findMany({
     where: { id: { in: [...leadIds] } },
-    select: { id: true, displayName: true, phoneE164: true, emailNormalized: true, mergedIntoLeadId: true },
+    select: { id: true, displayName: true, phoneE164: true, emailNormalized: true, mergedIntoLeadId: true, handedOverAt: true },
   });
   const byId = new Map(leads.map((l) => [l.id, l]));
   const { channel, kind } = channelOf(params);
@@ -108,6 +115,10 @@ async function classifyRows(db: ReadDb, ctx: AppCtx, leadIds: readonly string[],
     }
     if (lead.mergedIntoLeadId !== null) {
       out.push(failed('LEAD_MERGED'));
+      continue;
+    }
+    if (byEmployee && lead.handedOverAt !== null) {
+      out.push(failed('HANDED_OVER'));
       continue;
     }
     if ((channel === 'WHATSAPP' ? lead.phoneE164 : lead.emailNormalized) === null) {
@@ -150,7 +161,7 @@ export async function previewBulkAction(ctx: AppCtx, input: BulkActionInput, dep
   const parsed = parseInput<BulkActionInput>(BulkActionInput, input);
   const params = paramsOf(parsed);
   await assertSameWorkspace(ctx.db, ctx, { leadId: parsed.leadIds, templateId: params.action === 'SEND_WHATSAPP_TEMPLATE' ? params.templateId : null });
-  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps);
+  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps, await isEmployeeActor(ctx.db, ctx));
   const counts = preflightCounts(rows);
   return {
     selected: rows.length,
@@ -199,7 +210,7 @@ export async function requestBulkRun(ctx: AppCtx, input: BulkRunRequest, deps: B
   if (earlier) return earlier;
 
   await assertSameWorkspace(ctx.db, ctx, { leadId: parsed.leadIds, templateId: params.action === 'SEND_WHATSAPP_TEMPLATE' ? params.templateId : null });
-  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps);
+  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps, await isEmployeeActor(ctx.db, ctx));
   const preflight = preflightCounts(rows);
   const requestedBy = ctx.actor?.userId ?? `system:${ctx.kind}`;
   try {
@@ -356,7 +367,8 @@ export async function processBulkRun(job: JobHandlerContext, ctx: AppCtx, runId:
 
       const params = run.params as unknown as Params;
       const { channel } = channelOf(params);
-      const classified = await classifyRows(tx, ctx, chunk, params, deps);
+      // The job has no actor: the person who confirmed the run decides whether the handoff guard applies.
+      const classified = await classifyRows(tx, ctx, chunk, params, deps, await isEmployeeActor(tx, ctx, run.requestedBy));
       const added: StoredRow[] = [];
       for (const row of classified) {
         if (row.outcome !== 'ELIGIBLE') {

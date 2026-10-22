@@ -12,7 +12,9 @@
  *   A failed fetch is never evidence that the website does not exist.
  * - VERIFIED_ABSENT is set only by a person (audited, T26); enrichment never sets it and never
  *   re-checks a lead a person marked that way.
- * - No website: nothing to check; the status stays UNKNOWN.
+ * - No website: nothing to check; the status stays as it is (UNKNOWN, or NOT_LISTED when the
+ *   source listing said it has none, ADR-119, audited with that reason). Enrichment never sets
+ *   NOT_LISTED.
  * - DEMO: no outbound network at all (plan §4.2). The check is not run and the status is left as
  *   it is; a simulated result would be a faked provider result.
  */
@@ -55,7 +57,7 @@ export type WebsiteEnrichmentRecord = {
 };
 
 export type CheckedStatus = 'REACHABLE' | 'UNREACHABLE' | 'BLOCKED';
-export type NotCheckedReason = 'NO_WEBSITE' | 'VERIFIED_ABSENT' | 'OUTBOUND_BLOCKED_IN_DEMO';
+export type NotCheckedReason = 'NO_WEBSITE' | 'NOT_LISTED' | 'VERIFIED_ABSENT' | 'OUTBOUND_BLOCKED_IN_DEMO';
 
 export type WebsiteCheckOutcome =
   | { checked: false; reasonCode: NotCheckedReason }
@@ -137,7 +139,7 @@ export async function checkLeadWebsite(
   deps: EnrichmentDeps,
 ): Promise<WebsiteCheckOutcome> {
   if (lead.websiteStatus === 'VERIFIED_ABSENT') return { checked: false, reasonCode: 'VERIFIED_ABSENT' };
-  if (lead.website === null || lead.website.trim() === '') return { checked: false, reasonCode: 'NO_WEBSITE' };
+  if (lead.website === null || lead.website.trim() === '') return { checked: false, reasonCode: lead.websiteStatus === 'NOT_LISTED' ? 'NOT_LISTED' : 'NO_WEBSITE' };
   if (ctx.mode === 'demo') return { checked: false, reasonCode: 'OUTBOUND_BLOCKED_IN_DEMO' };
 
   const url = lead.website;
