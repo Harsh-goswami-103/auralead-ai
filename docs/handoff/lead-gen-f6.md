@@ -1,0 +1,53 @@
+# Lead-gen suite: slice F6 Presentation (handoff)
+
+Branch `lg/f6`, worktree `C:\Users\Asus\auralead-wt\f6`, based on the foundation baseline `0ece53b`.
+Spec: plan §5 F6 and ADR-126; slice details and choices in ADR-133 (`docs/decisions.md`).
+P0 is done. The documentation updates (plan: "Docs after merge") are not part of this branch.
+
+## What was built
+
+**DEMO presentation pack (ADR-126), in the base seed:**
+
+| Piece | Where | What |
+|---|---|---|
+| Workspace | `prisma/seed/fixtures/workspaces.ts` | Sixth tenant `codecraft-web`, Codecraft Web Studio, Vijay Nagar, Indore. GST 18%, brand colour `#1D4ED8`, booking link, `autoSendEnabled: true`, B2B email attestation on, `whatsappOptInNotice` (names the studio and WhatsApp), `privacyContact`. Services in BigInt paise: Business website 24,000, E-commerce store 60,000, Landing page 8,000, SEO setup 12,000, Website maintenance 2,500 per month. Own scoring v1 `CODECRAFT_SCORING_V1` (`websitePreference: 'ABSENT'`, target categories restaurant, clinic, salon, gym, boutique, coaching; weights sum to 100). |
+| People | `prisma/seed/fixtures/identities.ts`, `src/server/auth/demo-personas.ts` | Fourth persona `client` (Aarav Mehta, `client@demo.auralead.test`, OWNER of codecraft-web only). The employee persona (Imran) is assigned to codecraft-web with every capability except `consent.import` (`PRESENTATION_OPERATOR_CAPABILITIES`). |
+| Pack data | `prisma/seed/fixtures/presentation.ts` | Pure data and builders: the finder run, the 40 places (`presentationPlaces()`), the four story leads (`STORY_LEADS`), opt-ins, chats, the handoff, the templates. |
+| Pack insert | `prisma/seed/fixtures/insert-presentation.ts` | `insertPresentation(tx, now, { contactKeyPepper })`, called last in `insertAll` (`prisma/seed/seed.ts`). |
+| Refresh | `prisma/seed/rebase.ts` | Conversation `createdAt`, `lastInboundProviderAt`, `closedAt`; Message `createdAt`, `providerTs`; ConsentRecord `collectedAt`, `recordedAt`, `withdrawnAt`; ImportBatch `createdAt`, `completedAt`; LeadSourceRecord `extractedAt`, `receivedAt`. Resolves the F6 item of the foundation baseline in `docs/progress.md`. |
+
+What the pack seeds in codecraft-web (all ids from `seedId`, all times relative to the anchor):
+- **WhatsApp**: a SIMULATED `WHATSAPP_CLOUD` integration (no routing key, `config.displayPhoneNumber` E.164 for click-to-chat) and five AUTHORED templates: `website_intro` (MARKETING, APPROVED, FIRST_TOUCH, buttons Request a call + Stop mapped CALL/STOP), `follow_up` (MARKETING, APPROVED, FOLLOW_UP, same buttons), `meeting_confirm` (UTILITY, APPROVED, `utilityTrigger: 'MEETING_BOOKED'`, `{{3}}` manual), `brochure_share` (MARKETING, PENDING, TEXT header, Stop button, `copyGeneratorLabel: 'local-deterministic'`, `syncedAt` null), `discount_blast` (MARKETING, REJECTED, `rejectedReason`). `categoryHistory` is empty (no timestamps in JSON); `providerTemplateId` null.
+- **Finder**: one SUCCEEDED, simulated run "restaurants, dental clinic, salon" x "Indore, Bhopal" by the operator, 12 hours before the anchor (6 cells, 40 results, exactly 20 with no website listed, 3 without a phone, `emailStatus: 'NOT_REQUESTED'`, no attribution, `contentExpiresAt` = fetch + 24 h).
+- **Leads**: 12 imported 11.5 hours before the anchor as GOOGLE_PLACES leads (10 with no website listed) through one COMPLETED import batch: `Lead.placeId`, `placesContentExpiresAt` = import + 30 days, pincode, PHONE + `PROVIDER GOOGLE_PLACES:<placeId>` contact keys, an ACCEPTED source record (attribution keyword + location), the pinned pipeline v1 and a score from the studio's scoring v1. No pipeline executions (like the other seeded leads).
+- **Opt-ins**: 3 recorded WhatsApp MARKETING opt-ins (MANUAL_EVIDENCE, `evidence: { method, note }`, `noticeTextHash` = sha256 of the workspace notice, recorded by the operator) on Malwa Rasoi (CALL_VERBAL), Glow Unisex Salon (CALL_VERBAL) and Muskaan Dental Clinic (IN_PERSON); those leads have `contactConfirmedVia: 'RECORDED_OPT_IN'`. The other nine Places leads have no consent (template sends answer NO_WHATSAPP_OPT_IN).
+- **Chats**: Malwa Rasoi, AUTO, window open (last inbound 35 min before the anchor): `website_intro` template, two customer questions, two catalog answers labelled `local-deterministic`, the first starting with the ADR-122 disclosure. Glow Unisex Salon, AUTO, window open (20 min), a price question answered with reply-guard's fixed quote acknowledgement (label `reply-guard`) and `escalatedAt` set (waits for a person). Pearl Dental Care (handed over): started by the customer through the click-to-chat link, two operator replies, window open (5 h), `aiMode OFF`, `humanTakeover`. Every inbound message has its INBOUND_MESSAGE consent, as the inbound path writes it.
+- **Handoff**: Pearl Dental Care, CONVERTED, `handedOverAt` 3 hours before the anchor, `LeadHandoff` HANDED_OVER (not acknowledged, so the client can Acknowledge), note, READY summary labelled `local-deterministic`.
+- **Audit**: `consent.grant` x3 and `lead.handoff` x1, PII-free, `simulated: true`.
+
+**Persona surfaces**: `SWITCHER_PERSONAS` and `PERSONA_LOOK` in `src/components/patterns/RoleSwitcher.tsx` (label "Codecraft client", hint "Client panel, Codecraft Web Studio", aura hue, Globe icon); the check mark follows the route only where one persona lands, so the shared client panel marks none. `/api/demo/session` takes its schema from `DEMO_PERSONA_KEYS`, so `client` is accepted with no route change. `DemoChrome.tsx` shows four persona placeholders.
+
+**Copy**: `src/components/landing/StoryFlow.tsx` (new) opens How it works with Find, Chat, Hand over, Quote. Capture names a Google Places search and an Excel or CSV import (rail chips and beams, hero chips, marquee). Bento, principles and closing CTA lines updated; LIVE keeps no demo wording. "Scraped" replaced with "collected" in `employee/[ws]/leads/simulation-panel.tsx`, `extension/page.tsx`, `integrations/page.tsx` and the landing.
+
+## Shared files, jobs, routes, fixtures
+
+- Shared-file anchor blocks: **no insertions** (no routes, pages, jobs, adapters, activity labels or matrix fixtures). The F6 blocks stay empty.
+- Job types, rate-limit policies, activity labels, manifest entries, fixture keys: **none**.
+- Edits outside the plan's F6 path list (persona additions and their tests): `src/components/patterns/DemoChrome.tsx` (placeholder count 4); `tests/integration/shell/panel-home.test.ts` (6 workspaces, 6 owners, 4 active assignments, the employee's three assignments sorted by name); `tests/e2e/smoke/shell.spec.ts` (admin home shows 6 workspaces; not run, no dev servers in slices).
+- `SeedOptions.config` gained an optional `secrets.suppressionPepper` (ADR-133). `npm run db:seed`, `db:reset` and `/api/test/reset` already pass the app config. Harnesses that seed with `{ mode: 'demo' }` get `SEED_PEPPER_STAND_IN` keys on the codecraft-web consents and chats: a slice test that needs those rows to pass eligibility must seed with its own pepper.
+
+## Tests
+
+New: `tests/integration/seed/presentation.test.ts` (16: every piece above against the real services, eligibility per lead, refresh keeps windows open, no timestamps in JSON, the other five workspaces unchanged), `tests/integration/seed/presentation-pages.test.ts` (5: client and operator pages render the pack), `tests/components/patterns/role-switcher-personas.test.tsx` (3), `tests/unit/presentation/wording.test.ts` (no "scrap" in the landing or the three operator pages). Updated: `determinism.test.ts` (client persona; the pepper changes only ConsentRecord and Conversation), `test-reset.test.ts` (workspaces 6, reference seeded with the route's config), `panel-home.test.ts`, `live-bundle.test.ts` and `demo-isolation.test.ts` (the four personas pinned), `tests/unit/landing/landing-page.test.ts` (the flow, the capture sources, no "scraped").
+
+Every integration test file that seeds the DEMO base (104 files outside `tests/integration/seed`, found by import graph) passed on this branch: 911 tests.
+
+## Open questions and notes for the integrator
+
+1. **F4**: `meeting_confirm` uses `utilityTrigger: 'MEETING_BOOKED'`. Align with F4's trigger values if they are spelled differently (one line in `prisma/seed/fixtures/presentation.ts`). F4 may also want `providerTemplateId` on simulated approved rows; the seed leaves it null.
+2. **F1**: the 40 places come from the seed-local `presentationPlaces()` (keyword and location aware, `ChIJdemo...` ids) because `src/lib/demo/places.ts` was not in the base. Switching to `demoPlace` after the merge is optional; the seed tests assert shape, not names, except the four story leads.
+3. **F5**: opt-in evidence is `{ method, note }` with `noticeTextHash` (ADR-125 does not say where the notice text itself goes); the `lead.handoff` audit summary is `{ toStage, conversations, summaryStatus }`. Align both with F5's service output if they differ.
+4. **F3**: the seeded AI replies are fixed texts in F3's style (disclosure first, catalog facts, no prices); F3's local generator may word them differently. The escalated thread stays AUTO with `escalatedAt`, per ADR-122.
+5. **Merge note**: integration tests that count across all workspaces passed with the sixth workspace, but slices that add such counts (for example a platform-wide "handed over" total) will see codecraft-web's rows.
+6. **Docs after the merge (F6, not done here)**: `content/docs/pages/getting-started.ts` still says "five invented businesses" and lists three personas; the `content/docs` rate-limit table lacks `finderRun`, `leadImport`, `templateSubmit` and `handoff`; README; `docs/progress.md`; `docs/integrations.md` (Places terms check date); a presenter section in `docs/runbooks.md` (demo:refresh ten minutes before, persona-to-URL map: operator `/dashboard/employee/codecraft-web/...`, client = Codecraft client persona).
+7. **Not done (optional polish)**: hiding the "Simulate a lead source" cards for codecraft-web (a review suggestion, not in the plan).
