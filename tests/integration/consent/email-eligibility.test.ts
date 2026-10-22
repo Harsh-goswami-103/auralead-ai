@@ -76,7 +76,7 @@ describe('email eligibility (M2)', () => {
     const owner = await userCtx(h.db, h.clock, 'owner');
     await grantManualConsent(
       owner,
-      { leadId: mapsLead.id, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-15T10:00:00.000Z', evidence: { note: 'Signed WhatsApp opt-in card at the shop' } },
+      { leadId: mapsLead.id, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-15T10:00:00.000Z', evidence: { note: 'Signed WhatsApp opt-in card at the shop', method: 'WRITTEN_FORM' }, noticeText: 'I agree to receive WhatsApp messages from Smile Avenue Dental Clinic about its services.' },
       h.deps,
     );
     for (const intent of ['MANUAL_SINGLE', 'BULK'] as const) {

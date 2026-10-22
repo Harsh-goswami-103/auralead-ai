@@ -4,7 +4,8 @@
  * Search, filters, sort and the table/board switch of the Leads area (T26, R31). The state lives
  * in the URL: the form is a plain GET form (it works without JavaScript), and with JavaScript a
  * submit or a changed select navigates in place. A new search or filter starts at the first page.
- * Search matches the name (any script, case and accents ignored), phone digits or email.
+ * Search matches the name (any script, case and accents ignored), phone digits or email. "Handed
+ * over" keeps only the leads an operator handed over to the client (ADR-124).
  * The fields are controlled and follow the URL when it changes (Clear filters, back button) without
  * remounting the form, so a keyboard user keeps focus on the select they changed (ADR-73).
  */
@@ -17,23 +18,23 @@ import { cn } from '@/components/ui/cn';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { LeadSource, SalesStage } from '@/lib/domain/enums';
-import { hasLeadFilters, LEAD_SEARCH_MAX, LEAD_SORT_LABELS, LEAD_SORTS, leadPageSearch, SCORE_BAND_LABELS, SCORE_BANDS, type LeadPageParams } from '@/lib/schemas/leads';
+import { HANDED_OVER_PARAM, hasLeadFilters, LEAD_SEARCH_MAX, LEAD_SORT_LABELS, LEAD_SORTS, leadPageSearch, SCORE_BAND_LABELS, SCORE_BANDS, type LeadPageParams } from '@/lib/schemas/leads';
 import { sourceStyle } from '@/components/patterns/source-style';
 import { salesStageEntry } from './lead-vocabulary';
 
-type FieldValues = { q: string; stage: string; source: string; score: string; sort: string };
+type FieldValues = { q: string; stage: string; source: string; score: string; handedOver: string; sort: string };
 
 function valuesOf(params: LeadPageParams): FieldValues {
-  return { q: params.q ?? '', stage: params.stage ?? '', source: params.source ?? '', score: params.score ?? '', sort: params.sort };
+  return { q: params.q ?? '', stage: params.stage ?? '', source: params.source ?? '', score: params.score ?? '', handedOver: params.handedOver ? HANDED_OVER_PARAM : '', sort: params.sort };
 }
 
 export function LeadsToolbar(props: { basePath: string; params: LeadPageParams }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
-  const ids = { q: useId(), stage: useId(), source: useId(), score: useId(), sort: useId() };
+  const ids = { q: useId(), stage: useId(), source: useId(), score: useId(), handedOver: useId(), sort: useId() };
   const { params } = props;
   const isBoard = params.view === 'board';
-  const urlKey = [params.q, params.stage, params.source, params.score, params.sort, params.view].join('|');
+  const urlKey = [params.q, params.stage, params.source, params.score, params.handedOver, params.sort, params.view].join('|');
   const [values, setValues] = useState<FieldValues>(() => valuesOf(params));
   const [shownKey, setShownKey] = useState(urlKey);
   // The URL's filters changed: show them (state adjusted during render, no remount, focus kept).
@@ -52,7 +53,7 @@ export function LeadsToolbar(props: { basePath: string; params: LeadPageParams }
     };
     const search = leadPageSearch(
       { view: params.view },
-      { q: value('q'), stage: value('stage'), source: value('source'), score: value('score'), sort: value('sort') },
+      { q: value('q'), stage: value('stage'), source: value('source'), score: value('score'), handedOver: value('handedOver'), sort: value('sort') },
     );
     router.push(`${props.basePath}${search}`, { scroll: false });
   }
@@ -129,6 +130,13 @@ export function LeadsToolbar(props: { basePath: string; params: LeadPageParams }
                 {SCORE_BAND_LABELS[b]}
               </option>
             ))}
+          </NativeSelect>
+        </label>
+        <label htmlFor={ids.handedOver} className={field}>
+          Handoff
+          <NativeSelect id={ids.handedOver} name="handedOver" value={values.handedOver} onChange={changeSelect}>
+            <option value="">All leads</option>
+            <option value={HANDED_OVER_PARAM}>Handed over to the client</option>
           </NativeSelect>
         </label>
         <label htmlFor={ids.sort} className={field}>

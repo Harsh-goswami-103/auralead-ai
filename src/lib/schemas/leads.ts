@@ -2,7 +2,7 @@
  * Leads area schemas (T26, plan §11 M4, R31), shared by the list and board pages of both panels,
  * the stage, export and scoring routes, and the services (plan §2: one schema set).
  *
- * The list query lives in the URL (`?q=&stage=&source=&score=&sort=&cursor=&dir=&view=&lead=`), so
+ * The list query lives in the URL (`?q=&stage=&source=&score=&handedOver=1&sort=&cursor=&dir=&view=&lead=`), so
  * a reload, a shared link and the back button all show the same rows. Parsing the URL is lenient:
  * a hand-edited or stale value is dropped instead of failing the page. Request bodies are strict.
  */
@@ -54,8 +54,13 @@ export const LeadFilters = z.object({
   stage: z.enum(SalesStage).optional(),
   source: z.enum(LeadSource).optional(),
   score: z.enum(SCORE_BANDS).optional(),
+  /** ADR-124: only leads handed over to the client (`Lead.handedOverAt` set). */
+  handedOver: z.boolean().optional(),
   sort: z.enum(LEAD_SORTS).default('newest'),
 });
+
+/** The URL value of the handed-over filter (`?handedOver=1`). */
+export const HANDED_OVER_PARAM = '1';
 export type LeadFilters = z.output<typeof LeadFilters>;
 
 export type LeadListParams = LeadFilters & { cursor?: string; dir: 'next' | 'prev' };
@@ -83,6 +88,7 @@ export function parseLeadPageParams(params: SearchParamsInput): LeadPageParams {
     stage: pick(z.enum(SalesStage), first(params, 'stage')),
     source: pick(z.enum(LeadSource), first(params, 'source')),
     score: pick(z.enum(SCORE_BANDS), first(params, 'score')),
+    handedOver: first(params, 'handedOver') === HANDED_OVER_PARAM ? true : undefined,
     sort: pick(z.enum(LEAD_SORTS), first(params, 'sort')) ?? 'newest',
     cursor: pick(cursorField, first(params, 'cursor')),
     dir: first(params, 'dir') === 'prev' ? 'prev' : 'next',
@@ -101,6 +107,7 @@ export function leadPageSearch(current: Partial<LeadPageParams>, overrides: Part
     stage: current.stage,
     source: current.source,
     score: current.score,
+    handedOver: current.handedOver ? HANDED_OVER_PARAM : undefined,
     sort: current.sort,
     view: current.view,
     cursor: current.cursor,
@@ -109,7 +116,7 @@ export function leadPageSearch(current: Partial<LeadPageParams>, overrides: Part
   };
   for (const [k, v] of Object.entries(overrides)) merged[k] = v;
   const out = new URLSearchParams();
-  for (const key of ['view', 'q', 'stage', 'source', 'score', 'sort', 'cursor', 'dir', 'lead'] as const) {
+  for (const key of ['view', 'q', 'stage', 'source', 'score', 'handedOver', 'sort', 'cursor', 'dir', 'lead'] as const) {
     const v = merged[key];
     if (v === undefined || v === '') continue;
     if (key === 'sort' && v === 'newest') continue;
@@ -123,7 +130,7 @@ export function leadPageSearch(current: Partial<LeadPageParams>, overrides: Part
 
 /** True when any filter narrows the list (used for the empty state wording). */
 export function hasLeadFilters(p: Partial<LeadFilters>): boolean {
-  return Boolean(p.q || p.stage || p.source || p.score);
+  return Boolean(p.q || p.stage || p.source || p.score || p.handedOver);
 }
 
 // ---- Stage moves (stage CAS) --------------------------------------------------------------------

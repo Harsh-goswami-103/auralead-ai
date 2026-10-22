@@ -148,7 +148,8 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
 
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
-
+  /** T44: a well-formed lead handoff id that does not exist. */
+  'handoffs.unknownId': 'handoffmatrixprobe0000000',
   // ---- end F5 ----
   // ---- lead-gen F6 presentation ----
 

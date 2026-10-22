@@ -101,7 +101,11 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
 
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
-
+  'lead.handoff': 'Lead handed over to the client',
+  'lead.handoff.summary': 'Handoff summary written',
+  'lead.handoff.acknowledge': 'Handed-over lead acknowledged',
+  'conversation.handoff': 'Conversation passed to the client (AI off)',
+  'workspace.reach_out': 'Opt-in notice or privacy contact changed',
   // ---- end F5 ----
   // ---- lead-gen F6 presentation ----
 

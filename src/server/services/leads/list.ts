@@ -112,6 +112,8 @@ export function leadFilterWhere(filters: Partial<LeadFilters>): Prisma.LeadWhere
   if (filters.source) and.push({ firstSource: filters.source });
   if (filters.score === 'unscored') and.push({ score: null });
   else if (filters.score) and.push({ score: { gte: SCORE_BAND_RANGES[filters.score].min, lte: SCORE_BAND_RANGES[filters.score].max } });
+  // ADR-124: leads handed over to the client.
+  if (filters.handedOver) and.push({ handedOverAt: { not: null } });
   return { AND: and };
 }
 
