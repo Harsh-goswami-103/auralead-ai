@@ -89,7 +89,16 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'demo.refresh': 'Demo dates refreshed',
   // Lead-gen suite audit actions, each in its slice's block (docs/handoff/lead-gen-suite-plan.md §6).
   // ---- lead-gen F1 finder ----
-
+  'finder.run.start': 'Lead finder search started',
+  'finder.run.finish': 'Lead finder search finished',
+  'finder.run.cancel': 'Lead finder search cancelled',
+  'finder.import': 'Lead finder results imported as leads',
+  'finder.export': 'Lead finder results downloaded (Excel)',
+  'finder.results.purge': 'Expired lead finder details removed (24-hour copy)',
+  'finder.results.refresh': 'Lead finder details refreshed',
+  'finder.emails.extract': 'Websites checked for email addresses',
+  'lead.places_expire': 'Unconfirmed Google Places details removed from leads',
+  'lead.contact_confirm': 'Lead contact details confirmed',
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 

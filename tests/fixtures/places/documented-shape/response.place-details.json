@@ -1,0 +1,17 @@
+{
+  "id": "ChIJF1nderFixtureRoyalDental02",
+  "displayName": { "text": "Fixture Royal Dental Clinic", "languageCode": "en" },
+  "primaryTypeDisplayName": { "text": "Dentist", "languageCode": "en-US" },
+  "nationalPhoneNumber": "0731 400 2002",
+  "internationalPhoneNumber": "+91 731 400 2002",
+  "rating": 4.2,
+  "userRatingCount": 41,
+  "formattedAddress": "Shop 4, Palasia Square, Indore, Madhya Pradesh 452001, India",
+  "addressComponents": [
+    { "longText": "Indore", "shortText": "Indore", "types": ["locality", "political"], "languageCode": "en" },
+    { "longText": "Madhya Pradesh", "shortText": "MP", "types": ["administrative_area_level_1", "political"], "languageCode": "en" },
+    { "longText": "452001", "shortText": "452001", "types": ["postal_code"], "languageCode": "en" }
+  ],
+  "googleMapsUri": "https://maps.google.com/?cid=1000000000000000002",
+  "attributions": [{ "provider": "Fixture Listings Partner", "providerUri": "https://partner.example.com/" }]
+}

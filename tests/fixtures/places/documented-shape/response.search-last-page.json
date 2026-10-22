@@ -1,0 +1,21 @@
+{
+  "places": [
+    {
+      "id": "ChIJF1nderFixtureLastPage04",
+      "displayName": { "text": "Fixture Pearl Dental", "languageCode": "en" },
+      "primaryTypeDisplayName": { "text": "Dental Clinic", "languageCode": "en-US" },
+      "nationalPhoneNumber": "098930 40004",
+      "internationalPhoneNumber": "+91 98930 40004",
+      "websiteUri": "http://pearl-dental.example.in/",
+      "rating": 3.9,
+      "userRatingCount": 9,
+      "formattedAddress": "Annapurna Road, Indore, Madhya Pradesh 452009, India",
+      "addressComponents": [
+        { "longText": "Indore", "shortText": "Indore", "types": ["locality", "political"], "languageCode": "en" },
+        { "longText": "Madhya Pradesh", "shortText": "MP", "types": ["administrative_area_level_1", "political"], "languageCode": "en" },
+        { "longText": "452009", "shortText": "452009", "types": ["postal_code"], "languageCode": "en" }
+      ],
+      "googleMapsUri": "https://maps.google.com/?cid=1000000000000000004"
+    }
+  ]
+}

@@ -30,7 +30,8 @@ import { campaignMetricsSyncJob } from './handlers/campaign-metrics-sync';
 import { sheetsSyncJob } from './handlers/sheets-sync';
 // Lead-gen suite handlers (docs/handoff/lead-gen-suite-plan.md §6): each slice imports only inside its block.
 // ---- lead-gen F1 finder ----
-
+import { leadFinderSearchJob } from './handlers/lead-finder-search';
+import { leadFinderPurgeJob } from './handlers/lead-finder-purge';
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 
@@ -102,7 +103,8 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   sheetsSyncJob,
   // Lead-gen suite job types (LEAD_GEN_JOB_TYPES in src/lib/domain/lead-gen.ts), each in its slice's block.
   // ---- lead-gen F1 finder ----
-
+  leadFinderSearchJob,
+  leadFinderPurgeJob,
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 

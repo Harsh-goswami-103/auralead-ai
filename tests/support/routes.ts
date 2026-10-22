@@ -136,7 +136,10 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   'extension.unknownTokenId': 'exttokenmatrixprobe000000',
   // Lead-gen suite fixture keys: well-formed unknown-id probes, never seeded rows; each in its slice's block.
   // ---- lead-gen F1 finder ----
-
+  /** F1 (ADR-118): well-formed finder run, finder result and lead ids that do not exist. */
+  'finder.unknownRunId': 'finderrunmatrixprobe00000',
+  'finder.unknownResultId': 'finderresultmatrixprobe00',
+  'finder.unknownLeadId': 'finderleadmatrixprobe0000',
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 

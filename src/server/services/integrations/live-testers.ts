@@ -20,11 +20,12 @@
 import type { IntegrationKind, IntegrationStatus } from '@/lib/domain/enums';
 import { AppError, ProviderAuthError, ProviderPermissionError, ProviderRateLimitedError } from '@/lib/errors';
 import type { AiTransport } from '@/server/adapters/ai/port';
-import { aiConnectionCheck, whatsAppGraphClient, type EmailSeams, type GraphSeams, type IntegrationUse, type Problem, type SheetsSeams } from '@/server/adapters/registry';
+import { aiConnectionCheck, whatsAppGraphClient, type EmailSeams, type GraphSeams, type IntegrationUse, type PlacesSeams, type Problem, type SheetsSeams } from '@/server/adapters/registry';
 import { classifyGraphReadFailure, describeGraphFailure, type GraphCall } from '@/server/adapters/whatsapp/cloud-api';
 import type { AppCtx } from '@/server/auth/context';
 import type { KeyRing } from '@/server/security/secrets';
 import { metaAdsTester } from '@/server/services/campaigns/meta-tester';
+import { placesTester } from '@/server/services/lead-finder/tester';
 import { sheetsTester } from '@/server/services/sheets/access';
 import { loadIntegrationForUse } from './credentials';
 import { resendTester, smtpTester } from './email-testers';
@@ -44,6 +45,8 @@ export type LiveAdapterDeps = {
   email?: EmailSeams;
   /** T34 test seam: scripted Google answers (token endpoint and Sheets API). */
   sheets?: SheetsSeams;
+  /** Lead-gen F1 test seam: scripted Google Places answers (ADR-118). */
+  places?: PlacesSeams;
 };
 
 /** Throttling or no answer: says nothing about the credentials. */
@@ -144,5 +147,7 @@ export function liveConnectionTesters(deps: LiveAdapterDeps): LiveTesters {
     // T35: GET the Page (Graph version) and, when configured, the ad account (Marketing version).
     META_ADS: metaAdsTester(deps),
     GOOGLE_SHEETS: sheetsTester({ keyRing: deps.keyRing, ...(deps.sheets ? { sheets: deps.sheets } : {}) }),
+    // Lead-gen F1 (ADR-118): one Text Search for place IDs only; a paid call, so never scheduled.
+    GOOGLE_PLACES: placesTester({ keyRing: deps.keyRing, ...(deps.places ? { places: deps.places } : {}) }),
   };
 }
