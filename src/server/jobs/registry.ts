@@ -20,6 +20,14 @@ import { bulkRunJob } from './handlers/bulk-run';
 import { webhookProcessJob } from './handlers/webhook-process';
 import { statusApplyJob } from './handlers/status-apply';
 import { replyAutoJob } from './handlers/reply-auto';
+import { leadExportJob, leadExportPurgeJob } from './handlers/lead-export';
+import { integrationHealthJob } from './handlers/integration-health';
+import { waQualityCheckJob } from './handlers/wa-quality-check';
+import { templateSyncJob } from './handlers/template-sync';
+import { metaLeadBackfillJob, metaLeadFetchJob } from './handlers/meta-lead-fetch';
+import { campaignActionJob, campaignReadBackJob } from './handlers/campaign-action';
+import { campaignMetricsSyncJob } from './handlers/campaign-metrics-sync';
+import { sheetsSyncJob } from './handlers/sheets-sync';
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -62,6 +70,17 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   webhookProcessJob,
   statusApplyJob,
   replyAutoJob,
+  leadExportJob,
+  leadExportPurgeJob,
+  integrationHealthJob,
+  waQualityCheckJob,
+  templateSyncJob,
+  metaLeadFetchJob,
+  metaLeadBackfillJob,
+  campaignMetricsSyncJob,
+  campaignActionJob,
+  campaignReadBackJob,
+  sheetsSyncJob,
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {

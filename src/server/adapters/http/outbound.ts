@@ -44,16 +44,79 @@ export function resetOutboundAttempts(): void {
   attempts.length = 0;
 }
 
+function recordAttempt(host: string, mode: OutboundMode, at: Date): boolean {
+  const blocked = mode === 'demo';
+  attempts.push({ host, mode, blocked, at });
+  if (attempts.length > MAX_LOG) attempts.shift();
+  return blocked;
+}
+
+/**
+ * The same door for provider sockets that are not HTTP (SMTP, T33): records the attempt and, in
+ * DEMO, throws `OutboundBlockedInDemoError` before any name resolution or socket. Call it first,
+ * before resolving the host.
+ */
+export function guardOutboundSocket(mode: OutboundMode, host: string, at: Date): void {
+  if (recordAttempt(host, mode, at)) {
+    throw new OutboundBlockedInDemoError({ message: `outbound connection to ${host} blocked in DEMO`, safeDetails: { host } });
+  }
+}
+
+/**
+ * Where a thrown request error happened (E7, ADR-41), for adapters that must tell "definitely not
+ * sent" from "may have reached the provider". Before the request was written: name resolution,
+ * refused or unreachable connections, connect timeouts, TLS handshake failures, invalid URLs and
+ * the DEMO block. Everything else (headers or body timeout, a reset or a closed socket, an abort,
+ * anything unknown) counts as after the write, so a send is never retried blindly.
+ */
+const BEFORE_WRITE_CODES: ReadonlySet<string> = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EAI_NONAME',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EADDRNOTAVAIL',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_INVALID_ARG',
+  'ERR_INVALID_URL',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'ERR_SSL_WRONG_VERSION_NUMBER',
+]);
+
+function errorCodeOf(error: unknown): string | null {
+  const own = (error as { code?: unknown } | null)?.code;
+  if (typeof own === 'string') return own;
+  const cause = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof cause === 'string' ? cause : null;
+}
+
+export function outboundFailurePhase(error: unknown): 'before-write' | 'after-write' {
+  if (error instanceof OutboundBlockedInDemoError) return 'before-write';
+  const code = errorCodeOf(error);
+  return code !== null && BEFORE_WRITE_CODES.has(code) ? 'before-write' : 'after-write';
+}
+
+/** A short, value-free description of a thrown request error (its code or class name). */
+export function outboundFailureLabel(error: unknown): string {
+  const code = errorCodeOf(error);
+  if (code) return code;
+  return error instanceof Error ? error.name : 'unknown error';
+}
+
 /**
  * `at` is supplied by the caller's clock (no wall-clock reads in src/server). Throws
  * `OutboundBlockedInDemoError` in DEMO for every URL, including localhost.
  */
 export async function outboundRequest(mode: OutboundMode, url: string, init: OutboundRequest, at: Date): Promise<OutboundResponse> {
   const host = hostOf(url);
-  const blocked = mode === 'demo';
-  attempts.push({ host, mode, blocked, at });
-  if (attempts.length > MAX_LOG) attempts.shift();
-  if (blocked) {
+  if (recordAttempt(host, mode, at)) {
     throw new OutboundBlockedInDemoError({ message: `outbound request to ${host} blocked in DEMO`, safeDetails: { host } });
   }
   const res = await request(url, {

@@ -14,7 +14,7 @@ afterAll(async () => {
   if (db && existsSync(db.dir)) await db.destroy();
 });
 
-describe('test teardown on Windows', () => {
+describe('test teardown', () => {
   it('kills a DB-holding child and its grandchild, then deletes the DB directory', async () => {
     db = await createTestDb({ label: 'teardown' });
     const holder = spawnTsx(HOLDER, { env: { DATABASE_URL: db.url } });

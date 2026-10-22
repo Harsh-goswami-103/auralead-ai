@@ -69,6 +69,8 @@ import { advanceLastInbound } from './window';
 
 export const WEBHOOK_PROCESS_JOB = 'webhook.process';
 export const STATUS_APPLY_JOB = 'status.apply';
+/** The Resend tag that carries the DispatchAttempt id (set by adapters/email/resend.ts). */
+export const EMAIL_ATTEMPT_TAG = 'auralead_attempt';
 export const INBOUND_PAYLOAD_VERSION = 1;
 /** First try plus 5 correlation retries (plan §6.4). */
 export const STATUS_APPLY_MAX_ATTEMPTS = 6;
@@ -89,7 +91,11 @@ export type ReceiveBase = { db: PrismaClient; clock: Clock; correlationId: strin
 /** SMTP and Resend capabilities shown to users (T33 implements the adapters; R27 disclosures). */
 export const EMAIL_PROVIDER_CAPABILITIES = {
   EMAIL_SMTP: { inbound: false, bounceTracking: false, disclosure: 'SMTP sends only: there is no inbound (replies are not received here) and bounces are not tracked.' },
-  EMAIL_RESEND: { inbound: 'UNVERIFIED', bounceTracking: true, disclosure: 'Bounces and complaints arrive as signed webhooks; inbound replies depend on Resend receiving, not verified yet.' },
+  EMAIL_RESEND: {
+    inbound: false,
+    bounceTracking: true,
+    disclosure: 'Bounces and complaints arrive as signed webhooks. Inbound email is not supported for this provider: replies go to your own mailbox, not to the inbox here.',
+  },
   DEMO: { inbound: false, bounceTracking: true, disclosure: 'Simulated provider: events are produced inside this app.' },
 } as const;
 
@@ -316,12 +322,28 @@ export async function receiveWhatsAppWebhook(base: ReceiveBase, webhook: WaWebho
  */
 export async function receiveEmailEvent(
   base: ReceiveBase,
-  input: { provider: Extract<WebhookProvider, 'DEMO' | 'RESEND'>; eventId: string; event: EmailEvent; simulated: boolean },
+  input: {
+    provider: Extract<WebhookProvider, 'DEMO' | 'RESEND'>;
+    eventId: string;
+    event: EmailEvent;
+    simulated: boolean;
+    /** T33 Resend: routed by the integration's routing key (null = UNROUTED); never by payload. */
+    route?: Routing;
+    /** T33 Resend: the idempotency key is the svix-id itself. */
+    externalKey?: string;
+  },
   deps: ReceiveDeps,
 ): Promise<ReceivedItem & { journal?: JournalFlushResult }> {
   const { event } = input;
-  const message = await base.db.message.findFirst({ where: { channel: 'EMAIL', providerMessageId: event.data.email_id }, select: { workspaceId: true } });
-  const routing: Routing = message ? { workspaceId: message.workspaceId, integrationId: null } : null;
+  let routing: Routing;
+  if (input.route !== undefined) routing = input.route;
+  else {
+    const message = await base.db.message.findFirst({ where: { channel: 'EMAIL', providerMessageId: event.data.email_id }, select: { workspaceId: true } });
+    routing = message ? { workspaceId: message.workspaceId, integrationId: null } : null;
+  }
+  // T33: the attempt id this app tagged the send with (Resend echoes tags; UNVERIFIED) is positive evidence for an AMBIGUOUS attempt.
+  const tags = event.data.tags;
+  const tagged = input.provider === 'RESEND' && typeof tags === 'object' && tags !== null && !Array.isArray(tags) ? (tags as Record<string, unknown>)[EMAIL_ATTEMPT_TAG] : undefined;
   const permanentBounce = event.type === 'email.bounced' && event.data.bounce?.type === 'Permanent';
   const status = event.type === 'email.bounced' && !permanentBounce ? 'email.bounce_transient' : event.type;
   const item: StatusItem = {
@@ -332,11 +354,11 @@ export async function receiveEmailEvent(
     status,
     providerTs: new Date(event.created_at).toISOString(),
     errorCode: event.data.bounce?.subType ?? null,
-    callbackData: null,
+    callbackData: typeof tagged === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(tagged) ? tagged : null,
   };
   const reason = permanentBounce ? 'HARD_BOUNCE' : event.type === 'email.complained' ? 'COMPLAINT' : null;
   const recipient = event.data.to?.[0] ?? null;
-  const externalKey = `email:${input.eventId}`;
+  const externalKey = input.externalKey ?? `email:${input.eventId}`;
   const redacted = { kind: 'status', channel: 'EMAIL', providerMessageId: item.providerMessageId, status, errorCode: item.errorCode } satisfies Prisma.InputJsonValue;
   const audit = webhookAuditCtx(base, routing?.workspaceId ?? null);
   const batch = new SuppressionJournalBatch();

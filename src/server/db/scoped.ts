@@ -65,6 +65,9 @@ export const REQUIRED_TENANT_MODELS = [
   'PipelineStageRun',
   'AiDraft',
   'BulkRun',
+  'LeadExport',
+  'MetaLeadBackfill',
+  'SheetSyncRun',
 ] as const satisfies readonly Prisma.ModelName[];
 
 /** Tenant models whose workspaceId is nullable (system rows). Scoped access still filters by workspace. */

@@ -31,6 +31,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@content/*": [
+        "./content/*"
       ]
     }
   },
@@ -47,6 +50,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    ".claude",
     ".next/cache",
     "src/generated"
   ]

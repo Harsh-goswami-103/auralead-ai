@@ -13,9 +13,12 @@
  *   never get WhatsApp consent, ADR-15). Batch id = the extension batch id.
  */
 import type { IngestBatchInput, IngestFields, ConsentMapping } from '@/lib/schemas/ingest';
+import type { WebhookEventResult } from './events';
 import { consentMappingSchema } from '@/lib/schemas/ingest';
 import {
   extensionBatchSchema,
+  extensionIntakeMetaSchema,
+  type ExtensionIntakeMeta,
   fieldMapSchema,
   metaLeadEventSchema,
   sheetsPushSchema,
@@ -97,7 +100,8 @@ export function sheetsToIngest(push: SheetsPush, mapping: StoredMapping, opts: {
       externalId: row.rowKey,
       fields: mapFields(fieldMap, row.values),
       answers: row.values,
-      attribution: { sheet: push.sheetId },
+      // T34: a row identified by a content hash (no auralead_event_id) is flagged on its source record.
+      attribution: { sheet: push.sheetId, ...(row.weakId ? { weakId: 'content-hash' } : {}) },
       ...(row.submittedAt ? { submittedAt: row.submittedAt } : {}),
     })),
   };
@@ -160,5 +164,31 @@ export function extensionToIngest(batch: ExtensionBatch, opts: { simulated: bool
       ...(batch.keyword ? { attribution: { keyword: batch.keyword } } : {}),
       ...(r.extractedAt ? { extractedAt: r.extractedAt } : {}),
     })),
+  };
+}
+
+/**
+ * The server-written intake block of a live extension batch (T36): the authenticated token and
+ * the records rejected at intake. Absent on simulated batches and on events stored before T36.
+ */
+export function extensionIntakeOf(body: unknown): ExtensionIntakeMeta | null {
+  const intake = (body as { intake?: unknown } | null)?.intake;
+  if (intake === undefined) return null;
+  const parsed = extensionIntakeMetaSchema.safeParse(intake);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Appends intake rejections to an ingest result: one list and one count for the whole delivery. */
+export function withIntakeRejections(result: WebhookEventResult, rejected: ExtensionIntakeMeta['rejected']): WebhookEventResult {
+  if (result.kind !== 'ingest' || rejected.length === 0) return result;
+  const counts = { ...result.counts, received: result.counts.received + rejected.length, rejected: result.counts.rejected + rejected.length };
+  return {
+    ...result,
+    batchStatus: result.batchStatus === 'COMPLETED' ? 'PARTIAL' : result.batchStatus,
+    counts,
+    records: [
+      ...result.records,
+      ...rejected.map((r) => ({ externalId: r.recordId ?? `#${r.index}`, status: 'REJECTED', reasonCode: r.reasonCode, sourceRecordId: null, leadId: null, mergeReviewId: null, consent: 'REJECTED' })),
+    ],
   };
 }

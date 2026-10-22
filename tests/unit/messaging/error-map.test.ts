@@ -4,7 +4,7 @@
  * change is a reviewed edit in one place.
  */
 import { describe, expect, it } from 'vitest';
-import { classifyEmailFailure, EMAIL_ERROR_MAP, EMAIL_ERROR_MAP_CHECKED_ON } from '@/server/adapters/email/error-map';
+import { classifyEmailFailure, EMAIL_AMBIGUOUS_ERRORS, EMAIL_ERROR_MAP, EMAIL_ERROR_MAP_CHECKED_ON } from '@/server/adapters/email/error-map';
 import { classifyWhatsAppFailure, WHATSAPP_ERROR_MAP, WHATSAPP_ERROR_MAP_CHECKED_ON, WA_CODES } from '@/server/adapters/whatsapp/error-map';
 
 const CLASSES = ['PRE_SEND', 'RETRYABLE', 'PERMANENT'] as const;
@@ -117,5 +117,22 @@ describe('Email error map', () => {
 
   it('a timeout after the write is AMBIGUOUS', () => {
     expect(classifyEmailFailure({ transport: 'smtp', phase: 'after-write', message: 'socket closed' })).toMatchObject({ status: 'ambiguous' });
+  });
+
+  it('T33: an idempotent request still in progress is AMBIGUOUS, never a failure; every ambiguous name is outside the failure map', () => {
+    for (const [name, reason] of Object.entries(EMAIL_AMBIGUOUS_ERRORS)) {
+      expect(EMAIL_ERROR_MAP[name], name).toBeUndefined();
+      expect(classifyEmailFailure({ transport: 'http', phase: 'response', httpStatus: 409, providerCode: name, message: 'x' })).toEqual({ status: 'ambiguous', reasonCode: reason, error: 'x' });
+    }
+    expect(EMAIL_AMBIGUOUS_ERRORS.concurrent_idempotent_requests).toBe('IDEMPOTENT_REQUEST_IN_PROGRESS');
+  });
+
+  it('T33: a reused key, the monthly quota and auth names are PERMANENT; the daily quota and rate limit RETRYABLE with a workspace throttle', () => {
+    expect(EMAIL_ERROR_MAP.invalid_idempotent_request).toMatchObject({ failureClass: 'PERMANENT', reasonCode: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(EMAIL_ERROR_MAP.monthly_quota_exceeded).toMatchObject({ failureClass: 'PERMANENT' });
+    expect(EMAIL_ERROR_MAP.daily_quota_exceeded).toMatchObject({ failureClass: 'RETRYABLE', throttleScope: 'workspace' });
+    expect(EMAIL_ERROR_MAP.rate_limit_exceeded).toMatchObject({ failureClass: 'RETRYABLE', throttleScope: 'workspace' });
+    for (const name of ['missing_api_key', 'invalid_api_key']) expect(EMAIL_ERROR_MAP[name]).toMatchObject({ failureClass: 'PERMANENT', reasonCode: 'PROVIDER_AUTH' });
+    for (const e of Object.values(EMAIL_ERROR_MAP)) expect(e.verified).toBe(false);
   });
 });

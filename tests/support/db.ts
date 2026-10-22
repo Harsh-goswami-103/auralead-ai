@@ -36,7 +36,7 @@ export function migrateDeploy(url: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [PRISMA_CLI, 'migrate', 'deploy'], {
       cwd: REPO_ROOT,
-      env: { ...process.env, DATABASE_URL: url, PRISMA_HIDE_UPDATE_MESSAGE: '1' },
+      env: { ...process.env, DATABASE_URL: url, PRISMA_HIDE_UPDATE_MESSAGE: '1', CHECKPOINT_DISABLE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });

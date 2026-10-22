@@ -8,14 +8,15 @@
  * Aurora look (design spec §6-§7): PageHeader (quote number as the gradient h1, the status chip
  * first in DOM order so it stays the first [data-quote-status]), the version on the left with a
  * neutral totals panel (money is never colored) and line items that stack below sm, and on the
- * right the share panel, the colored timeline rail (every audit code has a label) and approvals
- * as icon pills. The actions (and the revise editor they open) sit above both columns, so the
+ * right the share panel, the status history (T27: one step per status change with how long the
+ * quote stayed in it, derived from the same audit rows), the colored timeline rail (every audit
+ * code has a label) and approvals as icon pills. The actions (and the revise editor they open) sit above both columns, so the
  * version and the share card start on the same line.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, FileStack, History, ListChecks, ScrollText, Send, ShieldAlert, Tags, Timer, Undo2, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, FileStack, History, ListChecks, ListOrdered, ScrollText, Send, ShieldAlert, Tags, Timer, Undo2, type LucideIcon } from 'lucide-react';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { humanize } from '@/components/client/labels';
 import { QuoteTimeline } from '@/components/client/QuoteTimeline';
@@ -33,6 +34,7 @@ import { QuoteSharePanel } from '@/components/approvals/QuoteSharePanel';
 import { loadQuoteShareEvidence } from '@/server/services/quotes/manual-send';
 import { QuoteActions } from '../quote-actions';
 import { QUOTE_STATUS_VOCABULARY, QuoteStatusBadge } from '../quote-status';
+import { deriveStatusHistory, QuoteStatusHistory } from '../status-history';
 
 export const metadata: Metadata = { title: 'Quotation' };
 export const dynamic = 'force-dynamic';
@@ -187,6 +189,15 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   const validityPassed = page.ctx.clock.now().getTime() >= current.validUntil.getTime();
 
   const statusEntry = QUOTE_STATUS_VOCABULARY[detail.effectiveStatus];
+  const whoOf = (t: QuoteDetail['timeline'][number]) => t.actorName ?? (t.actorKind === 'WORKER' ? 'Scheduled job' : t.actorKind === 'PUBLIC' ? 'Customer (quote page)' : humanize(t.actorKind));
+  const versionOf = (t: QuoteDetail['timeline'][number]) => {
+    const summary = (t.summary ?? {}) as { versionNo?: number };
+    return typeof summary.versionNo === 'number' ? summary.versionNo : null;
+  };
+  const statusSteps = deriveStatusHistory(
+    detail.timeline.map((t) => ({ id: t.id, action: t.action, createdAt: t.createdAt, who: whoOf(t), versionNo: versionOf(t) })),
+    { effectiveStatus: detail.effectiveStatus, validUntil: detail.quote.validUntil, now: page.ctx.clock.now() },
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -317,18 +328,19 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
             canShare={detail.permissions.canShare}
           />
 
+          <SectionCard title={<ChipTitle icon={<ListOrdered aria-hidden="true" />} hue="zest">Status history</ChipTitle>} meta="Each status the quotation reached, and for how long.">
+            <QuoteStatusHistory steps={statusSteps} timeZone={tz} />
+          </SectionCard>
+
           <SectionCard title={<ChipTitle icon={<History aria-hidden="true" />} hue="volt">Timeline</ChipTitle>}>
             <QuoteTimeline
-              items={detail.timeline.map((t) => {
-                const summary = (t.summary ?? {}) as { versionNo?: number };
-                return {
-                  id: t.id,
-                  action: t.action,
-                  versionNo: typeof summary.versionNo === 'number' ? summary.versionNo : null,
-                  when: formatDateTime(t.createdAt, tz),
-                  who: t.actorName ?? (t.actorKind === 'WORKER' ? 'Scheduled job' : humanize(t.actorKind)),
-                };
-              })}
+              items={detail.timeline.map((t) => ({
+                id: t.id,
+                action: t.action,
+                versionNo: versionOf(t),
+                when: formatDateTime(t.createdAt, tz),
+                who: whoOf(t),
+              }))}
             />
           </SectionCard>
 

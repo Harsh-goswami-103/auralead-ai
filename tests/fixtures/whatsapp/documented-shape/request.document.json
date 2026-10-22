@@ -1,0 +1,12 @@
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "919812345678",
+  "biz_opaque_callback_data": "att_contract_0003",
+  "type": "document",
+  "document": {
+    "id": "1037543291543636",
+    "filename": "Q-0007-v2.pdf",
+    "caption": "Quotation Q-0007 (version 2) from Smile Avenue"
+  }
+}

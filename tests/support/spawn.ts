@@ -7,6 +7,7 @@
  * orphan grandchildren), then `child.kill('SIGKILL')` as the fallback; on POSIX SIGKILL.
  */
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +32,28 @@ export type SpawnedNode = {
 
 const live = new Set<SpawnedNode>();
 
+/**
+ * POSIX children start in their own process group so a kill can reach their descendants (spawn with
+ * `detached: POSIX_DETACH`; Windows uses `taskkill /T` instead). A detached child no longer shares the
+ * runner's group, so the runner also kills every group it still tracks when it exits (normal exit,
+ * uncaught exception, process.exit); only a SIGKILL of the runner itself can leave one behind.
+ */
+export const POSIX_DETACH = process.platform !== 'win32';
+
+const EXIT_HOOK = Symbol.for('auralead.tests.spawn.exitHook');
+if (POSIX_DETACH && !(globalThis as Record<symbol, unknown>)[EXIT_HOOK]) {
+  (globalThis as Record<symbol, unknown>)[EXIT_HOOK] = true;
+  process.on('exit', () => {
+    for (const handle of live) {
+      try {
+        process.kill(-handle.pid, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
+  });
+}
+
 export type SpawnTsxOptions = {
   env?: Record<string, string | undefined>;
   args?: string[];
@@ -43,6 +66,8 @@ export function spawnTsx(scriptPath: string, options: SpawnTsxOptions = {}): Spa
     env: { ...process.env, ...options.env },
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    // POSIX: its own process group, so `terminate` can kill the child together with its descendants.
+    detached: POSIX_DETACH,
   });
   if (child.pid === undefined) throw new Error(`failed to spawn ${scriptPath}`);
 
@@ -115,14 +140,26 @@ export function spawnTsx(scriptPath: string, options: SpawnTsxOptions = {}): Spa
   return handle;
 }
 
-/** True while a process with this pid exists (signal 0 probes without killing). */
+/** Linux: a killed process whose parent never calls wait() stays a zombie (state Z) and still answers signal 0. */
+function isZombie(pid: number): boolean {
+  if (process.platform !== 'linux') return false;
+  try {
+    // /proc/<pid>/stat is "pid (comm) S ..."; comm may contain spaces and parentheses, so cut at the last ")".
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'Z';
+  } catch {
+    return false;
+  }
+}
+
+/** True while a live process with this pid exists (signal 0 probes without killing; zombies count as dead). */
 export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
+  return !isZombie(pid);
 }
 
 export async function waitForPidExit(pid: number, timeoutMs = 10_000): Promise<boolean> {
@@ -140,10 +177,21 @@ function taskkillTree(pid: number): Promise<void> {
   });
 }
 
-/** Kills a pid and (on Windows) its whole tree, then waits for it to disappear. */
+/** SIGKILL to the whole process group of a pid spawned `detached` (POSIX only); false if it is not a group leader. */
+function killProcessGroup(pid: number): boolean {
+  try {
+    process.kill(-pid, 'SIGKILL');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Kills a pid and its descendants (taskkill /T on Windows, the process group elsewhere), then waits for it to disappear. */
 export async function killPidTree(pid: number, timeoutMs = 10_000): Promise<void> {
   if (!isPidAlive(pid)) return;
   if (process.platform === 'win32') await taskkillTree(pid);
+  else killProcessGroup(pid);
   if (isPidAlive(pid)) {
     try {
       process.kill(pid, 'SIGKILL');
@@ -158,6 +206,7 @@ export async function killPidTree(pid: number, timeoutMs = 10_000): Promise<void
 export async function terminate(handle: SpawnedNode, timeoutMs = 10_000): Promise<void> {
   if (handle.child.exitCode !== null || handle.child.signalCode !== null) return;
   if (process.platform === 'win32') await taskkillTree(handle.pid);
+  else killProcessGroup(handle.pid);
   if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill('SIGKILL');
   await handle.waitForExit(timeoutMs);
   if (!(await waitForPidExit(handle.pid, timeoutMs))) throw new Error(`pid ${handle.pid} still alive after terminate`);

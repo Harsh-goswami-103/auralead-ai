@@ -20,7 +20,13 @@ const isoTime = z.iso.datetime({ offset: true });
 const id = (max = 256) => z.string().trim().min(1).max(max);
 
 export const SHEETS_MAX_ROWS = 50;
+/** Header columns a push may name (T34). */
+export const SHEETS_MAX_COLUMNS = 200;
 export const EXTENSION_MAX_RECORDS = 200;
+
+const sheetsRowValues = z.record(z.string().max(200), answerValue);
+/** Row 1 of the Sheet as the script read it (T34): the receiver checks it against the mapping's header fingerprint (drift). */
+const sheetsHeader = z.array(z.string().max(200)).max(SHEETS_MAX_COLUMNS);
 
 export const sheetsPushSchema = z.object({
   version: z.literal(1),
@@ -28,19 +34,44 @@ export const sheetsPushSchema = z.object({
   sheetId: id(),
   /** SheetMapping.version the script was generated for. */
   mappingVersion: z.number().int().positive(),
+  /** T34 extension; absent on pushes stored before it. */
+  header: sheetsHeader.optional(),
   rows: z
     .array(
       z.object({
-        /** Stable per sheet row (the script's row id), the record's idempotency key. */
+        /** Stable per sheet row (the script's `auralead_event_id`), the record's idempotency key. */
         rowKey: id(),
+        /**
+         * T34: true when the push carried no row id and the receiver derived `rowKey` from the row's
+         * content (a weak id: an edited row gets a new one). Set by the server only.
+         */
+        weakId: z.boolean().optional(),
         submittedAt: isoTime.optional(),
-        values: z.record(z.string().max(200), answerValue),
+        values: sheetsRowValues,
       }),
     )
     .min(1)
     .max(SHEETS_MAX_ROWS),
 });
 export type SheetsPush = z.infer<typeof sheetsPushSchema>;
+
+/**
+ * What an Apps Script may send to /api/webhooks/google-sheets (T34): the stored shape, except that
+ * a row may lack its `rowKey` (the receiver then derives a weak content-hash id and flags it), and
+ * `weakId` is never accepted from the caller (unknown keys are stripped).
+ */
+export const sheetsPushInSchema = z.object({
+  version: z.literal(1),
+  eventId: id(),
+  sheetId: id(),
+  mappingVersion: z.number().int().positive(),
+  header: sheetsHeader.optional(),
+  rows: z
+    .array(z.object({ rowKey: id().optional(), submittedAt: isoTime.optional(), values: sheetsRowValues }))
+    .min(1)
+    .max(SHEETS_MAX_ROWS),
+});
+export type SheetsPushIn = z.infer<typeof sheetsPushInSchema>;
 
 /** The `value` of a Page webhook change with `field: "leadgen"`. */
 export const metaLeadgenChangeSchema = z.object({
@@ -73,30 +104,29 @@ export const metaLeadEventSchema = z.object({
 });
 export type MetaLeadEvent = z.infer<typeof metaLeadEventSchema>;
 
+/** One Maps record of an extension batch (also validated one by one at intake, T36). */
+export const extensionRecordSchema = z.object({
+  recordId: id(),
+  placeId: id().optional(),
+  name: z.string().max(300).nullish(),
+  phone: z.string().max(300).nullish(),
+  email: z.string().max(320).nullish(),
+  website: z.string().max(2048).nullish(),
+  address: z.string().max(1000).nullish(),
+  city: z.string().max(200).nullish(),
+  category: z.string().max(200).nullish(),
+  rating: z.union([z.number(), z.string().max(20)]).nullish(),
+  reviewCount: z.union([z.number(), z.string().max(40)]).nullish(),
+  extractedAt: isoTime.optional(),
+});
+export type ExtensionRecord = z.infer<typeof extensionRecordSchema>;
+
 export const extensionBatchSchema = z.object({
   version: z.literal(1),
   batchId: id(128),
   /** Search keyword the records were scraped for (attribution). */
   keyword: z.string().max(200).optional(),
-  records: z
-    .array(
-      z.object({
-        recordId: id(),
-        placeId: id().optional(),
-        name: z.string().max(300).nullish(),
-        phone: z.string().max(300).nullish(),
-        email: z.string().max(320).nullish(),
-        website: z.string().max(2048).nullish(),
-        address: z.string().max(1000).nullish(),
-        city: z.string().max(200).nullish(),
-        category: z.string().max(200).nullish(),
-        rating: z.union([z.number(), z.string().max(20)]).nullish(),
-        reviewCount: z.union([z.number(), z.string().max(40)]).nullish(),
-        extractedAt: isoTime.optional(),
-      }),
-    )
-    .min(1)
-    .max(EXTENSION_MAX_RECORDS),
+  records: z.array(extensionRecordSchema).min(1).max(EXTENSION_MAX_RECORDS),
 });
 export type ExtensionBatch = z.infer<typeof extensionBatchSchema>;
 

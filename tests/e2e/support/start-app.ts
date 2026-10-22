@@ -25,7 +25,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { parse } from 'dotenv';
 import getPort from 'get-port';
 import { runSetup } from '../../../scripts/setup';
-import { killPidTree, REPO_ROOT } from '../../support/spawn';
+import { killPidTree, POSIX_DETACH, REPO_ROOT } from '../../support/spawn';
 
 export type AppMode = 'demo' | 'live';
 
@@ -49,6 +49,7 @@ export function baseEnv(): Env {
     env[k] = v;
   }
   env.PRISMA_HIDE_UPDATE_MESSAGE = '1';
+  env.CHECKPOINT_DISABLE = '1';
   env.NEXT_TELEMETRY_DISABLED = '1';
   return env;
 }
@@ -57,7 +58,7 @@ type RunResult = { code: number | null; output: string };
 
 function runNode(args: string[], env: Env, label: string, timeoutMs: number): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { cwd: REPO_ROOT, env: env as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd: REPO_ROOT, env: env as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: POSIX_DETACH });
     let output = '';
     child.stdout!.on('data', (c: Buffer) => (output += c.toString('utf8')));
     child.stderr!.on('data', (c: Buffer) => (output += c.toString('utf8')));
@@ -122,7 +123,7 @@ export type StartedApp = {
 type Proc = { child: ChildProcess; label: string; log: string; exited: boolean };
 
 function startProc(args: string[], env: Env, label: string): Proc {
-  const child = spawn(process.execPath, args, { cwd: REPO_ROOT, env: env as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(process.execPath, args, { cwd: REPO_ROOT, env: env as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: POSIX_DETACH });
   const proc: Proc = { child, label, log: '', exited: false };
   const keep = (c: Buffer) => {
     proc.log = (proc.log + c.toString('utf8')).slice(-20_000);

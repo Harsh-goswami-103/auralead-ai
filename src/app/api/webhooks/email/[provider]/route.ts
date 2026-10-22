@@ -5,7 +5,8 @@
  *    derived from SESSION_SECRET; `x-auralead-event-id` is the idempotency key. A permanent bounce
  *    or a complaint suppresses the address on EMAIL only, synchronously; every event is a
  *    delivery status for the message.
- *  - `resend`: 404 until T33 adds the Svix-verified receiver (no event is accepted unverified).
+ *  - `resend`: 404 here; T33's Svix-verified receiver is `[provider]/[routingKey]` (the workspace's
+ *    own URL), so no event is accepted unverified or unrouted.
  *  - `smtp`: SMTP has no webhooks: 404 `EMAIL_PROVIDER_NO_WEBHOOKS` with the disclosure that it has
  *    no inbound and does not track bounces.
  */
@@ -27,6 +28,10 @@ export const POST = rawRoute({ maxBytes: MAX_BYTES }, async ({ req, raw, params,
   const provider = params.provider;
   if (provider === 'smtp') {
     throw new NotFoundError({ code: 'EMAIL_PROVIDER_NO_WEBHOOKS', userMessage: EMAIL_PROVIDER_CAPABILITIES.EMAIL_SMTP.disclosure });
+  }
+  if (provider === 'resend') {
+    // T33: Resend posts to the workspace's own URL, /api/webhooks/email/resend/<routing key>, shown on the setup page.
+    throw new NotFoundError({ code: 'WEBHOOK_ROUTE_UNKNOWN', userMessage: 'Resend deliveries go to the workspace webhook URL shown on the Resend setup page.' });
   }
   if (provider !== 'demo' || rt.config.mode !== 'demo') throw new NotFoundError();
 

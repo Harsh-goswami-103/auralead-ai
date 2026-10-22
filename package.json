@@ -21,6 +21,8 @@
     "test:integration": "vitest run --project integration",
     "test:components": "vitest run --project components",
     "test:e2e": "playwright test",
+    "test:e2e:fresh": "playwright test --config playwright.fresh.config.ts",
+    "verify": "node scripts/verify.mjs",
     "setup": "tsx scripts/setup.ts",
     "db:path": "tsx scripts/db-path.ts",
     "postinstall": "prisma generate",
@@ -32,7 +34,9 @@
     "pipeline:resume": "tsx scripts/pipeline-resume.ts",
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts",
-    "lead:erase": "tsx scripts/lead-erase.ts"
+    "lead:erase": "tsx scripts/lead-erase.ts",
+    "admin:bootstrap": "tsx scripts/admin-bootstrap.ts",
+    "creds:rotate": "tsx scripts/creds-rotate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.134.0",

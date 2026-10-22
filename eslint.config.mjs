@@ -178,6 +178,8 @@ export default defineConfig([
     'playwright-report/**',
     'next-env.d.ts',
     'src/generated/**',
+    // Agent worktrees and local tooling state; never part of the project.
+    '.claude/**',
   ]),
 
   {
@@ -227,6 +229,36 @@ export default defineConfig([
     files: UI,
     rules: { 'no-warning-comments': ['error', { terms: ['todo', 'fixme', 'xxx'], location: 'anywhere' }] },
   },
+
+  // extension-bridge/ (T36, ADR-110): plain browser JavaScript that runs inside a Chrome MV3
+  // extension, not in the app. saas-sync.js is a classic script (importScripts in the vendor's
+  // service worker), options.js an ES module of the options page. Globals are listed here
+  // explicitly (no extra dependency); undefined names are errors.
+  {
+    files: ['extension-bridge/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: {
+        chrome: 'readonly',
+        globalThis: 'readonly',
+        console: 'readonly',
+        crypto: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        AbortController: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        TextEncoder: 'readonly',
+        document: 'readonly',
+        navigator: 'readonly',
+        ServiceWorkerGlobalScope: 'readonly',
+        importScripts: 'readonly',
+      },
+    },
+    rules: { 'no-undef': 'error', 'no-restricted-globals': ['error', 'localStorage', 'sessionStorage', 'eval'] },
+  },
+  { files: ['extension-bridge/saas-sync.js'], languageOptions: { sourceType: 'script' } },
+  { files: ['extension-bridge/options.js'], languageOptions: { sourceType: 'module' } },
 
   // Import boundaries (also enforced by the graph walk in tests/unit/arch/import-boundaries.test.ts).
   { files: ['src/lib/**/*.{ts,tsx}'], rules: { 'no-restricted-imports': ['error', { patterns: LIB_IMPORTS }] } },

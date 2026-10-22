@@ -126,6 +126,14 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   /** T22: workspace B's seeded PENDING approval of quote Q-0001 v1, and a conversation id that does not exist. */
   'workspaceB.approvalId': seedId('approval', `${WORKSPACE_B}:Q-0001:1`),
   'inbox.unknownConversationId': 'convmatrixprobe0000000000',
+  /** T29: the seeded super admin (self-change probes), the narrow employee, and an invite id that does not exist. */
+  'admin.userId': seedId('user', 'admin'),
+  'employeeNoCapability.userId': seedId('user', 'neha'),
+  'admin.unknownInviteId': 'invitematrixprobe00000000',
+  /** T26: a well-formed lead export id that does not exist. */
+  'leads.unknownExportId': 'exportmatrixprobe00000000',
+  /** T36: a well-formed extension token id that does not exist. */
+  'extension.unknownTokenId': 'exttokenmatrixprobe000000',
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {

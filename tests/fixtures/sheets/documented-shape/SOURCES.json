@@ -1,0 +1,75 @@
+{
+  "_about": "Documented-shape fixtures for the Google Sheets adapter (T34), derived from Google's published REST references and error model as seen in web-search snippets on 2026-10-20. developers.google.com was not reachable from the build environment, so no page was read first-hand. None of these is recorded live traffic; every shape is UNVERIFIED until a user-authorized live check (docs/integrations.md).",
+  "files": {
+    "response.token.json": {
+      "source": "https://developers.google.com/identity/protocols/oauth2/service-account#httprest",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "error.token-invalid-grant.json": {
+      "source": "https://developers.google.com/identity/protocols/oauth2/service-account#error-codes",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "response.spreadsheet-meta.json": {
+      "source": "https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/get",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.values-header.json": {
+      "source": "https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.values-empty.json": {
+      "source": "https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "error.403-permission-denied.json": {
+      "source": "https://cloud.google.com/apis/design/errors (google.rpc.Status shape); message from community reports",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 403
+    },
+    "error.403-service-disabled.json": {
+      "source": "https://cloud.google.com/apis/design/errors; reason SERVICE_DISABLED from search snippets",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 403
+    },
+    "error.404-not-found.json": {
+      "source": "https://cloud.google.com/apis/design/errors",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 404
+    },
+    "error.400-bad-range.json": {
+      "source": "https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values/get",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.429-rate-limited.json": {
+      "source": "https://developers.google.com/sheets/api/limits",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-20 (search snippets only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 429
+    }
+  }
+}

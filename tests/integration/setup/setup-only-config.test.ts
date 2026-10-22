@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { parse } from 'dotenv';
 import { toSqliteFileUrl } from '@/lib/paths';
 import { removeDir } from '../../support/db';
-import { killPidTree, REPO_ROOT } from '../../support/spawn';
+import { killPidTree, POSIX_DETACH, REPO_ROOT } from '../../support/spawn';
 
 const TSX_LOADER = pathToFileURL(path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'loader.mjs')).href;
 const PRISMA_CLI = path.join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js');
@@ -40,6 +40,7 @@ function cleanEnv(): Record<string, string> {
   else env.XDG_DATA_HOME = dataHome;
   env.TSX_TSCONFIG_PATH = path.join(REPO_ROOT, 'tsconfig.json');
   env.PRISMA_HIDE_UPDATE_MESSAGE = '1';
+  env.CHECKPOINT_DISABLE = '1';
   return env;
 }
 
@@ -47,7 +48,7 @@ type Run = { code: number | null; stdout: string; stderr: string };
 
 function run(args: string[], extraEnv: Record<string, string> = {}, timeoutMs = 90_000): Promise<Run> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { cwd: tmp, env: { ...cleanEnv(), ...extraEnv } as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd: tmp, env: { ...cleanEnv(), ...extraEnv } as NodeJS.ProcessEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: POSIX_DETACH });
     children.add(child);
     let stdout = '';
     let stderr = '';
