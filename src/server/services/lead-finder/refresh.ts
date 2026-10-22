@@ -4,7 +4,8 @@
  * mask. At most 10 per request, called one after another outside any transaction; a rejected key or
  * a refused API stops the remaining calls. Refreshed rows get their Places content back as a new
  * 24-hour working copy (`contentExpiresAt`, `contentPurgedAt` cleared, the purge re-armed); rows
- * that have not expired are left alone. Audited `finder.results.refresh` with counts only. DEMO
+ * that have not expired are left alone, and a result whose details an erasure removed is refused
+ * (never fetched again). Audited `finder.results.refresh` with counts only. DEMO
  * rebuilds the simulated listing from its ID and never contacts anything.
  */
 import type { Prisma } from '@/generated/prisma/client';
@@ -17,10 +18,10 @@ import type { JobStore } from '@/server/jobs/queue';
 import { recordAudit } from '@/server/services/audit/record';
 import { enqueueFinderPurge, FINDER_CONTENT_TTL_MS } from './jobs';
 import { resolveWorkspacePlaces, type PlacesDeps } from './provider';
-import { hasDetails, loadFinderRun, PlacesNotConfiguredError } from './runs';
+import { erasedResult, hasDetails, loadFinderRun, PlacesNotConfiguredError } from './runs';
 import { placesErrorCode, stopsRun } from './search';
 
-export type RefreshResult = { requested: number; refreshed: number; failed: number; notExpired: number; errorCode: string | null };
+export type RefreshResult = { requested: number; refreshed: number; failed: number; notExpired: number; erased: number; errorCode: string | null };
 
 export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; resultIds: readonly string[] }, deps: PlacesDeps): Promise<RefreshResult> {
   requireCapability(ctx, 'finder.run');
@@ -30,8 +31,11 @@ export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; 
   const rows = await ctx.db.leadFinderResult.findMany({ where: { runId: run.id, id: { in: ids } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
   if (rows.length !== ids.length) throw new NotFoundError({ message: 'a selected finder result is not in this run' });
   const now = ctx.clock.now();
-  const expired = rows.filter((r) => !hasDetails(r, now));
-  if (expired.length === 0) return { requested: rows.length, refreshed: 0, failed: 0, notExpired: rows.length, errorCode: null };
+  // A listing whose details an erasure removed is never fetched again.
+  const erased = rows.filter((r) => erasedResult(r)).length;
+  const expired = rows.filter((r) => !erasedResult(r) && !hasDetails(r, now));
+  const notExpired = rows.length - erased - expired.length;
+  if (expired.length === 0) return { requested: rows.length, refreshed: 0, failed: 0, notExpired, erased, errorCode: null };
 
   const provider = await resolveWorkspacePlaces(ctx, deps);
   if (!provider.ok) {
@@ -91,8 +95,8 @@ export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; 
       workspaceId,
       simulated: run.simulated,
       result: fresh.length === 0 ? 'FAILED' : 'SUCCESS',
-      summary: { requested: rows.length, refreshed: fresh.length, failed, notExpired: rows.length - expired.length, errorCode },
+      summary: { requested: rows.length, refreshed: fresh.length, failed, notExpired, erased, errorCode },
     });
   });
-  return { requested: rows.length, refreshed: fresh.length, failed, notExpired: rows.length - expired.length, errorCode };
+  return { requested: rows.length, refreshed: fresh.length, failed, notExpired, erased, errorCode };
 }

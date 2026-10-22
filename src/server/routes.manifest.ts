@@ -2110,6 +2110,25 @@ export const ROUTES: readonly RouteEntry[] = [
       },
     ],
   },
+  {
+    path: '/api/app/leads/[leadId]/confirm-contact',
+    file: 'src/app/api/app/leads/[leadId]/confirm-contact/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.write',
+    params: { leadId: fixture('finder.unknownLeadId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "confirm a lead's Places details in workspace B (leads.write)",
+      },
+      { method: 'POST', expect: signedIn(404), note: 'a lead id that does not exist in the active workspace' },
+    ],
+  },
 
   // ---- end F1 ----
   // ---- lead-gen F2 import ----

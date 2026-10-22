@@ -11,12 +11,14 @@
 //   are not WhatsApp-eligible (NO_WHATSAPP_OPT_IN).
 // - The purge nulls the content after 24 hours and keeps the place ID, keyword, location, flags and
 //   the link to the lead; Refresh brings the details back; cancel stops a run.
+import os from 'node:os';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readTable } from '@/lib/spreadsheet';
 import { demoPlacesTotal } from '@/lib/demo/places';
 import { IdempotencyConflictError, NotFoundError, PermissionDeniedError } from '@/lib/errors';
 import { outboundAttempts, resetOutboundAttempts } from '@/server/adapters/http/outbound';
 import { checkDispatchEligibility } from '@/server/services/messaging/eligibility';
+import { eraseLead } from '@/server/services/admin/lead-erase';
 import { buildFinderExport, FINDER_EXPORT_DEMO_HEADER } from '@/server/services/lead-finder/export';
 import { importFinderResults } from '@/server/services/lead-finder/import';
 import { refreshFinderResults } from '@/server/services/lead-finder/refresh';
@@ -264,6 +266,30 @@ describe('results, import and expiry', () => {
     const expired = view.results.find((r) => r.importedLeadId === null && !ids.includes(r.id))!;
     const imp = await importFinderResults(ctx, { runId, resultIds: [expired.id], requestKey: 'finder-import-0006' }, INGEST);
     expect(imp.results[0]).toMatchObject({ outcome: 'DETAILS_EXPIRED', leadId: null });
+    h.clock.set(NOW);
+  });
+
+  it('an erased place keeps only its place ID and terms, survives the purge unstamped and is never refreshed', async () => {
+    const ctx = await h.operator();
+    const { run } = await startFinderRun(ctx, body({ keywords: ['boutique'], locations: ['Indore'] }), { keyRing: null });
+    await drain(h.worker);
+    const pick = await h.db.leadFinderResult.findFirstOrThrow({ where: { runId: run.id, hasPhone: true }, orderBy: { createdAt: 'asc' } });
+    const leadId = (await importFinderResults(ctx, { runId: run.id, resultIds: [pick.id], requestKey: 'finder-import-erase' }, INGEST)).results[0]!.leadId!;
+    const erased = await eraseLead(h.db, h.clock, { workspaceId: WS_A, leadId, reason: 'DPDP request REF-1', contactKeyPepper: INGEST.contactKeyPepper, storageDir: os.tmpdir(), correlationId: 'req_finder_erase' });
+    expect(erased.finderResultsBlanked).toBe(1);
+    const view = await getFinderRunView(ctx, run.id, NONE);
+    expect(view.results.find((r) => r.id === pick.id)).toMatchObject({ erased: true, hasDetails: false, name: null, importedLeadId: null, placeId: pick.placeId, keyword: 'boutique' });
+
+    h.clock.set(new Date(new Date(NOW).getTime() + DAY + 2 * HOUR).toISOString());
+    await drain(h.worker);
+    const row = await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: pick.id } });
+    expect(row.contentPurgedAt).toBeNull();
+    const other = await h.db.leadFinderResult.findFirstOrThrow({ where: { runId: run.id, id: { not: pick.id } } });
+    expect(other.contentPurgedAt).not.toBeNull();
+    resetOutboundAttempts();
+    const refreshed = await refreshFinderResults(ctx, { runId: run.id, resultIds: [pick.id, other.id] }, { keyRing: null });
+    expect(refreshed).toMatchObject({ refreshed: 1, erased: 1 });
+    expect((await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: pick.id } })).name).toBeNull();
     h.clock.set(NOW);
   });
 

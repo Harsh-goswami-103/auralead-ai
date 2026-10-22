@@ -75,6 +75,8 @@ export type FinderResultDto = {
   location: string;
   /** False once the 24-hour working copy expired: every Places content field below is then null. */
   hasDetails: boolean;
+  /** The details were removed by an erasure request: they are never fetched again. */
+  erased: boolean;
   name: string | null;
   category: string | null;
   phone: string | null;
@@ -164,9 +166,25 @@ export function attributionList(value: unknown): PlaceAttribution[] {
     });
 }
 
-/** True while the result's Places content may be shown: not purged and not past `contentExpiresAt`. */
-export function hasDetails(row: Pick<LeadFinderResult, 'contentPurgedAt' | 'contentExpiresAt'>, now: Date): boolean {
-  if (row.contentPurgedAt !== null) return false;
+type ContentColumns = Pick<LeadFinderResult, 'name' | 'category' | 'phoneRaw' | 'website' | 'ratingX10' | 'reviewCount' | 'address' | 'city' | 'state' | 'pincode'>;
+
+/** Whether any Places content column still holds a value. */
+export function holdsContent(row: ContentColumns): boolean {
+  return [row.name, row.category, row.phoneRaw, row.website, row.ratingX10, row.reviewCount, row.address, row.city, row.state, row.pincode].some((v) => v !== null);
+}
+
+/**
+ * A result whose content was removed by erasure (`lead:erase`, ADR-127) rather than by the 24-hour
+ * purge: no content left and never stamped `contentPurgedAt` (the purge only stamps rows that still
+ * hold content). Its listing is never fetched again (Refresh refuses it).
+ */
+export function erasedResult(row: ContentColumns & Pick<LeadFinderResult, 'contentPurgedAt'>): boolean {
+  return row.contentPurgedAt === null && !holdsContent(row);
+}
+
+/** True while the result's Places content may be shown: not purged, not erased and not past `contentExpiresAt`. */
+export function hasDetails(row: ContentColumns & Pick<LeadFinderResult, 'contentPurgedAt' | 'contentExpiresAt'>, now: Date): boolean {
+  if (row.contentPurgedAt !== null || erasedResult(row)) return false;
   return row.contentExpiresAt === null || row.contentExpiresAt.getTime() > now.getTime();
 }
 
@@ -184,6 +202,7 @@ export function resultDto(row: LeadFinderResult, now: Date): FinderResultDto {
     keyword: row.keyword,
     location: row.location,
     hasDetails: shown,
+    erased: erasedResult(row),
     name: shown ? row.name : null,
     category: shown ? row.category : null,
     phone: shown ? row.phoneRaw : null,

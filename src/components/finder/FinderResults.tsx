@@ -6,7 +6,8 @@
  * name and category, phone, website or the "No website listed" chip, rating and reviews, address
  * with city and PIN code, a Google Maps link built from the place ID (LIVE), the emails found on
  * the business's own website, and whether it was imported (a link to the lead). Rows whose
- * 24-hour working copy expired say "Details expired" (with Refresh in P1). Selected rows are
+ * 24-hour working copy expired say "Details expired" and can be refreshed; rows whose details an
+ * erasure removed say so and are never fetched again. Selected rows are
  * imported through "Import selected" (needs `leads.write`); "Download Excel" serves the run's file
  * to the person who started it (needs `leads.export`). LIVE shows the Google Maps attribution;
  * DEMO the Simulated chip.
@@ -60,7 +61,7 @@ export function FinderResults(props: FinderResultsProps) {
   const run = view.run;
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const selectable = view.results.filter((r) => r.importedLeadId === null && r.hasDetails);
-  const expiredSelected = view.results.filter((r) => selected.has(r.id) && !r.hasDetails);
+  const expiredSelected = view.results.filter((r) => selected.has(r.id) && !r.hasDetails && !r.erased);
   const allSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.id));
   const q = { run: run.id, ...view.filters };
 
@@ -216,13 +217,18 @@ function ResultRow(props: { r: FinderResultDto; checked: boolean; onToggle: () =
   return (
     <tr data-result-id={r.id} data-website-listed={String(r.websiteListed)} className="border-t border-border-subtle align-top">
       <td className="px-3 py-2.5">
-        <input type="checkbox" aria-label={`Select ${label}`} checked={props.checked} onChange={props.onToggle} disabled={r.importedLeadId !== null} className="size-4 accent-cyan" />
+        <input type="checkbox" aria-label={`Select ${label}`} checked={props.checked} onChange={props.onToggle} disabled={r.importedLeadId !== null || r.erased} className="size-4 accent-cyan" />
       </td>
       <th scope="row" className="px-3 py-2.5 font-normal">
         {r.hasDetails ? (
           <span className="flex flex-col gap-0.5">
             <span className="font-medium text-fg-1">{r.name}</span>
             {r.category ? <span className="text-xs text-fg-2">{r.category}</span> : null}
+          </span>
+        ) : r.erased ? (
+          <span className="flex flex-col gap-0.5">
+            <span className="font-medium text-fg-2">Details removed on request</span>
+            <span className="text-xs text-fg-3">This listing is not fetched again.</span>
           </span>
         ) : (
           <span className="flex flex-col gap-0.5">

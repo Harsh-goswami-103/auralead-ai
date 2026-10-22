@@ -29,10 +29,26 @@ export const PLACES_CONTENT_NULLS = {
   attributions: Prisma.DbNull,
 } satisfies Prisma.LeadFinderResultUpdateManyMutationInput;
 
+/** Any Places content column still set (the purge leaves content-less, erased rows unstamped). */
+export const HOLDS_CONTENT: Prisma.LeadFinderResultWhereInput[] = [
+  { name: { not: null } },
+  { category: { not: null } },
+  { phoneRaw: { not: null } },
+  { website: { not: null } },
+  { ratingX10: { not: null } },
+  { reviewCount: { not: null } },
+  { address: { not: null } },
+  { city: { not: null } },
+  { state: { not: null } },
+  { pincode: { not: null } },
+];
+
 export async function purgeExpiredResults(tx: TxClient, ctx: AppCtx & { workspaceId: string }, input: { runId: string; jobId: string }): Promise<{ purged: number; nextExpiry: Date | null }> {
   const now = ctx.clock.now();
   const purged = await tx.leadFinderResult.updateMany({
-    where: { workspaceId: ctx.workspaceId, runId: input.runId, contentPurgedAt: null, contentExpiresAt: { lte: now } },
+    // Only rows that still hold content are stamped: a row whose content an erasure removed keeps
+    // `contentPurgedAt` null, which is how Refresh knows never to fetch it again (runs.ts erasedResult).
+    where: { workspaceId: ctx.workspaceId, runId: input.runId, contentPurgedAt: null, contentExpiresAt: { lte: now }, OR: HOLDS_CONTENT },
     data: { ...PLACES_CONTENT_NULLS, contentPurgedAt: now },
   });
   if (purged.count > 0) {
@@ -47,7 +63,7 @@ export async function purgeExpiredResults(tx: TxClient, ctx: AppCtx & { workspac
     });
   }
   const next = await tx.leadFinderResult.findFirst({
-    where: { workspaceId: ctx.workspaceId, runId: input.runId, contentPurgedAt: null, contentExpiresAt: { gt: now } },
+    where: { workspaceId: ctx.workspaceId, runId: input.runId, contentPurgedAt: null, contentExpiresAt: { gt: now }, OR: HOLDS_CONTENT },
     orderBy: { contentExpiresAt: 'asc' },
     select: { contentExpiresAt: true },
   });

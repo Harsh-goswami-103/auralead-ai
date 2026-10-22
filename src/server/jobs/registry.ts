@@ -32,6 +32,8 @@ import { sheetsSyncJob } from './handlers/sheets-sync';
 // ---- lead-gen F1 finder ----
 import { leadFinderSearchJob } from './handlers/lead-finder-search';
 import { leadFinderPurgeJob } from './handlers/lead-finder-purge';
+import { leadFinderEmailsJob } from './handlers/lead-finder-emails';
+import { leadsPlacesExpireJob } from './handlers/leads-places-expire';
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 
@@ -105,6 +107,8 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   // ---- lead-gen F1 finder ----
   leadFinderSearchJob,
   leadFinderPurgeJob,
+  leadFinderEmailsJob,
+  leadsPlacesExpireJob,
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 

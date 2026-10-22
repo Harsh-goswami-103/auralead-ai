@@ -39,6 +39,7 @@ function result(over: Partial<FinderResultDto>): FinderResultDto {
     keyword: 'restaurants',
     location: 'Indore',
     hasDetails: true,
+    erased: false,
     name: 'Shree Kitchen',
     category: 'Restaurant',
     phone: '+91 98260 11111',
@@ -182,6 +183,14 @@ describe('FinderResults', () => {
     expect(url).toBe('/api/app/finder/runs/run_1/refresh');
     expect(JSON.parse(init.body as string)).toEqual({ workspaceSlug: 'codecraft-web', resultIds: ['res_x'] });
     expect(toast.success).toHaveBeenCalledWith('1 listing refreshed.', expect.anything());
+  });
+
+  it('a row whose details an erasure removed says so and can be neither selected nor refreshed', () => {
+    const erased = result({ id: 'res_e', hasDetails: false, erased: true, name: null, category: null, phone: null, rating: null, reviewCount: null, address: null, city: null, pincode: null });
+    renderResults(view([erased]));
+    expect(within(row('res_e')).getByText('Details removed on request')).toBeTruthy();
+    expect((within(row('res_e')).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Refresh details/ })).toBeNull();
   });
 
   it('LIVE rows show the Maps link and the Google Maps attribution', () => {
