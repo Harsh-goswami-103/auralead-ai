@@ -17,6 +17,7 @@ import type { AppConfig } from '@/lib/config';
 import { createStatusApplyJob } from '@/server/jobs/handlers/status-apply';
 import { createWebhookProcessJob } from '@/server/jobs/handlers/webhook-process';
 import { createReplyAutoJob } from '@/server/jobs/handlers/reply-auto';
+import type { JobDefinition } from '@/server/jobs/types';
 import type { ReplyDeps } from '@/server/services/messaging/conversations';
 import { contactKey } from '@/server/security/contact-key';
 import type { InboundDeps } from '@/server/services/messaging/inbound';
@@ -43,8 +44,11 @@ export type InboundHarness = DispatchHarness & {
   routeJournalDir: string;
 };
 
-/** `replyDeps` replaces the reply job's dependencies (ADR-122 contract tests pass a scripted AI selection). */
-export async function createInboundHarness(label: string, opts: { replyDeps?: () => ReplyDeps } = {}): Promise<InboundHarness> {
+/**
+ * `replyDeps` replaces the reply job's dependencies (ADR-122 contract tests pass a scripted AI
+ * selection); `extraDefs` adds job definitions to the in-process worker (ADR-121 `wa.demoStatus`).
+ */
+export async function createInboundHarness(label: string, opts: { replyDeps?: () => ReplyDeps; extraDefs?: (inboundDeps: InboundDeps) => JobDefinition[] } = {}): Promise<InboundHarness> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `auralead-data-${label}-`));
   const config = testConfig('demo', {
     AURALEAD_DATA_DIR: dataDir,
@@ -59,6 +63,7 @@ export async function createInboundHarness(label: string, opts: { replyDeps?: ()
     createStatusApplyJob({ deps: () => inboundDeps }),
     // T21: inbound text in a DRAFT or AUTO thread queues `reply.auto` (production handler).
     createReplyAutoJob({ mode: () => 'demo', deps: opts.replyDeps ?? (() => ({ contactKeyPepper: PEPPER })) }),
+    ...(opts.extraDefs?.(inboundDeps) ?? []),
   ]);
   const runtime = installTestRuntime(h.db, config, h.clock);
   const integration = await h.db.integration.create({

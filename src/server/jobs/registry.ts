@@ -36,7 +36,7 @@ import { sheetsSyncJob } from './handlers/sheets-sync';
 
 // ---- end F2 ----
 // ---- lead-gen F3 chat ----
-
+import { waDemoStatusJob } from './handlers/wa-demo-status';
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
 
@@ -108,7 +108,7 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
 
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
-
+  waDemoStatusJob,
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
 
