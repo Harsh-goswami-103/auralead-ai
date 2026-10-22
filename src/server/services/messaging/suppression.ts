@@ -255,20 +255,44 @@ export async function cancelQueuedForContact(tx: Tx, ctx: { clock: Clock }, targ
 
 // ---- Re-opt-in -----------------------------------------------------------------------------------
 
-export type ReoptInOutcome = 'CLEARED' | 'NOT_SUPPRESSED' | 'EVIDENCE_NOT_NEWER' | 'NOT_OPT_IN';
+export type ReoptInOutcome = 'CLEARED' | 'NOT_SUPPRESSED' | 'EVIDENCE_NOT_NEWER' | 'NOT_OPT_IN' | 'BACKFILLED_SOURCE';
 
-export type ReoptInConsent = { id: string; channel: Channel; contactKey: string; basis: string; collectedAt: Date };
+/** `id` is null only for a backfilled consent checked before it is recorded (ADR-120). */
+export type ReoptInConsent = { id: string | null; channel: Channel; contactKey: string; basis: string; collectedAt: Date };
 
 /**
  * Inside the transaction that recorded `consent`: clears the active suppression when the consent is
  * an OPT_IN whose evidence time is strictly newer than the latest Stop. A refusal is audited.
+ *
+ * `backfilled` (ADR-120): consent from a backfilled source (a file import) never clears a
+ * suppression, whatever its evidence time: an active suppression answers `BACKFILLED_SOURCE`,
+ * audited `suppression.clear_refused`. Such a check may run before the consent is recorded (id
+ * null), so the caller can leave a suppressed contact without consent.
  */
-export async function clearSuppressionForConsent(tx: Tx, ctx: SuppressionCtx, sink: JournalSink, consent: ReoptInConsent, opts: { simulated?: boolean } = {}): Promise<ReoptInOutcome> {
+export async function clearSuppressionForConsent(
+  tx: Tx,
+  ctx: SuppressionCtx,
+  sink: JournalSink,
+  consent: ReoptInConsent,
+  opts: { simulated?: boolean; backfilled?: boolean } = {},
+): Promise<ReoptInOutcome> {
   const workspaceId = requireWorkspace(ctx);
   if (consent.basis !== 'OPT_IN') return 'NOT_OPT_IN';
   const where = { workspaceId, channel: consent.channel, contactKey: consent.contactKey };
   const active = await tx.suppression.findFirst({ where: { ...where, clearedAt: null }, select: { id: true } });
   if (!active) return 'NOT_SUPPRESSED';
+  if (opts.backfilled) {
+    await recordAudit(tx, ctx, {
+      action: 'suppression.clear_refused',
+      targetType: 'Suppression',
+      targetId: active.id,
+      result: 'DENIED',
+      simulated: opts.simulated ?? false,
+      summary: { channel: consent.channel, consentId: consent.id, reasonCode: 'BACKFILLED_SOURCE' },
+    });
+    return 'BACKFILLED_SOURCE';
+  }
+  if (consent.id === null) throw new Error('only a backfilled consent may be checked before it is recorded');
   const latest = await tx.suppression.findFirst({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { createdAt: true } });
   const latestStop = latest?.createdAt ?? new Date(0);
 

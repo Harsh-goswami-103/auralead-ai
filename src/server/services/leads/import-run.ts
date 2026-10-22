@@ -27,11 +27,13 @@ import { redactText } from '@/lib/redact';
 import type { IngestBatchInput, IngestRecord } from '@/lib/schemas/ingest';
 import {
   fileImportExternalId,
+  IMPORT_CONSENT_TRUTHY_VALUES,
   IMPORT_FIELD_MAX_LENGTH,
   IMPORT_LEAD_FIELDS,
   LEAD_IMPORT_CHUNK,
   LEAD_IMPORT_MAX_ROWS,
   mappingOf,
+  parseConsentDate,
   parseFileImportExternalId,
   type ImportField,
   type ImportMappingValue,
@@ -42,6 +44,7 @@ import { getJobContext, type AppCtx } from '@/server/auth/context';
 import { enqueueJob } from '@/server/jobs/queue';
 import type { JobHandlerContext, JobResult, TxClient } from '@/server/jobs/types';
 import { recordAudit } from '@/server/services/audit/record';
+import { isTruthyAnswer } from '@/server/services/messaging/consent';
 import { deleteImportRows, leadImportRelPath, readImportRows, type ImportRowsFile } from './import-files';
 import { importNotesOf, LEAD_IMPORT_JOB, LEAD_IMPORT_PRIORITY } from './import';
 import { ingestBatch, type IngestBatchResult } from './ingest';
@@ -68,17 +71,28 @@ export type ChunkCounts = { accepted: number; duplicates: number; review: number
 
 export type BuiltChunk = {
   records: IngestRecord[];
-  /** Rows refused before ingestion (counted rejected). */
+  /** Rows refused before ingestion (counted rejected) and opted-in rows whose date cannot be used. */
   notes: ImportRowNote[];
   rejectedBeforeIngest: number;
+  /** External ids of the records that carry an opt-in answer and its date. */
+  consentAsked: Set<string>;
 };
 
-/** The chunk's rows as ingestion records; cells are trimmed, empty cells are null, over-long cells reject the row. */
-export function buildImportChunk(input: { importId: string; file: ImportRowsFile; mapping: ImportMappingValue; chunk: number }): BuiltChunk {
+/** An attested import's consent columns (ADR-120): the opt-in cell, its date, in the workspace's zone. */
+export type ChunkConsent = { consentCol: number; dateCol: number; timeZone: string; now: Date };
+
+/**
+ * The chunk's rows as ingestion records; cells are trimmed, empty cells are null, over-long cells
+ * reject the row. With `consent` (an attested import), a row marked as opted in carries its answer
+ * and its date as the evidence time; a missing, unreadable or future date gives no consent and a
+ * note instead.
+ */
+export function buildImportChunk(input: { importId: string; file: ImportRowsFile; mapping: ImportMappingValue; chunk: number; consent?: ChunkConsent | null }): BuiltChunk {
   const start = input.chunk * LEAD_IMPORT_CHUNK;
   const rows = input.file.rows.slice(start, start + LEAD_IMPORT_CHUNK);
   const records: IngestRecord[] = [];
   const notes: ImportRowNote[] = [];
+  const consentAsked = new Set<string>();
   let rejectedBeforeIngest = 0;
   for (const { row, cells } of rows) {
     const fields: Record<string, string | null> = {};
@@ -98,15 +112,39 @@ export function buildImportChunk(input: { importId: string; file: ImportRowsFile
       rejectedBeforeIngest += 1;
       continue;
     }
-    records.push({ externalId: fileImportExternalId(input.importId, row), fields, attribution: { importId: input.importId, row: String(row) } });
+    const externalId = fileImportExternalId(input.importId, row);
+    const record: IngestRecord = { externalId, fields, attribution: { importId: input.importId, row: String(row) } };
+    const consent = input.consent;
+    const answer = consent ? (cells[consent.consentCol] ?? '').trim().slice(0, IMPORT_FIELD_MAX_LENGTH.consent) : '';
+    if (consent && isTruthyAnswer(answer, IMPORT_CONSENT_TRUTHY_VALUES)) {
+      const at = parseConsentDate(cells[consent.dateCol] ?? '', consent.timeZone);
+      if (at === null) notes.push({ row, code: 'CONSENT_DATE_INVALID', field: 'consentDate' });
+      else if (at.getTime() > consent.now.getTime()) notes.push({ row, code: 'CONSENT_DATE_IN_FUTURE', field: 'consentDate' });
+      else {
+        record.answers = { [IMPORT_CONSENT_ANSWER_KEY]: answer };
+        record.submittedAt = at.toISOString();
+        consentAsked.add(externalId);
+      }
+    }
+    records.push(record);
   }
-  return { records, notes, rejectedBeforeIngest };
+  return { records, notes, rejectedBeforeIngest, consentAsked };
 }
+
+/** The answer key of the opt-in cell in ingestion records and the consent mapping. */
+export const IMPORT_CONSENT_ANSWER_KEY = 'consent';
+
+const CONSENT_NOTE_FOR: Readonly<Record<string, string>> = {
+  SUPPRESSED_CONTACT: 'SUPPRESSED_CONTACT',
+  NO_CONTACT_FOR_CHANNEL: 'CONSENT_NO_PHONE',
+  PENDING_REVIEW: 'CONSENT_PENDING_REVIEW',
+};
 
 /** Counts and row notes of an ingested chunk. */
 export function tallyIngested(result: IngestBatchResult | null, built: BuiltChunk): { counts: ChunkCounts; notes: ImportRowNote[] } {
   const counts: ChunkCounts = { accepted: 0, duplicates: 0, review: 0, rejected: built.rejectedBeforeIngest, consentRecorded: 0 };
-  const notes: ImportRowNote[] = [...built.notes];
+  const notes: ImportRowNote[] = [];
+  const rejectedRows = new Set<number>();
   for (const record of result?.records ?? []) {
     const row = parseFileImportExternalId(record.externalId)?.row ?? 0;
     if (record.status === 'ACCEPTED') counts.accepted += 1;
@@ -114,11 +152,16 @@ export function tallyIngested(result: IngestBatchResult | null, built: BuiltChun
     else if (record.status === 'REVIEW') counts.review += 1;
     else {
       counts.rejected += 1;
+      rejectedRows.add(row);
       const code = record.reasonCode ?? 'REJECTED';
       notes.push(code === 'MISSING_NAME' ? { row, code, field: 'name' } : { row, code });
+      continue;
     }
     if (record.consent.outcome === 'CREATED') counts.consentRecorded += 1;
+    else if (built.consentAsked.has(record.externalId)) notes.push({ row, code: CONSENT_NOTE_FOR[record.consent.reason] ?? 'CONSENT_NOT_RECORDED', field: 'consent' });
   }
+  // A rejected row's opt-in date note says nothing more.
+  for (const note of built.notes) if (note.code === 'FIELD_TOO_LONG' || !rejectedRows.has(note.row)) notes.push(note);
   notes.sort((a, b) => a.row - b.row);
   return { counts, notes };
 }
@@ -170,14 +213,33 @@ export async function runLeadImportChunk(job: JobHandlerContext, deps: ImportRun
   if (file === null) return fail('ROWS_FILE_MISSING');
   const start = chunk * LEAD_IMPORT_CHUNK;
   const last = start + LEAD_IMPORT_CHUNK >= file.rows.length;
-  const built = buildImportChunk({ importId, file, mapping, chunk });
+  // ADR-120: the opt-in columns are read only for an import whose owner attested them at confirm.
+  const attested = row.consentAttested && row.consentNoticeText !== null && mapping.consent !== undefined && mapping.consentDate !== undefined;
+  let consent: ChunkConsent | null = null;
+  if (attested) {
+    const workspace = await job.db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
+    consent = { consentCol: mapping.consent!, dateCol: mapping.consentDate!, timeZone: workspace.timezone, now: job.clock.now() };
+  }
+  const built = buildImportChunk({ importId, file, mapping, chunk, consent });
 
   let ingested: IngestBatchResult | null = null;
   if (built.records.length > 0) {
     // lead:erase may have ended the import while this job waited: ingest nothing then.
     const current = await job.db.leadImport.findFirst({ where: { id: importId, workspaceId }, select: { status: true, storagePath: true } });
     if (current?.status !== 'RUNNING' || current.storagePath === null) return { outcome: 'succeeded' };
-    const input: IngestBatchInput = { source: 'FILE_IMPORT', externalBatchId: `import:${importId}:${chunk}`, records: built.records };
+    const input: IngestBatchInput = {
+      source: 'FILE_IMPORT',
+      externalBatchId: `import:${importId}:${chunk}`,
+      records: built.records,
+      ...(consent && row.consentNoticeText !== null
+        ? {
+            mapping: {
+              formId: importId,
+              consent: { column: IMPORT_CONSENT_ANSWER_KEY, truthyValues: [...IMPORT_CONSENT_TRUTHY_VALUES], channel: 'WHATSAPP' as const, purpose: 'MARKETING' as const, noticeText: row.consentNoticeText },
+            },
+          }
+        : {}),
+    };
     try {
       ingested = await ingestBatch(ctx, input, { contactKeyPepper: deps.contactKeyPepper });
     } catch (error) {

@@ -29,5 +29,4 @@ export const CONSENT_DECISION_LABELS: Readonly<Record<string, string>> = {
   NOT_REQUESTED: 'No consent was imported: the attestation was not given, so the opt-in column was ignored.',
   NO_CAPABILITY: 'No consent was imported: only the workspace owner can import WhatsApp opt-ins.',
   DATA_SOURCE_NOT_OWN: 'No consent was imported: opt-ins are honoured only for lists the business collected itself.',
-  NO_CONSENT_COLUMN: 'No consent was imported: no opt-in column was chosen.',
 };

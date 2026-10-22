@@ -23,7 +23,9 @@ import { LEAD_GEN_JOB_TYPES } from '@/lib/domain/lead-gen';
 import { AppError, ConflictError, DomainRuleError, IdempotencyConflictError, NotFoundError } from '@/lib/errors';
 import {
   consentAttestationText,
+  IMPORT_CONSENT_TRUTHY_VALUES,
   IMPORT_MAPPABLE_FIELDS,
+  isOwnDataSource,
   LEAD_IMPORT_CONTENT_TYPES,
   LEAD_IMPORT_EXTENSIONS,
   LEAD_IMPORT_MAX_FILE_BYTES,
@@ -31,6 +33,8 @@ import {
   LEAD_IMPORT_PREVIEW_ROWS,
   LEAD_IMPORT_TTL_HOURS,
   mappingOf,
+  noticeProblems,
+  parseConsentDate,
   suggestImportMapping,
   type ConsentDecision,
   type ImportMappingValue,
@@ -47,6 +51,7 @@ import { hasCapability, requireActor, requireCapability, requireWorkspace } from
 import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
 import { recordAudit } from '@/server/services/audit/record';
+import { isTruthyAnswer, noticeTextHash } from '@/server/services/messaging/consent';
 import { deleteImportRows, leadImportRelPath, readImportRows, writeImportRows, type ImportRowsFile } from './import-files';
 
 export const LEAD_IMPORT_JOB = LEAD_GEN_JOB_TYPES.leadImport;
@@ -332,9 +337,58 @@ export function validateImportMapping(mapping: ImportMappingValue, headerLength:
 
 export type ConfirmResult = { import: LeadImportDto; consent: ConsentDecision };
 
+function consentRule(code: string, userMessage: string): DomainRuleError {
+  return new DomainRuleError({ code, userMessage });
+}
+
+/**
+ * The consent column under every ADR-120 rule. Ignored (no consent; the import goes on and the
+ * answer says why): no consent block (the attestation was not given), no `consent.import`, a data
+ * source the business did not collect itself. Refused with 422 (the person asked for consent and
+ * must fix it): no opt-in column or no opt-in date column mapped, a notice without the business
+ * name or WhatsApp, an attestation that is not the exact text, a row marked as opted in whose
+ * opt-in date is in the future. Rows with a missing or unreadable date get no consent (the job notes
+ * them).
+ */
+export function decideImportConsent(input: {
+  consent: LeadImportConfirmBody['consent'];
+  canImportConsent: boolean;
+  dataSource: ImportDataSource | undefined;
+  mapping: ImportMappingValue;
+  business: string;
+  file: ImportRowsFile;
+  timeZone: string;
+  now: Date;
+}): { decision: ConsentDecision; notice: { text: string; hash: string } | null } {
+  const ignored = (reason: NonNullable<ConsentDecision['reason']>) => ({ decision: { requested: input.consent !== undefined, honoured: false, reason }, notice: null });
+  if (input.consent === undefined) return ignored('NOT_REQUESTED');
+  if (!input.canImportConsent) return ignored('NO_CAPABILITY');
+  if (!isOwnDataSource(input.dataSource)) return ignored('DATA_SOURCE_NOT_OWN');
+
+  const { consent: consentCol, consentDate: dateCol } = input.mapping;
+  if (consentCol === undefined) throw consentRule('CONSENT_COLUMN_NOT_MAPPED', 'Choose the WhatsApp opt-in column, or leave the attestation unticked.');
+  if (dateCol === undefined) throw consentRule('CONSENT_DATE_NOT_MAPPED', 'Choose the opt-in date column: an opt-in without its date is never recorded.');
+  const problems = noticeProblems(input.consent.noticeText, input.business);
+  if (problems.includes('NOTICE_MISSING_BUSINESS')) throw consentRule('NOTICE_MISSING_BUSINESS', `The notice must name ${input.business}.`);
+  if (problems.includes('NOTICE_MISSING_WHATSAPP')) throw consentRule('NOTICE_MISSING_WHATSAPP', 'The notice must say that the messages come on WhatsApp.');
+  if (input.consent.attestation !== consentAttestationText(input.business)) {
+    throw consentRule('ATTESTATION_MISMATCH', 'The attestation must be the exact text shown on the page. Reload the page and tick it again.');
+  }
+  for (const { row, cells } of input.file.rows) {
+    if (!isTruthyAnswer(cells[consentCol] ?? '', IMPORT_CONSENT_TRUTHY_VALUES)) continue;
+    const at = parseConsentDate(cells[dateCol] ?? '', input.timeZone);
+    if (at !== null && at.getTime() > input.now.getTime()) {
+      throw consentRule('CONSENT_DATE_IN_FUTURE', `Row ${row} has an opt-in date in the future. Correct the file and upload it again.`);
+    }
+  }
+  const text = input.consent.noticeText;
+  return { decision: { requested: true, honoured: true, reason: null }, notice: { text, hash: noticeTextHash(text) } };
+}
+
 export async function confirmLeadImport(ctx: AppCtx, importId: string, body: Omit<LeadImportConfirmBody, 'workspaceSlug'>, deps: { storageDir: string }): Promise<ConfirmResult> {
   const row = await ownImport(ctx, importId);
   const workspaceId = requireWorkspace(ctx);
+  const actor = requireActor(ctx);
   const now = ctx.clock.now();
   const status = effectiveImportStatus(row, now);
   if (status === 'EXPIRED') throw new ImportExpiredError();
@@ -342,20 +396,35 @@ export async function confirmLeadImport(ctx: AppCtx, importId: string, body: Omi
   const header = stringArray(row.header);
   const mapping = mappingOf(body.mapping);
   validateImportMapping(mapping, header.length);
-  if (row.storagePath === null || readImportRows(deps.storageDir, row.storagePath) === null) throw new ImportExpiredError();
+  const file = row.storagePath === null ? null : readImportRows(deps.storageDir, row.storagePath);
+  if (file === null) throw new ImportExpiredError();
 
-  const consent: ConsentDecision = { requested: body.consent !== undefined, honoured: false, reason: body.consent === undefined ? 'NOT_REQUESTED' : null };
-  // Without an honoured consent decision the consent columns are not imported at all.
+  const workspace = await ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true, timezone: true } });
+  const { decision: consent, notice } = decideImportConsent({
+    consent: body.consent,
+    canImportConsent: hasCapability(ctx, 'consent.import'),
+    dataSource: body.dataSource,
+    mapping,
+    business: workspace.name,
+    file,
+    timeZone: workspace.timezone,
+    now,
+  });
+  // Without an honoured consent decision the opt-in columns are not imported at all.
   const stored: ImportMappingValue = { ...mapping };
-  delete stored.consent;
-  delete stored.consentDate;
-  if (consent.requested && consent.reason === null) consent.reason = hasCapability(ctx, 'consent.import') ? 'NO_CONSENT_COLUMN' : 'NO_CAPABILITY';
+  if (!consent.honoured) {
+    delete stored.consent;
+    delete stored.consentDate;
+  }
+  const consentData = notice
+    ? { consentAttested: true, consentAttestedBy: actor.userId, consentAttestedAt: now, consentNoticeText: notice.text, consentNoticeHash: notice.hash }
+    : {};
 
   return withTx(ctx.db, async (scoped) => {
     const tx = scoped as unknown as Prisma.TransactionClient;
     const done = await tx.leadImport.updateMany({
       where: { id: row.id, status: 'PREVIEW' },
-      data: { status: 'QUEUED', mapping: stored as Prisma.InputJsonValue, dataSource: body.dataSource ?? null },
+      data: { status: 'QUEUED', mapping: stored as Prisma.InputJsonValue, dataSource: body.dataSource ?? null, ...consentData },
     });
     if (done.count !== 1) throw new ImportNotInPreviewError();
     const { job } = await enqueueJob(tx as unknown as JobStore, ctx.clock, {
@@ -372,7 +441,14 @@ export async function confirmLeadImport(ctx: AppCtx, importId: string, body: Omi
       targetType: 'LeadImport',
       targetId: row.id,
       workspaceId,
-      summary: { fields: Object.keys(stored).sort(), dataSource: body.dataSource ?? null, rowCount: row.rowCount, consent: consent.honoured ? 'HONOURED' : (consent.reason ?? 'NOT_REQUESTED'), jobId: job.id },
+      summary: {
+        fields: Object.keys(stored).sort(),
+        dataSource: body.dataSource ?? null,
+        rowCount: row.rowCount,
+        consent: consent.honoured ? 'HONOURED' : (consent.reason ?? 'NOT_REQUESTED'),
+        ...(notice ? { noticeHash: notice.hash, attestationHash: noticeTextHash(consentAttestationText(workspace.name)) } : {}),
+        jobId: job.id,
+      },
     });
     const updated = await tx.leadImport.findUniqueOrThrow({ where: { id: row.id } });
     return { import: leadImportDto(updated, now), consent };

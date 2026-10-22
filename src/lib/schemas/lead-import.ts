@@ -383,7 +383,7 @@ export function parseFileImportExternalId(externalId: string): { importId: strin
 /** Codes of rows that were not imported. */
 export const IMPORT_REJECTION_CODES = ['MISSING_NAME', 'NO_VALID_CONTACT', 'FIELD_TOO_LONG'] as const;
 /** Codes of imported rows whose consent was not recorded. */
-export const IMPORT_CONSENT_NOTE_CODES = ['SUPPRESSED_CONTACT', 'CONSENT_DATE_INVALID', 'CONSENT_DATE_IN_FUTURE', 'CONSENT_NO_PHONE', 'CONSENT_PENDING_REVIEW'] as const;
+export const IMPORT_CONSENT_NOTE_CODES = ['SUPPRESSED_CONTACT', 'CONSENT_DATE_INVALID', 'CONSENT_DATE_IN_FUTURE', 'CONSENT_NO_PHONE', 'CONSENT_PENDING_REVIEW', 'CONSENT_NOT_RECORDED'] as const;
 export type ImportConsentNoteCode = (typeof IMPORT_CONSENT_NOTE_CODES)[number];
 
 export const IMPORT_ROW_CODE_LABELS: Readonly<Record<string, string>> = {
@@ -396,6 +396,7 @@ export const IMPORT_ROW_CODE_LABELS: Readonly<Record<string, string>> = {
   CONSENT_DATE_IN_FUTURE: 'Opt-in date in the future: consent not recorded',
   CONSENT_NO_PHONE: 'No valid WhatsApp number: consent not recorded',
   CONSENT_PENDING_REVIEW: 'Possible duplicate in review: consent not recorded',
+  CONSENT_NOT_RECORDED: 'Consent not recorded',
 };
 
 export function importRowCodeLabel(code: string): string {
@@ -440,7 +441,11 @@ export type LeadImportPreviewDto = {
 
 export type LeadImportView = { import: LeadImportDto; preview: LeadImportPreviewDto | null };
 
-export type ConsentDecision = { requested: boolean; honoured: boolean; reason: 'NOT_REQUESTED' | 'NO_CAPABILITY' | 'DATA_SOURCE_NOT_OWN' | 'NO_CONSENT_COLUMN' | null };
+/**
+ * What confirm did with the consent column (ADR-120): honoured, or ignored with the reason (no
+ * attestation, no `consent.import`, a data source the business did not collect itself).
+ */
+export type ConsentDecision = { requested: boolean; honoured: boolean; reason: 'NOT_REQUESTED' | 'NO_CAPABILITY' | 'DATA_SOURCE_NOT_OWN' | null };
 
 export function leadImportHref(importId: string, workspaceSlug?: string): string {
   const q = workspaceSlug ? `?${new URLSearchParams({ workspaceSlug }).toString()}` : '';
