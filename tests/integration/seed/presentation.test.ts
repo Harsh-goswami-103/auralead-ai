@@ -20,6 +20,8 @@ import { CONFIG_FIELD_RULES } from '@/lib/schemas/integrations';
 import { parseScoringConfig } from '@/lib/schemas/scoring';
 import { getWebhookContext } from '@/server/auth/context';
 import { DEMO_PERSONAS } from '@/server/auth/demo-personas';
+import { checkText } from '@/server/services/ai/output-policy';
+import { decideAutoReply, loadReplyFacts } from '@/server/services/ai/reply-guard';
 import { checkDispatchEligibility } from '@/server/services/messaging/eligibility';
 import { isWindowOpen } from '@/server/services/messaging/window';
 import { scoreLead } from '@/server/services/scoring/score';
@@ -308,6 +310,45 @@ describe('opt-ins, chats and the handoff', () => {
     // Each inbound message recorded its service-window consent, as the inbound path does.
     const inbound = conversations.flatMap((c) => c.messages.filter((m) => m.direction === 'IN'));
     expect(await db.consentRecord.count({ where: { workspaceId: WS, basis: 'INBOUND_MESSAGE', source: 'INBOUND_MESSAGE' } })).toBe(inbound.length);
+  });
+
+  it('seeds only automated replies the reply guard lets through (ADR-122): catalog answers to service questions, the fixed acknowledgement for a price', async () => {
+    // The pre-gate decides which inbound may get a model answer (service_faq only); every other
+    // intent gets the guard's fixed text. A seeded AI answer to anything else is a reply the
+    // product could never have sent.
+    const ctx = ctxAt(T0);
+    const facts = await loadReplyFacts(ctx.db, WS);
+    const conversations = await db.conversation.findMany({ where: { workspaceId: WS }, include: { messages: { orderBy: { createdAt: 'asc' } } } });
+    let checked = 0;
+    for (const c of conversations) {
+      const byId = new Map(c.messages.map((m) => [m.id, m]));
+      const automated = c.messages.filter((m) => m.direction === 'OUT' && m.sendIntent === 'AUTOMATED');
+      if (automated.length > 0) expect(c.aiMode).toBe('AUTO');
+      let escalatedAt: number | null = null;
+      automated.forEach((m, i) => {
+        // The first automated reply of the window carries the disclosure, the later ones do not.
+        expect(m.body!.startsWith(`${AUTOMATED_DISCLOSURE}\n\n`), m.id).toBe(i === 0);
+        const text = i === 0 ? m.body!.slice(`${AUTOMATED_DISCLOSURE}\n\n`.length) : m.body!;
+        const inbound = byId.get(m.replyToInboundId!)!;
+        expect(inbound.direction).toBe('IN');
+        const decision = decideAutoReply(inbound.body!, facts);
+        expect(checkText(text, { allowedEmails: [], allowedPhones: [], allowedUrls: [] }), m.id).toEqual([]);
+        if (m.generatorLabel === 'local-deterministic') {
+          // A model answer (DEMO: the local generator) only for a service question naming a catalog service.
+          expect(decision.intent, inbound.body!).toBe('service_faq');
+          const named = facts.services.filter((s) => decision.matchedServiceIds.includes(s.id)).map((s) => s.name);
+          expect(named.some((name) => text.includes(name)), `${text} names one of ${named.join(', ')}`).toBe(true);
+          expect(decision.escalate).toBe(false);
+        } else {
+          expect(m.generatorLabel).toBe('reply-guard');
+          expect(text).toBe(decision.text);
+          if (decision.escalate) escalatedAt ??= m.createdAt.getTime();
+        }
+        checked += 1;
+      });
+      expect(c.escalatedAt?.getTime() ?? null, c.id).toBe(escalatedAt);
+    }
+    expect(checked).toBe(3);
   });
 
   it('hands one lead over to the client with a ready local summary; the AI stopped on its thread', async () => {

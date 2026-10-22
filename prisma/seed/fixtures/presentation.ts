@@ -296,7 +296,11 @@ export type ConversationFixture = {
 
 /** ADR-122: the first automated reply in each window starts with this disclosure. */
 export const AUTOMATED_DISCLOSURE = `${PRESENTATION_BUSINESS}'s automated assistant. Reply HUMAN to talk to a person.`;
-/** reply-guard's fixed acknowledgement of a price request (src/server/services/ai/reply-guard.ts). */
+/**
+ * reply-guard's fixed acknowledgement of a price request (FIXED_REPLIES.quote_request in
+ * src/server/services/ai/reply-guard.ts; tests/integration/seed/presentation.test.ts checks every
+ * seeded automated reply against the real guard).
+ */
 const QUOTE_REQUEST_ACK = 'Thank you. A member of our team will prepare your quotation and share it here.';
 
 export const REPLY_INITIATOR = 'system:reply.auto';
@@ -321,7 +325,8 @@ export const CONVERSATION_FIXTURES: readonly ConversationFixture[] = [
         sendIntent: 'AUTOMATED',
         replyTo: 'ask-website',
       },
-      { key: 'ask-seo', direction: 'IN', minutesAgo: 35, body: 'Can you also set up our Google listing so people find us?', status: 'DELIVERED' },
+      // Names a catalog service, so the reply guard's pre-gate classifies it service_faq (ADR-122).
+      { key: 'ask-seo', direction: 'IN', minutesAgo: 35, body: 'Do you also offer SEO setup, so that people find us on Google?', status: 'DELIVERED' },
       {
         key: 'answer-seo',
         direction: 'OUT',
