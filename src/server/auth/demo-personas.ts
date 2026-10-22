@@ -2,11 +2,16 @@
  * DEMO role switcher identities (T2, ADR-04, PRD "Role switcher"). The switcher may only name one
  * of these fixed keys; the server maps it to a seeded `isDemo` user by email. The seed (T09)
  * creates exactly these users and must call `assertDemoSeedTarget` first.
+ *
+ * `client` (ADR-126) is Aarav Mehta, OWNER of the presentation workspace codecraft-web (Codecraft
+ * Web Studio): the client panel of the lead-gen story, where handed-over leads arrive. Its label
+ * does not start with "Workspace owner", so a /^Workspace owner/ match still names one persona.
  */
 import type { GlobalRole, Prisma } from '@/generated/prisma/client';
 
 export const DEMO_PERSONAS = {
   user: { email: 'owner@demo.auralead.test', label: 'Workspace owner', globalRole: 'USER', home: '/dashboard/user' },
+  client: { email: 'client@demo.auralead.test', label: 'Codecraft client', globalRole: 'USER', home: '/dashboard/user' },
   employee: { email: 'employee@demo.auralead.test', label: 'Employee', globalRole: 'EMPLOYEE', home: '/dashboard/employee' },
   admin: { email: 'admin@demo.auralead.test', label: 'Super admin', globalRole: 'SUPER_ADMIN', home: '/dashboard/admin' },
 } as const satisfies Record<string, { email: string; label: string; globalRole: GlobalRole; home: string }>;

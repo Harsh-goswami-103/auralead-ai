@@ -69,7 +69,8 @@ test('the role switcher opens each panel with seeded data', async ({ page }) => 
   await page.waitForURL('**/dashboard/admin');
   await expect(page.getByRole('heading', { level: 1, name: 'Global metrics' })).toBeVisible();
   const workspaces = page.locator('dl > div').filter({ has: page.getByText('Workspaces', { exact: true }) });
-  await expect(workspaces.getByText('5', { exact: true })).toBeVisible();
+  // Six DEMO workspaces: the five base tenants and the presentation workspace (ADR-126).
+  await expect(workspaces.getByText('6', { exact: true })).toBeVisible();
   // The harness worker is heartbeating against the same DB.
   await expect(page.getByText('Running', { exact: true })).toBeVisible();
 

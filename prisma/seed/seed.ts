@@ -9,6 +9,13 @@
  * never runs on top of existing tenant data: reset is an explicit, separate call.
  *
  * Later tasks extend the seed by appending fixture modules and steps here (plan §0 rule 5).
+ *
+ * ADR-126: the last step writes the presentation pack of codecraft-web (fixtures/presentation.ts):
+ * its WhatsApp templates, finder run, leads, opt-ins, chats and handoff. Consent and conversation
+ * rows carry contact HMACs, so the seed uses the configured SUPPRESSION_PEPPER
+ * (`config.secrets.suppressionPepper`) and the same anchor and pepper give the same content. Without
+ * a pepper (a bare `{ mode }` config, as most test harnesses pass) a fixed stand-in keys those
+ * rows; the app cannot compute any contact key without a pepper, so nothing reads them then.
  */
 import type { Prisma, PrismaClient } from '../../src/generated/prisma/client';
 import type { Clock } from '../../src/lib/clock';
@@ -19,10 +26,18 @@ import { ASSIGNMENT_CREATOR, ASSIGNMENT_FIXTURES, MEMBERSHIP_FIXTURES, USER_FIXT
 import { termsFor, WORKSPACE_FIXTURES } from './fixtures/workspaces';
 import { QUOTE_FIXTURES } from './fixtures/quotes';
 import { insertSharedQuotes } from './fixtures/shared-quotes';
+import { insertPresentation } from './fixtures/insert-presentation';
 import { computeQuoteTotals as computeQuoteMoney } from '../../src/lib/money';
 import { seedId } from './ids';
 
-export type SeedOptions = { config: { mode: 'demo' | 'live' }; now: Date };
+export type SeedOptions = { config: { mode: 'demo' | 'live'; secrets?: { suppressionPepper: string | null } }; now: Date };
+
+/** Keys the presentation pack's consent and chat rows when no SUPPRESSION_PEPPER is configured (see above). */
+export const SEED_PEPPER_STAND_IN = 'auralead-demo-seed-without-a-configured-pepper';
+
+function seedPepper(config: SeedOptions['config']): string {
+  return config.secrets?.suppressionPepper ?? SEED_PEPPER_STAND_IN;
+}
 
 export type SeedSummary = {
   anchorAt: string;
@@ -73,7 +88,7 @@ async function wipe(tx: Tx): Promise<void> {
   for (const table of tables) await tx.$executeRawUnsafe(`DELETE FROM "${table.replaceAll('"', '""')}"`);
 }
 
-async function insertAll(tx: Tx, now: Date): Promise<SeedSummary> {
+async function insertAll(tx: Tx, now: Date, contactKeyPepper: string): Promise<SeedSummary> {
   const ago = (days: number) => new Date(now.getTime() - days * DAY);
   const counts = { workspaces: 0, users: 0, memberships: 0, assignments: 0, services: 0 };
 
@@ -133,6 +148,8 @@ async function insertAll(tx: Tx, now: Date): Promise<SeedSummary> {
         internalWaDailyCap: s.internalWaDailyCap,
         internalEmailDailyCap: s.internalEmailDailyCap,
         currencyDisplay: 'INR',
+        whatsappOptInNotice: s.whatsappOptInNotice ?? null,
+        privacyContact: s.privacyContact ?? null,
         updatedAt: createdAt,
         updatedBy: ownerId,
       },
@@ -172,7 +189,7 @@ async function insertAll(tx: Tx, now: Date): Promise<SeedSummary> {
     }
 
     await tx.scoringConfigVersion.create({
-      data: { id: seedId('scoring-version', `${ws.slug}:1`), workspaceId: wsId, version: 1, weights: SCORING_V1, active: true, createdBy: ownerId, createdAt },
+      data: { id: seedId('scoring-version', `${ws.slug}:1`), workspaceId: wsId, version: 1, weights: (ws.scoring ?? SCORING_V1) as Prisma.InputJsonValue, active: true, createdBy: ownerId, createdAt },
     });
     await tx.pipelineConfigVersion.create({
       data: {
@@ -214,6 +231,8 @@ async function insertAll(tx: Tx, now: Date): Promise<SeedSummary> {
   await insertQuotes(tx, now);
   // T16: a revised, sent and shared quote for the public quote page (fixtures/shared-quotes.ts).
   await insertSharedQuotes(tx, now);
+  // ADR-126: the presentation pack of codecraft-web (fixtures/presentation.ts).
+  await insertPresentation(tx, now, { contactKeyPepper });
 
   const summary: SeedSummary = { anchorAt: now.toISOString(), ...counts };
   await tx.auditEvent.create({
@@ -372,7 +391,7 @@ export async function seedDemo(db: PrismaClient, opts: SeedOptions): Promise<See
     async (tx: Tx) => {
       const existing = await tx.workspace.count();
       if (existing > 0) throw new AlreadySeededError(existing);
-      return insertAll(tx, opts.now);
+      return insertAll(tx, opts.now, seedPepper(opts.config));
     },
     TX_OPTIONS,
   );
@@ -387,7 +406,7 @@ export async function resetAndSeedDemo(db: PrismaClient, opts: SeedOptions): Pro
       // Re-checked inside the write transaction so a concurrent LIVE write cannot slip in.
       await assertDemoSeedTarget(opts.config, tx);
       await wipe(tx);
-      return insertAll(tx, opts.now);
+      return insertAll(tx, opts.now, seedPepper(opts.config));
     },
     TX_OPTIONS,
   );
