@@ -3,11 +3,16 @@
  * Leads sheet shows (stage control, contact facts, score breakdown, consent per channel, source
  * records, quotations and conversations) on its own URL, for a bookmark or a wide screen. A lead
  * of another workspace, or one that does not exist, is 404. Needs leads.read.
+ *
+ * Lead-gen F5 (ADR-124): a lead the operator handed over shows the handoff first: the operator's
+ * note, the summary (with who wrote it) and Acknowledge.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowLeft, Users } from 'lucide-react';
+import { ArrowLeft, Handshake, Users } from 'lucide-react';
+import { ClientHandoff } from '@/components/handoff/HandoffSection';
+import { ChipTitle } from '@/components/patterns/IconChip';
 import { LeadDetailBody } from '@/components/leads/LeadDetailBody';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { PageHeader } from '@/components/patterns/PageHeader';
@@ -17,6 +22,7 @@ import { cn } from '@/components/ui/cn';
 import { NotFoundError, PermissionDeniedError } from '@/lib/errors';
 import { getPageContext } from '@/server/auth/page-context';
 import { getRuntime } from '@/server/boot';
+import { loadLeadHandoff } from '@/server/services/leads/handoff';
 import { leadProfileDeps, loadLeadProfile } from '@/server/services/leads/profile';
 import { isQuoteStatus, QuoteStatusBadge } from '../../quotations/quote-status';
 
@@ -29,8 +35,10 @@ export default async function UserLeadPage({ params }: { params: Promise<{ leadI
   if (!page) redirect('/login');
 
   let profile;
+  let handoff;
   try {
-    profile = await loadLeadProfile(page.ctx, leadId, leadProfileDeps(getRuntime().config));
+    const config = getRuntime().config;
+    [profile, handoff] = await Promise.all([loadLeadProfile(page.ctx, leadId, leadProfileDeps(config)), loadLeadHandoff(page.ctx, leadId)]);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     if (error instanceof PermissionDeniedError) {
@@ -52,6 +60,11 @@ export default async function UserLeadPage({ params }: { params: Promise<{ leadI
         All leads
       </Link>
       <PageHeader className="-mt-3" eyebrow={profile.workspace.name} title={profile.lead.displayName} description="Score, consent, source and stage of this lead." />
+      {handoff.handoff ? (
+        <SectionCard accent title={<ChipTitle icon={<Handshake aria-hidden="true" />} hue="volt">Handed over to you</ChipTitle>} meta="From your AuraLead operator.">
+          <ClientHandoff view={handoff} timeZone={profile.workspace.timezone} />
+        </SectionCard>
+      ) : null}
       <SectionCard>
         <LeadDetailBody
           profile={profile}

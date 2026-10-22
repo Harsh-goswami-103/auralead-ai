@@ -35,7 +35,7 @@ import type { ConversationAiMode, LeadHandoff, Prisma, SalesStage } from '@/gene
 import { LEAD_GEN_JOB_TYPES, type HandoffSummaryStatus } from '@/lib/domain/lead-gen';
 import { ConflictError, DomainRuleError, NotFoundError } from '@/lib/errors';
 import { idempotencyKey } from '@/lib/ids';
-import { parseStoredHandoffSummary, type AcknowledgeResultDto, type HandoffListItemDto, type HandoffStatusValue, type HandOverResultDto, type LeadHandoffDto } from '@/lib/schemas/handoff';
+import { parseStoredHandoffSummary, type AcknowledgeResultDto, type HandoffListItemDto, type HandoffStatusValue, type HandOverResultDto, type LeadHandoffDto, type LeadHandoffViewDto } from '@/lib/schemas/handoff';
 import type { AppCtx } from '@/server/auth/context';
 import { hasCapability, requireCapability, requireRole, requireWorkspace } from '@/server/auth/guards';
 import type { ScopedTx } from '@/server/db/scoped';
@@ -275,17 +275,14 @@ function toDto(row: LeadHandoff, names: Map<string, string>): LeadHandoffDto {
   };
 }
 
-export type LeadHandoffView = {
-  handoff: LeadHandoffDto | null;
-  lead: { id: string; displayName: string; salesStage: SalesStage; stageVersion: number; handedOverAt: string | null; merged: boolean };
-  workspace: { slug: string; name: string };
-  /** The AI summary can be written (PENDING) or not (NOT_CONFIGURED) if the lead were handed over now. */
-  summaryAvailable: boolean;
-  permissions: { canHandOff: boolean; canAcknowledge: boolean };
-};
+export type LeadHandoffView = LeadHandoffViewDto;
 
-/** The handoff state of one lead for both lead pages. `deps` decides whether a summary would be written. */
-export async function loadLeadHandoff(ctx: AppCtx, leadId: string, deps: AiDeps): Promise<LeadHandoffView> {
+/**
+ * The handoff state of one lead for both lead pages. With `deps` (the operator page) it also says
+ * whether a summary would be written if the lead were handed over now; without, `summaryAvailable`
+ * is false and no integration is read.
+ */
+export async function loadLeadHandoff(ctx: AppCtx, leadId: string, deps?: AiDeps): Promise<LeadHandoffView> {
   requireCapability(ctx, 'leads.read');
   const workspaceId = requireWorkspace(ctx);
   const lead = await ctx.db.lead.findFirst({ where: { id: leadId }, select: { id: true, displayName: true, salesStage: true, stageVersion: true, handedOverAt: true, mergedIntoLeadId: true } });
@@ -296,7 +293,7 @@ export async function loadLeadHandoff(ctx: AppCtx, leadId: string, deps: AiDeps)
   ]);
   const names = row ? await userNames(ctx, [row.fromUserId, row.acknowledgedBy]) : new Map<string, string>();
   const canHandOff = hasCapability(ctx, 'leads.handoff');
-  const summaryAvailable = row === null && canHandOff ? (await initialSummaryStatus(ctx, deps)) === 'PENDING' : false;
+  const summaryAvailable = row === null && canHandOff && deps !== undefined ? (await initialSummaryStatus(ctx, deps)) === 'PENDING' : false;
   return {
     handoff: row ? toDto(row, names) : null,
     lead: { id: lead.id, displayName: lead.displayName, salesStage: lead.salesStage, stageVersion: lead.stageVersion, handedOverAt: lead.handedOverAt?.toISOString() ?? null, merged: lead.mergedIntoLeadId !== null },

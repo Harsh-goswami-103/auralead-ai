@@ -91,3 +91,13 @@ export type HandOverResultDto = {
 };
 
 export type AcknowledgeResultDto = { handoffId: string; status: HandoffStatusValue; changed: boolean };
+
+/** The handoff state of one lead, as both lead pages read it. */
+export type LeadHandoffViewDto = {
+  handoff: LeadHandoffDto | null;
+  lead: { id: string; displayName: string; salesStage: string; stageVersion: number; handedOverAt: string | null; merged: boolean };
+  workspace: { slug: string; name: string };
+  /** A summary would be written (PENDING) if the lead were handed over now; false: NOT_CONFIGURED. */
+  summaryAvailable: boolean;
+  permissions: { canHandOff: boolean; canAcknowledge: boolean };
+};
