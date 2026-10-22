@@ -141,6 +141,17 @@ export async function getConversationMode(ctx: AppCtx, input: { conversationId: 
   };
 }
 
+/** The workspace's "Automatic sending" setting (ADR-121) and its name, for the inbox header. */
+export async function getWorkspaceAutoSend(ctx: AppCtx): Promise<{ enabled: boolean; workspaceName: string }> {
+  requireCapability(ctx, 'leads.read');
+  const workspaceId = requireWorkspace(ctx);
+  const [workspace, settings] = await Promise.all([
+    ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true } }),
+    ctx.db.workspaceSettings.findFirst({ select: { autoSendEnabled: true } }),
+  ]);
+  return { enabled: settings?.autoSendEnabled ?? false, workspaceName: workspace.name };
+}
+
 // ---- Mode changes ------------------------------------------------------------------------------------
 
 type ModePlan = { data: { aiMode?: ConversationAiMode; humanTakeover?: boolean; escalatedAt?: null }; action: string; summary: (next: number) => Record<string, unknown> };

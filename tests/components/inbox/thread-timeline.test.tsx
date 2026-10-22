@@ -22,6 +22,7 @@ function message(id: string, over: Partial<ThreadMessage>): ThreadMessage {
     body: `Reply ${id}`,
     subject: null,
     templateName: null,
+    template: null,
     quote: null,
     quickReply: null,
     quickReplyLabel: null,

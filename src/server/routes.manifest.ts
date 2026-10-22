@@ -1069,13 +1069,15 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { ws: fixture('workspaceB.slug'), approvalId: fixture('workspaceB.approvalId') },
     calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 200, superAdmin: 404 }, note: "workspace B's pending quote approval, read-only for the leads.read employee" }],
   },
+  // ADR-121 (lead-gen F3): the inbox and conversation routes also serve the operator's [ws] inbox,
+  // naming the workspace by `workspaceSlug`; capabilities are checked in the services.
   {
     path: '/api/app/messages',
     file: 'src/app/api/app/messages/route.ts',
     kind: 'api',
     owner: 'T22',
     access: 'session',
-    roles: ['USER'],
+    roles: ['USER', 'EMPLOYEE'],
     capability: 'dispatch.send',
     calls: [
       {
@@ -1083,6 +1085,12 @@ export const ROUTES: readonly RouteEntry[] = [
         body: { conversationId: fixture('inbox.unknownConversationId'), requestKey: 'matrix-probe-0001', kind: 'TEXT', body: 'Matrix probe' },
         expect: signedIn(404),
         note: "composer send into a conversation outside the caller's workspace",
+      },
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), conversationId: fixture('inbox.unknownConversationId'), requestKey: 'matrix-probe-0002', kind: 'TEXT', body: 'Matrix probe' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "composer send in workspace B's operator inbox (approvals.decide and dispatch.send)",
       },
     ],
   },
@@ -1092,9 +1100,17 @@ export const ROUTES: readonly RouteEntry[] = [
     kind: 'api',
     owner: 'T22',
     access: 'session',
-    roles: ['USER'],
+    roles: ['USER', 'EMPLOYEE'],
     capability: 'leads.write',
-    calls: [{ method: 'POST', body: { conversationId: fixture('inbox.unknownConversationId'), kind: 'TEXT', body: 'Matrix probe' }, expect: signedIn(404), note: "save for review in a conversation outside the caller's workspace" }],
+    calls: [
+      { method: 'POST', body: { conversationId: fixture('inbox.unknownConversationId'), kind: 'TEXT', body: 'Matrix probe' }, expect: signedIn(404), note: "save for review in a conversation outside the caller's workspace" },
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), conversationId: fixture('inbox.unknownConversationId'), kind: 'TEXT', body: 'Matrix probe' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "save for review in workspace B's operator inbox (leads.write)",
+      },
+    ],
   },
   {
     path: '/api/app/conversations/[conversationId]/takeover',
@@ -1102,10 +1118,13 @@ export const ROUTES: readonly RouteEntry[] = [
     kind: 'api',
     owner: 'T22',
     access: 'session',
-    roles: ['USER'],
+    roles: ['USER', 'EMPLOYEE'],
     capability: 'leads.write',
     params: { conversationId: fixture('inbox.unknownConversationId') },
-    calls: [{ method: 'POST', body: {}, expect: signedIn(404) }],
+    calls: [
+      { method: 'POST', body: {}, expect: signedIn(404), note: "a conversation outside the caller's workspace" },
+      { method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug') }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: "workspace B's operator inbox (leads.write)" },
+    ],
   },
   {
     path: '/api/app/conversations/[conversationId]/resume',
@@ -1113,10 +1132,13 @@ export const ROUTES: readonly RouteEntry[] = [
     kind: 'api',
     owner: 'T22',
     access: 'session',
-    roles: ['USER'],
+    roles: ['USER', 'EMPLOYEE'],
     capability: 'leads.write',
     params: { conversationId: fixture('inbox.unknownConversationId') },
-    calls: [{ method: 'POST', body: {}, expect: signedIn(404) }],
+    calls: [
+      { method: 'POST', body: {}, expect: signedIn(404), note: "a conversation outside the caller's workspace" },
+      { method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug') }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: "workspace B's operator inbox (leads.write)" },
+    ],
   },
   {
     path: '/api/app/conversations/[conversationId]/mode',
@@ -1124,10 +1146,13 @@ export const ROUTES: readonly RouteEntry[] = [
     kind: 'api',
     owner: 'T22',
     access: 'session',
-    roles: ['USER'],
+    roles: ['USER', 'EMPLOYEE'],
     capability: 'leads.write',
     params: { conversationId: fixture('inbox.unknownConversationId') },
-    calls: [{ method: 'POST', body: { aiMode: 'OFF' }, expect: signedIn(404) }],
+    calls: [
+      { method: 'POST', body: { aiMode: 'OFF' }, expect: signedIn(404), note: "a conversation outside the caller's workspace" },
+      { method: 'POST', body: { aiMode: 'OFF', workspaceSlug: fixture('workspaceB.slug') }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: "workspace B's operator inbox (leads.write)" },
+    ],
   },
   {
     path: '/api/app/approvals/[approvalId]/approve',
@@ -1989,7 +2014,51 @@ export const ROUTES: readonly RouteEntry[] = [
 
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
-
+  {
+    path: '/dashboard/employee/[ws]/inbox',
+    file: 'src/app/dashboard/employee/[ws]/inbox/page.tsx',
+    kind: 'page',
+    owner: 'T42',
+    access: 'session',
+    roles: ['EMPLOYEE'],
+    capability: 'leads.read',
+    params: { ws: fixture('workspaceB.slug') },
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 200, superAdmin: 404 }, note: "workspace B's operator inbox (leads.read)" }],
+  },
+  {
+    path: '/dashboard/employee/[ws]/inbox/[conversationId]',
+    file: 'src/app/dashboard/employee/[ws]/inbox/[conversationId]/page.tsx',
+    kind: 'page',
+    owner: 'T42',
+    access: 'session',
+    roles: ['EMPLOYEE'],
+    capability: 'leads.read',
+    params: { ws: fixture('workspaceB.slug'), conversationId: fixture('inbox.unknownConversationId') },
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 404, superAdmin: 404 }, note: "a conversation id that does not exist in workspace B" }],
+  },
+  {
+    path: '/api/app/settings/auto-send',
+    file: 'src/app/api/app/settings/auto-send/route.ts',
+    kind: 'api',
+    owner: 'T42',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'automation.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), enabled: false },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "workspace B's automatic sending (automation.manage)",
+      },
+      {
+        method: 'POST',
+        body: { enabled: false },
+        expect: { anonymous: 401, ownerA: 200, employeeUnassigned: 404, employeeNoCapability: 404, superAdmin: 404 },
+        note: "the owner's own workspace, already off: a no-op",
+      },
+    ],
+  },
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
 

@@ -15,6 +15,10 @@
  * row never breaks. The takeover banner is an info strip with the hand in a chip. "Take over" sits
  * at the row's end only when the row has room for all of it (a container query), so in a narrow
  * column it wraps to the start of the next line instead of hanging alone on the right.
+ *
+ * Operator inbox (ADR-121): `workspaceSlug` names the assigned workspace in every request (resolved
+ * server-side). Once the lead is handed over (ADR-124), `readOnly` gates every control for the
+ * operator with its reason; the server refuses them anyway (409 HANDED_OVER).
  */
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -38,6 +42,10 @@ export type ModeControlsProps = {
   autoSendEnabled: boolean;
   autoAvailable: boolean;
   canChangeMode: boolean;
+  /** The operator's assigned workspace (`[ws]` inbox); omitted in the client panel. */
+  workspaceSlug?: string;
+  /** Set when the thread is read-only for this person (an operator after the handoff). */
+  readOnly?: { reason: string } | null;
 };
 
 const MODES = [
@@ -56,7 +64,11 @@ export function ModeControls(props: ModeControlsProps) {
 
   async function post(path: 'takeover' | 'resume' | 'mode', body: Record<string, unknown>, success: string) {
     setFailure(null);
-    const res = await postAction(`/api/app/conversations/${props.conversationId}/${path}`, { expectedModeVersion: props.modeVersion, ...body }, csrf);
+    const res = await postAction(
+      `/api/app/conversations/${props.conversationId}/${path}`,
+      { expectedModeVersion: props.modeVersion, ...(props.workspaceSlug ? { workspaceSlug: props.workspaceSlug } : {}), ...body },
+      csrf,
+    );
     if (!res.ok) {
       setFailure({ message: res.message, reference: res.reference });
       return { ok: false as const, message: res.message, reference: res.reference };
@@ -66,15 +78,17 @@ export function ModeControls(props: ModeControlsProps) {
     return { ok: true as const };
   }
 
-  const autoGate: Gate | null = !props.canChangeMode
-    ? NO_MODE
+  const noMode: Gate = props.readOnly ? { category: 'permission', reason: props.readOnly.reason } : NO_MODE;
+  const canChange = props.canChangeMode && !props.readOnly;
+  const autoGate: Gate | null = !canChange
+    ? noMode
     : !props.autoSendEnabled
-      ? { category: 'configuration', reason: 'Workspace auto-send is off. It is an audited opt-in in the workspace settings.' }
+      ? { category: 'configuration', reason: 'Automatic sending is off for this workspace. Turn it on with the Automatic sending switch (an audited setting).' }
       : !props.autoAvailable
         ? { category: 'permission', reason: 'Choosing Auto needs the automation permission.' }
         : null;
 
-  const segmentGate = (value: (typeof MODES)[number]['value']): Gate | null => (value === 'AUTO' ? autoGate : props.canChangeMode ? null : NO_MODE);
+  const segmentGate = (value: (typeof MODES)[number]['value']): Gate | null => (value === 'AUTO' ? autoGate : canChange ? null : noMode);
   // Each distinct reason is printed once under the control; gated segments point at it.
   const reasons: Array<{ id: string; gate: Gate }> = [];
   const reasonIdFor = (gate: Gate): string => {
@@ -100,7 +114,7 @@ export function ModeControls(props: ModeControlsProps) {
             </span>
             You are handling this thread. AI replies paused.
           </p>
-          {props.canChangeMode ? (
+          {canChange ? (
             <ConfirmDialog
               trigger={
                 <Button size="sm" variant="outline">
@@ -116,7 +130,7 @@ export function ModeControls(props: ModeControlsProps) {
               onConfirm={() => post('resume', {}, 'AI resumed on this conversation.')}
             />
           ) : (
-            <GatedAction label="Resume AI" size="sm" variant="outline" gate={NO_MODE} />
+            <GatedAction label="Resume AI" size="sm" variant="outline" gate={noMode} />
           )}
         </div>
       ) : null}
@@ -175,7 +189,7 @@ export function ModeControls(props: ModeControlsProps) {
           })}
         </div>
         {!props.humanTakeover ? (
-          props.canChangeMode ? (
+          canChange ? (
             <ConfirmDialog
               trigger={
                 <Button size="sm" variant="outline" className="@min-[30rem]:ml-auto">
@@ -192,7 +206,7 @@ export function ModeControls(props: ModeControlsProps) {
             />
           ) : (
             <span className="@min-[30rem]:ml-auto">
-              <GatedAction label="Take over" size="sm" variant="outline" gate={NO_MODE} />
+              <GatedAction label="Take over" size="sm" variant="outline" gate={noMode} />
             </span>
           )
         ) : null}

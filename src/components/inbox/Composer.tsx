@@ -1,26 +1,37 @@
 'use client';
 
 /**
- * Inbox composer (T22; 06-design F5, §11.3 "Composer send"). Everything it says about sending comes
- * from the server: the window end (`windowEndsAt`), the eligibility reasons and, after a refusal,
- * the next action. The line "Final check happens at send" is always shown, and the window line is
- * re-evaluated every 60 s against the server time it was rendered with, so crossing the boundary
- * switches the action to an approved template or review instead of a free-form send.
+ * Inbox composer (T22; 06-design F5, §11.3 "Composer send"; ADR-121, ADR-123 per-lead template
+ * values; ADR-124 read-only after the handoff). Everything it says about sending comes from the
+ * server: the window end (`windowEndsAt`), the eligibility reasons and, after a refusal, the next
+ * action and the reason. The line "Final check happens at send" is always shown, and the window
+ * line counts down against the server time it was rendered with (re-evaluated every 60 s), so
+ * crossing the boundary switches the action to an approved template or review instead of a
+ * free-form send.
  *
  * Send posts once per submission (GatedAction ignores repeat clicks while pending) with a request
  * key that a retry of the same text reuses, so the server queues one dispatch. A refusal keeps the
- * draft, shows the reason and switches the action; nothing is ever reported as sent here: the
- * thread shows "Queued" and then the provider's status as it arrives.
+ * draft, shows the server's reason and switches the action; nothing is ever reported as sent here:
+ * the thread shows "Queued" and then the provider's status as it arrives.
  *
- * Aurora look (design spec §5-§6): shared field surfaces, the card's border takes the aura hue while
- * a field inside has focus, and the WhatsApp window gets a thin bar of the time left out of 24 h,
- * toned by what is left (over 6 h success, under 6 h warning, under 1 h danger). The bar is
+ * Templates: the picker lists the workspace's approved templates. Each body position shows where
+ * its value comes from: the lead's own value for lead and workspace sources (read-only, resolved by
+ * the server with `resolveLeadTemplateVariables`, "missing" when the lead has none), or a field the
+ * person fills (manual and other sources). The bubble preview fills both. The server resolves the
+ * values again at send and refuses a missing one with its reason (TEMPLATE_VARIABLES_MISSING).
+ *
+ * `workspaceSlug` (operator inbox) names the assigned workspace in every request. `readOnly`
+ * (an operator once the lead is handed over) replaces the composer with its reason.
+ *
+ * Aurora look (design spec §5-§6): shared field surfaces, the card's border takes the chat accent
+ * while a field inside has focus, and the WhatsApp window gets a thin bar of the time left out of
+ * 24 h, toned by what is left (over 6 h success, under 6 h warning, under 1 h danger). The bar is
  * decorative (the sentence above says the time in words), static, and moves only when the 60 s
  * re-evaluation does; its width is rounded so server and client render the same markup.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CircleAlert, CircleCheck, Clock, FileText, Save, Send } from 'lucide-react';
+import { CircleAlert, CircleCheck, Clock, FileText, Lock, Reply, Save, Send } from 'lucide-react';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { useCsrfToken } from '@/components/patterns/csrf';
 import { Input } from '@/components/ui/input';
@@ -28,6 +39,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/components/ui/cn';
+import type { ComposerTemplate } from '@/server/services/messaging/inbox';
 import { newRequestKey, postAction } from './api';
 import { formatClockTime, formatDayMonth, remainingHint } from './format';
 
@@ -38,14 +50,19 @@ export type ComposerProps = {
   /** Server time when the page was rendered (ISO); the client keeps its offset to it. */
   serverNow: string;
   freeform: { eligible: boolean; deferrable: boolean; reasons: string[]; labels: string[]; windowEndsAt: string | null };
-  templates: Array<{ id: string; name: string; language: string; category: string; variables: string[] }>;
+  templates: ComposerTemplate[];
   templateGate: Gate | null;
   permissions: { canSend: boolean; canDraft: boolean };
+  /** The operator's assigned workspace (`[ws]` inbox); omitted in the client panel. */
+  workspaceSlug?: string;
+  /** Set when this person may no longer write in the thread (an operator after the handoff). */
+  readOnly?: { reason: string } | null;
 };
 
 const REVIEWABLE = new Set(['WINDOW_CLOSED', 'TEMPLATE_NOT_APPROVED', 'NOT_CONFIGURED', 'QUALITY_PAUSED']);
 const NO_SEND: Gate = { category: 'permission', reason: 'Your role can draft replies but not approve and send them. Save it for review instead.' };
 const NO_DRAFT: Gate = { category: 'permission', reason: 'Your role cannot write messages in this workspace.' };
+const MISSING_WORDS: Readonly<Record<string, string>> = { NO_VALUE: 'this lead has none', NOT_PROVIDED: 'type it', NEEDS_CONTEXT: 'type it', TOO_LONG: 'too long (200 characters at most)' };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -70,6 +87,21 @@ function useServerNow(serverNow: string): number {
 }
 
 export function Composer(props: ComposerProps) {
+  if (props.readOnly) {
+    return (
+      <section aria-label="Reply" className="flex items-start gap-2.5 rounded-xl border border-border-subtle bg-bg-1/80 p-3 text-sm text-fg-1 sm:p-4" data-composer-readonly>
+        <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-2" />
+        <span>
+          {props.readOnly.reason}
+          <span className="block text-xs text-fg-2">This conversation is read-only for operators.</span>
+        </span>
+      </section>
+    );
+  }
+  return <ComposerForm {...props} />;
+}
+
+function ComposerForm(props: ComposerProps) {
   const router = useRouter();
   const csrf = useCsrfToken();
   const now = useServerNow(props.serverNow);
@@ -90,6 +122,7 @@ export function Composer(props: ComposerProps) {
   const blockingReasons = closedOnClient && !serverBlocked ? ['WINDOW_CLOSED'] : props.freeform.reasons.filter((r) => r !== 'GLOBAL_PAUSED' && r !== 'CAP_REACHED');
   const reviewable = refusal ? refusal.next !== 'NONE' : blockingReasons.length > 0 && blockingReasons.every((r) => REVIEWABLE.has(r));
   const template = useMemo(() => props.templates.find((t) => t.id === templateId) ?? null, [props.templates, templateId]);
+  const withSlug = (payload: Record<string, unknown>) => (props.workspaceSlug ? { ...payload, workspaceSlug: props.workspaceSlug } : payload);
 
   function edited() {
     keyRef.current = null;
@@ -100,7 +133,11 @@ export function Composer(props: ComposerProps) {
 
   function content(kind: 'TEXT' | 'TEMPLATE' | 'EMAIL'): Record<string, unknown> {
     if (kind === 'EMAIL') return { kind, subject, body };
-    if (kind === 'TEMPLATE') return { kind, templateId, variables: Object.fromEntries((template?.variables ?? []).map((v) => [v, variables[v] ?? ''])) };
+    if (kind === 'TEMPLATE') {
+      // Only the positions the person fills; lead and workspace values are resolved by the server.
+      const typed = (template?.fields ?? []).filter((f) => f.editable).map((f) => [f.position, variables[f.position] ?? ''] as const);
+      return { kind, templateId, variables: Object.fromEntries(typed) };
+    }
     return { kind, body };
   }
 
@@ -116,11 +153,15 @@ export function Composer(props: ComposerProps) {
       return;
     }
     keyRef.current ??= newRequestKey();
-    const res = await postAction<{ created: boolean; deferred: string[] | null }>('/api/app/messages', { conversationId: props.conversationId, requestKey: keyRef.current, ...content(kind) }, csrf);
+    const res = await postAction<{ created: boolean; deferred: string[] | null }>('/api/app/messages', withSlug({ conversationId: props.conversationId, requestKey: keyRef.current, ...content(kind) }), csrf);
     if (res.ok) {
       keyRef.current = null;
-      setBody('');
-      setSubject('');
+      if (kind !== 'TEMPLATE') {
+        setBody('');
+        setSubject('');
+      } else {
+        setVariables({});
+      }
       setRefusal(null);
       setNotice({ tone: 'success', text: res.data.deferred ? `Queued. It waits while: ${res.data.deferred.join('; ')}.` : 'Queued. The delivery status appears in the thread.' });
       router.refresh();
@@ -133,7 +174,9 @@ export function Composer(props: ComposerProps) {
       router.refresh();
       return;
     }
-    // Network or server failure: the same submission keeps its key, so a retry cannot send twice.
+    if (res.status === 422 || res.status === 409) keyRef.current = null;
+    // A refusal with its own reason (a missing template value, a handed-over lead) or a network or
+    // server failure: the reason is shown; an unanswered submission keeps its key, so a retry cannot send twice.
     setFailure({ message: res.message, reference: res.reference });
   }
 
@@ -143,7 +186,7 @@ export function Composer(props: ComposerProps) {
       setFailure({ message: isWhatsApp ? 'Write a message first.' : 'Write a subject and a message first.', reference: null });
       return;
     }
-    const res = await postAction('/api/app/messages/drafts', { conversationId: props.conversationId, ...content(isWhatsApp ? 'TEXT' : 'EMAIL') }, csrf);
+    const res = await postAction('/api/app/messages/drafts', withSlug({ conversationId: props.conversationId, ...content(isWhatsApp ? 'TEXT' : 'EMAIL') }), csrf);
     if (!res.ok) {
       setFailure({ message: res.message, reference: res.reference });
       return;
@@ -156,10 +199,12 @@ export function Composer(props: ComposerProps) {
   }
 
   const sendGate: Gate | null = props.permissions.canSend ? null : NO_SEND;
-  const templateGate: Gate | null = !props.permissions.canSend ? NO_SEND : props.templateGate;
+  const templateGate: Gate | null = !props.permissions.canSend
+    ? NO_SEND
+    : (props.templateGate ?? (template?.notSendable ? { category: 'eligibility', reason: `This template ${template.notSendable.charAt(0).toLowerCase()}${template.notSendable.slice(1)}.` } : null));
 
   return (
-    <section aria-label="Reply" className="flex min-w-0 flex-col gap-3 rounded-xl border border-border-subtle bg-bg-1/80 p-3 transition-colors duration-fast focus-within:border-aura/40 sm:p-4">
+    <section aria-label="Reply" className="flex min-w-0 flex-col gap-3 rounded-xl border border-border-subtle bg-bg-1/80 p-3 transition-colors duration-fast focus-within:border-chat-accent/50 sm:p-4">
       <EligibilityLine {...props} now={now} closedOnClient={closedOnClient} refusal={refusal} />
 
       {!isWhatsApp ? (
@@ -231,33 +276,70 @@ export function Composer(props: ComposerProps) {
       </div>
 
       {isWhatsApp ? (
-        <fieldset className="flex flex-col gap-2 border-t border-border-subtle pt-3">
+        <fieldset className="flex flex-col gap-3 border-t border-border-subtle pt-3">
           <legend className="flex items-center gap-1.5 pt-1 text-sm font-medium text-fg-1">
             <FileText aria-hidden="true" className="size-4 text-fg-2" />
             Approved template
           </legend>
           {props.templates.length > 0 ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor={`template-${props.conversationId}`} className="text-fg-2">
-                  Template
-                </Label>
-                <NativeSelect id={`template-${props.conversationId}`} wrapperClassName="w-full" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-                  {props.templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.language}, {t.category.toLowerCase()})
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-              {(template?.variables ?? []).map((v) => (
-                <div key={v} className="flex flex-col gap-1.5">
-                  <Label htmlFor={`var-${props.conversationId}-${v}`} className="text-fg-2">
-                    Variable {v}
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="flex min-w-0 flex-col gap-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor={`template-${props.conversationId}`} className="text-fg-2">
+                    Template
                   </Label>
-                  <Input id={`var-${props.conversationId}-${v}`} value={variables[v] ?? ''} onChange={(e) => setVariables((prev) => ({ ...prev, [v]: e.target.value }))} />
+                  <NativeSelect
+                    id={`template-${props.conversationId}`}
+                    wrapperClassName="w-full"
+                    value={templateId}
+                    onChange={(e) => {
+                      setTemplateId(e.target.value);
+                      setVariables({});
+                      setFailure(null);
+                    }}
+                  >
+                    {props.templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.language}, {t.category.toLowerCase()})
+                      </option>
+                    ))}
+                  </NativeSelect>
                 </div>
-              ))}
+                {(template?.fields ?? []).map((f) =>
+                  f.editable ? (
+                    <div key={f.position} className="flex flex-col gap-1.5">
+                      <Label htmlFor={`var-${props.conversationId}-${f.position}`} className="text-fg-2">
+                        {`{{${f.position}}}`} {f.sourceLabel}
+                      </Label>
+                      <Input
+                        id={`var-${props.conversationId}-${f.position}`}
+                        value={variables[f.position] ?? ''}
+                        maxLength={200}
+                        onChange={(e) => {
+                          setVariables((prev) => ({ ...prev, [f.position]: e.target.value }));
+                          setFailure(null);
+                          keyRef.current = null;
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div key={f.position} className="flex flex-col gap-0.5 text-sm" data-template-field={f.position}>
+                      <span className="text-fg-2">
+                        {`{{${f.position}}}`} {f.sourceLabel}, from the lead
+                      </span>
+                      {f.value !== null ? (
+                        <span className="text-fg-1">{f.value}</span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-warning">
+                          <CircleAlert aria-hidden="true" className="size-3.5 shrink-0" />
+                          Missing: {MISSING_WORDS[f.missing ?? 'NO_VALUE']}
+                        </span>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+              {template ? <TemplateBubblePreview template={template} typed={variables} /> : null}
             </div>
           ) : null}
           <div>
@@ -266,6 +348,34 @@ export function Composer(props: ComposerProps) {
         </fieldset>
       ) : null}
     </section>
+  );
+}
+
+/** The template as the customer will see it, with the lead's values and what the person typed. */
+function TemplateBubblePreview({ template, typed }: { template: ComposerTemplate; typed: Record<string, string> }) {
+  const p = template.preview;
+  const body = p.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (all, n: string) => (typed[String(Number(n))]?.trim() ? typed[String(Number(n))]!.trim() : all));
+  return (
+    <figure className="flex min-w-0 flex-col gap-1 rounded-lg bg-chat-wallpaper p-3" data-template-preview>
+      <figcaption className="text-xs text-fg-2">Preview</figcaption>
+      <div className="flex max-w-full flex-col gap-1 self-end rounded-lg rounded-tr-none bg-chat-bubble-out px-3 py-2">
+        {p.headerFormat === 'DOCUMENT' && p.documentName ? (
+          <span className="flex items-center gap-2 text-xs text-fg-1">
+            <FileText aria-hidden="true" className="size-4 shrink-0 text-fg-2" />
+            {p.documentName}
+          </span>
+        ) : null}
+        {p.headerText ? <span className="text-sm font-semibold break-words text-fg-1">{p.headerText}</span> : null}
+        <p className="text-sm break-words whitespace-pre-line text-fg-1">{body}</p>
+        {p.footer ? <p className="text-xs text-chat-meta">{p.footer}</p> : null}
+      </div>
+      {p.buttons.map((b, i) => (
+        <span key={`${b.type}:${i}`} className="flex items-center justify-center gap-1.5 self-end rounded-lg bg-chat-bubble-out px-3 py-1 text-sm text-aura">
+          <Reply aria-hidden="true" className="size-3.5" />
+          {b.text}
+        </span>
+      ))}
+    </figure>
   );
 }
 

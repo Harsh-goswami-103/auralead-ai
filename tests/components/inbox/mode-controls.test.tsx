@@ -57,9 +57,9 @@ describe('ModeControls', () => {
     expect(auto.getAttribute('data-gate-category')).toBe('configuration');
     const reasonId = auto.getAttribute('aria-describedby')!;
     const reason = document.getElementById(reasonId)!;
-    expect(reason.textContent).toContain('Workspace auto-send is off');
+    expect(reason.textContent).toContain('Automatic sending is off for this workspace');
     expect(group.contains(reason)).toBe(false);
-    expect(group.textContent).not.toContain('Workspace auto-send is off');
+    expect(group.textContent).not.toContain('Automatic sending is off for this workspace');
 
     await act(async () => {
       fireEvent.click(auto);
@@ -92,5 +92,35 @@ describe('ModeControls', () => {
     const dialog = screen.getByRole('alertdialog');
     expect(dialog.textContent).toContain('Workspace: Alpha Dental');
     expect(within(dialog).getByRole('button', { name: 'Set Off' })).toBeTruthy();
+  });
+
+  it('names the operator workspace in every request (ADR-121)', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ conversationId: 'conv_1', aiMode: 'OFF', humanTakeover: false, modeVersion: 4, changed: true }), { status: 200 }));
+    renderControls({ workspaceSlug: 'codecraft-web' });
+    fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Set Off' }));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/app/conversations/conv_1/mode');
+    expect(JSON.parse(String(init.body))).toEqual({ expectedModeVersion: 3, workspaceSlug: 'codecraft-web', aiMode: 'OFF' });
+  });
+
+  it('a handed-over thread is read-only for the operator: every control is gated with the reason (ADR-124)', async () => {
+    const reason = 'Handed over to Codecraft Web Studio on 21 Oct 2026. Only the client messages this lead now.';
+    renderControls({ readOnly: { reason }, autoSendEnabled: true });
+    const group = screen.getByRole('group', { name: 'AI mode' });
+    for (const name of ['Off', 'Auto']) {
+      const button = within(group).getByRole('button', { name });
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('data-gate-category')).toBe('permission');
+    }
+    expect(screen.getByRole('button', { name: 'Take over' }).getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getAllByText(reason).length).toBeGreaterThan(0);
+    await act(async () => {
+      fireEvent.click(within(group).getByRole('button', { name: 'Off' }));
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

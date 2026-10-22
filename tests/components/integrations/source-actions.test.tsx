@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SourceSimulator } from '@/components/integrations/SourceSimulator';
 import { TemplateSyncButton } from '@/components/integrations/TemplateSyncButton';
 import { templateSyncGate, simulationGateOf } from '@/components/integrations/vocabulary';
+import { WORKSPACE_SECTIONS } from '@/components/integrations/sections';
 import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { CsrfProvider } from '@/components/patterns/csrf';
 
@@ -96,7 +97,9 @@ describe('WorkspaceSectionNav', () => {
     render(<WorkspaceSectionNav slug="smile-avenue-dental" workspaceName="Smile Avenue Dental Clinic" />);
     const nav = screen.getByRole('navigation', { name: 'Smile Avenue Dental Clinic sections' });
     const links = nav.querySelectorAll('a');
-    expect([...links].map((a) => a.textContent)).toEqual(['Leads', 'Approvals', 'Integrations', 'Pipeline', 'Sheets', 'Meta', 'Extension']);
+    // Every section of WORKSPACE_SECTIONS, in its order (the lead-gen slices add theirs: Inbox, ...).
+    expect([...links].map((a) => a.textContent)).toEqual(WORKSPACE_SECTIONS.map((s) => s.label));
+    for (const label of ['Leads', 'Approvals', 'Integrations', 'Pipeline', 'Sheets', 'Meta', 'Extension', 'Inbox']) expect(screen.getByRole('link', { name: label })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Sheets' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: 'Leads' }).getAttribute('aria-current')).toBeNull();
   });

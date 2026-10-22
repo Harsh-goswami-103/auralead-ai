@@ -31,6 +31,8 @@ function row(over: Partial<InboxThreadRow>): InboxThreadRow {
     pendingApprovals: 0,
     attentionDeliveries: 0,
     openCallRequests: 0,
+    escalated: false,
+    handedOverAt: null,
     needsYou: false,
     ...over,
   };
