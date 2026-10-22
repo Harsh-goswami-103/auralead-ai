@@ -40,7 +40,7 @@ function spawnWorker(name: string, pause?: { dir: string; points: string[] }): S
     env: {
       DATABASE_URL: h.testDb.url,
       APP_MODE: 'demo',
-      NEXT_PUBLIC_APP_MODE: undefined,
+      NEXT_PUBLIC_APP_MODE: 'demo',
       AURALEAD_TEST_CONTROL: '1',
       TEST_CONTROL_TOKEN: 'test-control-token-for-webhook-restart',
       SESSION_SECRET: h.config.secrets.sessionSecret!,

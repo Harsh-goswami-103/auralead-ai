@@ -55,7 +55,7 @@ export const troubleshooting: DocPage = {
             '5 failed sign-ins in a row lock the account for 15 minutes, even for the right password. Wait for the lock to end, then sign in with the right password.',
             '"Too many requests. Wait a moment and try again." means the per-address or per-account rate limit (5 a minute) was hit: wait a minute.',
             'An administrator who lost the password: on the server run `npm run admin:bootstrap -- --recover --email <address>`. It prints a one-hour, single-use reset link (`/reset/<token>`); using it sets the new password, lifts the lock and signs the account out everywhere.',
-            'A LIVE process never accepts a demo identity, and only active accounts can sign in.',
+            'Only active accounts can sign in.',
           ],
         },
       ],
@@ -76,7 +76,7 @@ export const troubleshooting: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Simulated leads are not ingested, scores, drafts or PDFs never appear, and the lead console says the worker has not processed the queued events yet. Platform admin shows "Worker not running" when the worker\'s last heartbeat is older than 30 seconds.',
+          text: 'Leads are not ingested, scores, drafts or PDFs never appear, and the lead console says the worker has not processed the queued events yet. Platform admin shows "Worker not running" when the worker\'s last heartbeat is older than 30 seconds.',
         },
         {
           kind: 'list',
@@ -201,11 +201,15 @@ export const troubleshooting: DocPage = {
           caption: 'Bootstrap messages',
           head: ['Message', 'Fix'],
           rows: [
-            ['"DEMO mode uses seeded identities."', 'Run it with the LIVE `.env` (`APP_MODE=live`).'],
             ['"An administrator already exists."', 'Sign in as that administrator. For a lost password, add `--recover --email <their address>`.'],
             ['"That email already belongs to another account."', 'Use an address that has no account yet.'],
             ['"No active administrator has that email address." (with `--recover`)', 'Check the address; `--recover` only works for an active administrator.'],
           ],
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: '"DEMO mode uses seeded identities." means the command ran with `APP_MODE=demo`: run it with the LIVE `.env` (`APP_MODE=live`).',
         },
       ],
     },

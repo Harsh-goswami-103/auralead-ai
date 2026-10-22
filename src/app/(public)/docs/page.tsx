@@ -4,7 +4,7 @@ import { DocsIndexView } from './_components/views';
 
 export const metadata: Metadata = {
   title: 'Documentation',
-  description: 'Running the demo, going live, roles, the lead-to-quote workflow, messaging rules, security, data and privacy, troubleshooting and limitations.',
+  description: 'Going live, roles, the lead-to-quote workflow, messaging rules, security, data and privacy, troubleshooting and limitations.',
 };
 
 /* Public (no session). Dynamic: the mode picks the banner and the labels, and the CSP nonce needs a per-request render (ADR-69). */

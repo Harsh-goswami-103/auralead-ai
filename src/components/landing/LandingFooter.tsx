@@ -20,7 +20,7 @@ export function LandingFooter({ mode }: { mode: LandingMode }) {
             <Wordmark />
           </Link>
           <p className="text-sm text-fg-2">Lead capture, scoring, versioned quotes and consent-aware messaging for Indian service businesses.</p>
-          <p className="text-xs text-fg-3">{mode === 'demo' ? 'This instance runs in DEMO mode with simulated providers.' : 'This instance runs in LIVE mode.'}</p>
+          {mode === 'demo' ? <p className="text-xs text-fg-3">This instance runs in DEMO mode with simulated providers.</p> : null}
         </div>
         <nav aria-label="Footer" className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-12">
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-1">

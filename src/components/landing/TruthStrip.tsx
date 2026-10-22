@@ -1,23 +1,37 @@
 /**
  * Truthfulness strip (plan T30, 06-design §11.7): the rules the product keeps, stated plainly:
- * DEMO and LIVE never mix, consent first, approval by default, AI never sets prices. Icon + text
+ * your accounts and data (LIVE) or DEMO and LIVE never mix (DEMO, ADR-116), consent first, approval
+ * by default, AI never sets prices. Icon + text
  * cards on a quiet band, each closed at the top by a hairline in its hue; no testimonials, logos,
  * "trusted by" or invented numbers anywhere on the page. Server-safe.
  */
-import { BadgeIndianRupee, FlaskConical, ShieldCheck, UserCheck, type LucideIcon } from 'lucide-react';
+import { BadgeIndianRupee, FlaskConical, LockKeyhole, ShieldCheck, UserCheck, type LucideIcon } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { GridPattern } from '@/components/visual/Patterns';
 import { Stagger, StaggerItem } from '@/components/visual/Reveal';
+import type { LandingMode } from './cta';
 import { SectionIntro } from './SectionIntro';
 
-const PRINCIPLES: readonly { title: string; body: string; icon: LucideIcon; tint: string; hairline: string }[] = [
-  {
+type Principle = { title: string; body: string; icon: LucideIcon; tint: string; hairline: string };
+
+const MODE_PRINCIPLE: Record<LandingMode, Principle> = {
+  demo: {
     title: 'DEMO and LIVE never mix',
     body: 'DEMO runs on seeded data with simulated providers and says so on every screen. LIVE uses your own provider accounts and invitation-only sign-in.',
     icon: FlaskConical,
     tint: 'border-zest/30 bg-zest/10 text-zest',
     hairline: 'bg-zest',
   },
+  live: {
+    title: 'Your accounts, your data',
+    body: 'Sign-in is by invitation only, provider credentials are stored encrypted per workspace, and your leads are kept in your own database.',
+    icon: LockKeyhole,
+    tint: 'border-zest/30 bg-zest/10 text-zest',
+    hairline: 'bg-zest',
+  },
+};
+
+const PRINCIPLES: readonly Principle[] = [
   {
     title: 'Consent first',
     body: 'WhatsApp needs opt-in evidence for that channel, and Maps leads start without it. Email permission is tracked separately, and a Stop is honoured at once.',
@@ -41,7 +55,7 @@ const PRINCIPLES: readonly { title: string; body: string; icon: LucideIcon; tint
   },
 ];
 
-export function TruthStrip() {
+export function TruthStrip({ mode }: { mode: LandingMode }) {
   return (
     <section
       id="principles"
@@ -59,7 +73,7 @@ export function TruthStrip() {
           description="This page shows no testimonials, customer logos or invented numbers. The product keeps the same rules."
         />
         <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {PRINCIPLES.map((p) => {
+          {[MODE_PRINCIPLE[mode], ...PRINCIPLES].map((p) => {
             const Icon = p.icon;
             return (
               <StaggerItem key={p.title} inView as="article" className="relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-border-subtle bg-bg-0/70 p-5">

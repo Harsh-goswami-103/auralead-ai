@@ -42,7 +42,7 @@ export const rolesAndPanels: DocPage = {
           head: ['Capability', 'Allows', 'Member'],
           rows: [
             ['`leads.read`', 'See leads, the lead console, conversations and the approval queue.', 'Yes'],
-            ['`leads.write`', 'Run DEMO source simulations, take over or resume a conversation, change its AI mode, save a reply for review.', 'Yes'],
+            ['`leads.write`', 'Take over or resume a conversation, change its AI mode, save a reply for review.', 'Yes'],
             ['`drafts.generate`', '**Generate draft** and **Generate with local template**.', 'Yes'],
             ['`quotes.edit`', 'Create, revise and cancel quotations.', 'Yes'],
             ['`dispatch.send`', 'Create and revoke share links, **Copy link** and **Mark as sent manually**; together with `approvals.decide`, send from the composer or the approval queue.', 'Yes'],
@@ -79,7 +79,7 @@ export const rolesAndPanels: DocPage = {
             ['Command center', '`/dashboard/user`', 'The workspace at a glance: the priced catalog, quotation settings, the active scoring and pipeline versions, and the team.'],
             ['Pricing', '`/dashboard/user/pricing`', 'Services and the active price list, tax, discount limits, timelines and the version history. A price change makes a new price list version; issued quotations keep their own copy.'],
             ['Quotations', '`/dashboard/user/quotations`', 'Every quotation and its versions; a new quotation from a lead and its draft proposal; approve, revise and cancel; share links and hand-over; the state timeline.'],
-            ['Inbox', '`/dashboard/user/inbox`', 'WhatsApp and email conversations, the reply composer with its eligibility line, takeover and the conversation AI mode. In DEMO it can also simulate a customer message.'],
+            ['Inbox', '`/dashboard/user/inbox`', 'WhatsApp and email conversations, the reply composer with its eligibility line, takeover and the conversation AI mode.'],
           ],
         },
       ],
@@ -95,7 +95,7 @@ export const rolesAndPanels: DocPage = {
           rows: [
             ['Assignments', '`/dashboard/employee`', 'One card per active assignment: the workspace, the granted capabilities and the discount cap, with links to its lead console and approval queue.'],
             ['Approvals', '`/dashboard/employee/approvals`', 'Pending approvals of every assigned workspace, one section each.'],
-            ['Lead console', '`/dashboard/employee/<ws>/leads`', 'Leads of one workspace with source, score and stage; recent source deliveries; in DEMO the source simulators.'],
+            ['Lead console', '`/dashboard/employee/<ws>/leads`', 'Leads of one workspace with source, score and stage; recent source deliveries.'],
             ['Lead', '`/dashboard/employee/<ws>/leads/<leadId>`', 'Contact facts, the score breakdown, the pipeline stages, the draft, and its quotations with approve and PDF download.'],
             ['Approval queue', '`/dashboard/employee/<ws>/approvals`', 'Items waiting for a decision; each item shows the version diff and the per-channel eligibility, and offers approve, approve and send, edit or reject with a reason.'],
           ],
@@ -137,7 +137,7 @@ export const rolesAndPanels: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'The seeded identities on `/login`, the floating **Demo role** switcher, the source simulators and the customer-message simulator exist only in a DEMO process. Their routes (`/api/demo/*` and `/api/webhooks/whatsapp/simulate`) answer 404 in LIVE, and a LIVE build does not contain the switcher at all.',
+          text: 'The seeded identities on `/login`, the floating **Demo role** switcher, the source simulators in the lead console (they need `leads.write`) and the customer-message simulator in the Inbox exist only in a DEMO process. Their routes (`/api/demo/*` and `/api/webhooks/whatsapp/simulate`) answer 404 in LIVE, and a LIVE build does not contain the switcher at all.',
         },
       ],
     },

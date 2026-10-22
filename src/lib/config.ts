@@ -2,9 +2,10 @@
  * Typed, validated configuration (plan §14, ADR-04). This is one of only two modules allowed
  * to read the app mode variable (the other is src/server/adapters/registry.ts).
  *
- * DEMO: everything has a safe default; secrets are optional here (setup generates them) but
- * validated when present. LIVE: SESSION_SECRET, SHARE_NONCE_KEY, SUPPRESSION_PEPPER and the
- * credentials key ring are required, and test control is refused.
+ * LIVE is the default (ADR-116): an unset or blank APP_MODE is LIVE, and SESSION_SECRET,
+ * SHARE_NONCE_KEY, SUPPRESSION_PEPPER and the credentials key ring are required, and test
+ * control is refused. DEMO is an explicit opt-in (APP_MODE=demo) for development: everything has
+ * a safe default; secrets are optional there (setup generates them) but validated when present.
  * Issues never include the offending value, so secrets are not echoed into logs.
  */
 import os from 'node:os';
@@ -41,7 +42,7 @@ const flag = (name: string) =>
 const secretField = opt(z.string().min(MIN_SECRET_LENGTH, { error: `must be at least ${MIN_SECRET_LENGTH} characters` }));
 
 const rawSchema = z.object({
-  APP_MODE: z.preprocess(blankToUndefined, z.enum(['demo', 'live']).default('demo')),
+  APP_MODE: z.preprocess(blankToUndefined, z.enum(['demo', 'live']).default('live')),
   NEXT_PUBLIC_APP_MODE: opt(z.enum(['demo', 'live'])),
   APP_ORIGIN: z.preprocess(blankToUndefined, z.url({ protocol: /^https?$/ }).default('http://localhost:3000')),
   SESSION_SECRET: secretField,
@@ -202,6 +203,32 @@ export function parseConfig(env: Record<string, string | undefined>, options: Pa
     },
     paths,
   };
+}
+
+/**
+ * Only the mode and the data locations, with no secret required (ADR-116): the Prisma CLI needs the
+ * DB file to run `prisma generate` in `npm ci`, before `npm run setup` has written the LIVE secrets.
+ */
+export function parseDataPaths(env: Record<string, string | undefined>, options: ParseConfigOptions = {}): ResolvedPaths {
+  const mode = rawSchema.shape.APP_MODE.safeParse(env.APP_MODE);
+  if (!mode.success) throw new ConfigError(mode.error.issues.map((i) => `APP_MODE: ${i.message}`));
+  try {
+    return resolvePaths({
+      mode: mode.data,
+      env,
+      platform: options.platform ?? process.platform,
+      cwd: options.cwd ?? process.cwd(),
+      homedir: options.homedir ?? os.homedir(),
+    });
+  } catch (error) {
+    throw new ConfigError([(error as Error).message]);
+  }
+}
+
+/** Loads `.env` (real env wins) and returns the data locations without validating secrets. */
+export function getDataPaths(): ResolvedPaths {
+  ensureEnvLoaded();
+  return parseDataPaths(process.env);
 }
 
 let cached: AppConfig | null = null;

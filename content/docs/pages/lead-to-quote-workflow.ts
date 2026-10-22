@@ -35,7 +35,12 @@ export const leadToQuoteWorkflow: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Every source goes through the same ingestion. In this release leads arrive from the DEMO source simulators for Google Sheets form rows, Meta Lead Ads and the Maps extension (`/api/demo/simulate/<source>`, from the lead console), and from inbound WhatsApp messages: a message from a number the workspace does not know yet creates a lead (a Stop never does). In DEMO the Inbox simulates inbound WhatsApp messages from existing leads.',
+          text: 'Every source goes through the same ingestion. Leads arrive from Google Sheets form rows (`/api/webhooks/google-sheets`), Meta Lead Ads (`/api/webhooks/meta-ads`), the Maps extension (`/api/webhooks/gmaps-extension`) and inbound WhatsApp messages: a message from a number the workspace does not know yet creates a lead (a Stop never does).',
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'In DEMO the source simulators in the lead console (`/api/demo/simulate/<source>`) deliver the same records, and the Inbox simulates inbound WhatsApp messages from existing leads.',
         },
         {
           kind: 'list',
@@ -97,9 +102,14 @@ export const leadToQuoteWorkflow: DocPage = {
           items: [
             'The score runs from 0 to 100 over seven inputs: phone present, email present, website status, rating, review count, category match and source intent. The weights come from the workspace\'s scoring version and add up to 100.',
             'A known input earns points and becomes a reason, including known zeros such as "No email on record". An unknown input earns nothing and is listed as unknown, never counted against the lead. The score is the sum of its reasons, so it is always fully explained.',
-            'Only a reachable website or one a person verified as absent counts. In LIVE the worker checks a website through a hardened fetch that refuses private and local addresses; a DNS miss or a timeout means unreachable, never absent. DEMO makes no network request, so websites stay unchecked.',
+            'Only a reachable website or one a person verified as absent counts. In LIVE the worker checks a website through a hardened fetch that refuses private and local addresses; a DNS miss or a timeout means unreachable, never absent.',
             'The screen labels it "Heuristic fit score. Not purchase intent or consent." A stored score keeps the scoring version it was computed with.',
           ],
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'DEMO makes no network request, so websites stay unchecked.',
         },
       ],
     },
@@ -114,11 +124,15 @@ export const leadToQuoteWorkflow: DocPage = {
         {
           kind: 'list',
           items: [
-            '**DEMO** always uses the local deterministic generator, labelled `local-deterministic`: the same input gives the same draft and nothing leaves the app.',
-            '**LIVE** uses the workspace\'s own AI integration (Anthropic first, then OpenAI). When none is usable, the draft is stored as `NEEDS_REVIEW` with the reason `AI_NOT_CONFIGURED` and no generated text, and the lead page offers **Generate with local template**, whose output is labelled `local-deterministic`. LIVE never switches to the local generator on its own.',
+            'Drafts come from the workspace\'s own AI integration (Anthropic first, then OpenAI). When none is usable, the draft is stored as `NEEDS_REVIEW` with the reason `AI_NOT_CONFIGURED` and no generated text, and the lead page offers **Generate with local template**, whose output is labelled `local-deterministic`. The app never switches to the local generator on its own.',
             'Price, discount or tax values in the model output are stripped and flagged (for example `ai_price_ignored`), and the draft goes to review. Unknown service ids are dropped into the review reasons, never guessed. Amounts, links, phone numbers, email addresses and payment wording in the text also send the draft to review.',
             'Malformed or truncated output gets exactly one repair attempt; after that the draft is marked `NEEDS_REVIEW`. Website text and customer messages reach the model only as capped, delimited data.',
           ],
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: '**DEMO** always uses the local deterministic generator, labelled `local-deterministic`: the same input gives the same draft and nothing leaves the app.',
         },
       ],
     },
@@ -203,9 +217,13 @@ export const leadToQuoteWorkflow: DocPage = {
           items: [
             'The worker renders a PDF for every new version (`quote.renderPdf`) from the stored totals, which are never recomputed for display. It embeds the Inter font so the ₹ sign prints everywhere.',
             'Every page footer shows the quotation number, the version, a short content hash (the same one the HTML view shows), "Quotation, not a tax invoice" and "Page n of N". The file is stored under the storage folder at `quotes/<workspaceId>/<quoteVersionId>.pdf` with its sha256, which is checked again before every download.',
-            'DEMO PDFs carry the watermark "DEMO: not a valid offer" on every page.',
             'Signed-in users download it from the lead page or the quotation. The shared page offers it too, and answers 503 with Retry-After while the PDF is still being rendered.',
           ],
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'DEMO PDFs carry the watermark "DEMO: not a valid offer" on every page.',
         },
       ],
     },

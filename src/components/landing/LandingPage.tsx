@@ -2,7 +2,7 @@
  * The public landing page "/" (plan T30): glass nav, hero with the 3D core, integrations marquee,
  * how it works, feature bento, ROI estimate, principles, a closing CTA and the footer. One h1,
  * header / nav / main / footer landmarks, and a skip link to main as the first tab stop. The mode
- * only changes CTA labels and the DEMO notes; it is read on the server by the route. Server
+ * only changes CTA labels and the DEMO notes (LIVE never mentions the demo, ADR-116); it is read on the server by the route. Server
  * component; the motion pieces are client islands.
  * In-page anchors glide (html scroll-behavior, set only while this page is mounted and only
  * without a reduced-motion preference).
@@ -38,10 +38,10 @@ export function LandingPage({ mode }: { mode: LandingMode }) {
       <main id="main" className="flex-1 scroll-mt-16">
         <Hero mode={mode} />
         <IntegrationsMarquee />
-        <HowItWorks />
-        <FeatureBento />
+        <HowItWorks mode={mode} />
+        <FeatureBento mode={mode} />
         <RoiSection />
-        <TruthStrip />
+        <TruthStrip mode={mode} />
         <ClosingCta mode={mode} />
       </main>
       <LandingFooter mode={mode} />

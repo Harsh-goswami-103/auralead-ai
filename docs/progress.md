@@ -17,7 +17,7 @@ Plan: [`implementation-plan.md`](implementation-plan.md) (milestones §11, check
 
 What exists:
 - Toolchain at exact pins (plan §2): Next 16.4.1, React 19.3.1, TS 5.9.3, Prisma 7.10.0 + better-sqlite3 adapter, Tailwind 4.3.3, Vitest 5, Playwright 1.64, ESLint 10.12.0 with eslint-config-next 16.4.1 (the ESLint 9 fallback was not needed).
-- One env loader and validated config (`src/lib/env-load.ts`, `src/lib/config.ts`), data paths outside OneDrive (`src/lib/paths.ts`), `npm run setup` that generates demo secrets.
+- One env loader and validated config (`src/lib/env-load.ts`, `src/lib/config.ts`), data paths outside OneDrive (`src/lib/paths.ts`), `npm run setup` that generates the secrets (LIVE by default since ADR-116).
 - Windows spike passed with no fallback (ADR-02a): prebuilt native modules, WAL/busy_timeout/foreign_keys on every connection, exactly-once job claim across two OS processes.
 - Full Prisma schema and migrations (ADR-47), tenant-scoped DB layer, `withTx` with busy retry.
 - Core lib: money (BigInt paise, half-up), clock, errors and HTTP mapping, redaction, domain enums.
@@ -119,6 +119,12 @@ Gate, run 2026-10-20 (Linux container):
 | axe WCAG 2.0/2.1 A+AA (12 scans) | 0 violations |
 | Playwright on production builds (DEMO + LIVE) | 16/16: smoke and w1440 (smoke, approvals, inbox takeover and window boundary, public quote states, manual share, lead-to-PDF slice); `visual/webgl-fallback.spec.ts` 6/6 across reduced-motion, no-webgl, w390, w768, w1440 and w1920 (poster only where the budget is off, WebGL mounted elsewhere) |
 | three.js isolation (build output) | the three chunk is referenced only by the dynamic-import manifests of `/`, `/login`, `/invite/[token]` and `/dashboard/user` (tile); no route loads it initially, and the operator and admin panels never reference it |
+
+## LIVE by default (owner request, 2026-10-22; ADR-116)
+
+- A fresh `npm ci` + `npm run setup` is a LIVE install: `APP_MODE=live` in `.env.example`, LIVE when `APP_MODE` is unset, no seed and no demo wording on the landing page or `/docs`. DEMO is an explicit development opt-in (`APP_MODE=demo`), unchanged in behaviour.
+- `prisma.config.ts` resolves only the data paths, so `prisma generate` in `npm ci` no longer needs the secrets.
+- README quick start is the LIVE install; DEMO moved under "Development mode".
 
 ## Unresolved / carried forward
 

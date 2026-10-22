@@ -21,8 +21,13 @@ export const messagingRules: DocPage = {
           items: [
             'Every outbound send goes through one outbox. The attempt is marked `SENDING` and committed before the provider is called, so a crash can never cause a silent second send.',
             'Each send carries its intent from the moment it is created: a manual single send, a bulk send, an automated send, or a reply the customer asked for. Rules that apply only to automated sends read that stored intent, never a guess.',
-            'In DEMO every channel uses the built-in demo transport: messages are labelled Simulated and nothing leaves the app. In LIVE a channel needs a connected integration, otherwise the send is refused with `NOT_CONFIGURED`.',
+            'A channel needs a connected integration, otherwise the send is refused with `NOT_CONFIGURED`.',
           ],
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'In DEMO every channel uses the built-in demo transport: messages are labelled Simulated and nothing leaves the app.',
         },
       ],
     },

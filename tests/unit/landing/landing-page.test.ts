@@ -108,6 +108,14 @@ describe('landing page', () => {
     expect(t).toContain('Suppressed at once; queued outreach is cancelled.');
   });
 
+  it('says nothing about demos, simulators or the mode in LIVE (ADR-116)', () => {
+    const t = text(live);
+    expect(t).not.toMatch(/\bdemo|simulat|fictitious|seeded|LIVE mode|DEMO and LIVE/i);
+    expect(live).not.toContain('data-mode-chip');
+    // The DEMO build keeps its honest notes.
+    expect(text(demo)).toMatch(/simulat/i);
+  });
+
   it('carries none of the banned patterns', () => {
     for (const html of [demo, live]) {
       // The principles section states the rule itself; everything else must not mention these at all.
