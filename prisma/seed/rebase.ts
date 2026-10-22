@@ -14,13 +14,21 @@ export const REBASE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   PricingVersion: ['createdAt'],
   ScoringConfigVersion: ['createdAt'],
   PipelineConfigVersion: ['createdAt'],
-  // T15 demo quotes (prisma/seed/fixtures/quotes.ts).
-  Lead: ['createdAt', 'updatedAt'],
+  // T15 demo quotes (prisma/seed/fixtures/quotes.ts); lead-gen suite columns (ADR-118, ADR-124).
+  Lead: ['createdAt', 'updatedAt', 'handedOverAt', 'placesContentExpiresAt', 'contactConfirmedAt'],
   Quote: ['createdAt', 'updatedAt', 'validUntil'],
   QuoteVersion: ['createdAt', 'validUntil', 'sentAt'],
   Approval: ['requestedAt', 'decidedAt', 'invalidatedAt'],
   // T16 demo shared quote (prisma/seed/fixtures/shared-quotes.ts).
   QuoteShare: ['createdAt', 'expiresAt', 'revokedAt', 'supersededAt'],
+  // Lead-gen suite (ADR-118 to ADR-126): every time column it added, for the presentation seed.
+  WhatsAppTemplate: ['syncedAt', 'submittedAt'],
+  Conversation: ['escalatedAt'],
+  LeadFinderRun: ['createdAt', 'startedAt', 'finishedAt', 'cancelledAt'],
+  LeadFinderResult: ['contentExpiresAt', 'contentPurgedAt', 'importedAt', 'createdAt'],
+  LeadImport: ['consentAttestedAt', 'createdAt', 'expiresAt', 'finishedAt'],
+  LeadHandoff: ['acknowledgedAt', 'createdAt'],
+  MediaAsset: ['providerHandleAt', 'createdAt'],
 };
 
 /** Primary key column per table when it is not `id`. */

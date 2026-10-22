@@ -3,7 +3,8 @@
 // - REACHABLE stores the stripped page text, marked untrusted, and rescores the lead.
 // - A blocked destination gives BLOCKED; nothing is fetched.
 // - NXDOMAIN gives UNREACHABLE, never VERIFIED_ABSENT (that status is set only by a person).
-// - VERIFIED_ABSENT, a missing website and DEMO mode fetch nothing (DEMO makes zero outbound calls).
+// - VERIFIED_ABSENT, a missing website, a listing without one (NOT_LISTED, ADR-119) and DEMO mode
+//   fetch nothing (DEMO makes zero outbound calls).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { createLogger } from '@/lib/logger';
@@ -117,6 +118,23 @@ describe('lead.enrich job', () => {
     expect(b.lead.websiteStatus).toBe('UNKNOWN');
     expect(a.audits[0]!.summary).toMatchObject({ checked: false, reasonCode: 'VERIFIED_ABSENT' });
     expect(b.audits[0]!.summary).toMatchObject({ checked: false, reasonCode: 'NO_WEBSITE' });
+  });
+
+  it('is a no-op for a listing without a website (NOT_LISTED, ADR-119): nothing fetched, the status kept', async () => {
+    const live = await createLead(db, WS_A, { website: null, websiteStatus: 'NOT_LISTED' });
+    const demo = await createLead(db, WS_A, { website: null, websiteStatus: 'NOT_LISTED' });
+    const before = site.calls.length;
+    const a = await enrich(live.id);
+    const b = await enrich(demo.id, demoWorker);
+    expect(site.calls.length).toBe(before);
+    for (const r of [a, b]) {
+      expect(r.job.status).toBe('SUCCEEDED');
+      expect(r.lead.websiteStatus).toBe('NOT_LISTED');
+      expect(r.lead.websiteEnrichment).toBeNull();
+      expect(r.lead.score).toBeNull();
+      expect(r.audits).toHaveLength(1);
+      expect(r.audits[0]!.summary).toEqual({ checked: false, reasonCode: 'NOT_LISTED' });
+    }
   });
 
   it('makes zero outbound calls in DEMO and leaves the status unverified', async () => {

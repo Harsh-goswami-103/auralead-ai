@@ -10,6 +10,9 @@
  *  - `createMessageDraft` + `approveAndSendMessage`: the same for a message without a quote.
  *  - `queueOutboundMessage`: automated or bulk callers (T21, T23) inside their own transaction.
  *  `sendIntent` and `initiatedBy` are persisted on the Message and the attempt and never change (E4).
+ *  Each of them refuses an EMPLOYEE actor (or a job running an EMPLOYEE's send) for a lead handed
+ *  over to the client with 409 HANDED_OVER (`assertNotHandedOver`, ADR-124); not an eligibility
+ *  reason, so the preflight below is unchanged.
  *
  * Worker side (the handler in jobs/handlers/dispatch-run.ts), three short transactions:
  *  1. `preflightDispatch` (fenced): attempt still QUEUED; quote version still current and live;
@@ -35,6 +38,7 @@ import { hmacSha256, safeEqual } from '@/server/security/hmac';
 import { approveQuoteVersionApproval } from '@/server/services/approvals/quote-approvals';
 import { destinationKeyFor, messagePayloadHash, type PayloadReadDb } from '@/server/services/approvals/payload-hash';
 import { recordAudit } from '@/server/services/audit/record';
+import { assertNotHandedOver } from '@/server/services/leads/handoff-guard';
 import { nextQuoteStatus } from '@/server/services/quotes/state-machine';
 import { effectiveQuoteStatus } from '@/server/services/quotes/versioning';
 import { projectSent, projectUnsent } from './delivery-state';
@@ -273,6 +277,8 @@ export async function queueOutboundMessage(tx: ScopedTx, ctx: AppCtx, input: Que
     const message = await tx.message.findFirstOrThrow({ where: { id: existing.messageId }, select: { conversationId: true } });
     return { conversationId: message.conversationId, messageId: existing.messageId, attemptId: existing.attemptId, jobId: existing.jobId, created: false };
   }
+  // ADR-124: an operator (or a job running an operator's send) never queues to a handed-over lead.
+  await assertNotHandedOver(tx, ctx, input.leadId, { initiatedBy: input.initiatedBy });
   const { messageId, conversationId } = await createOutboundMessage(tx, ctx, { ...input, status: 'PENDING' }, deps);
   const queued = await queueFirstAttempt(tx, ctx, {
     messageId,
@@ -324,6 +330,7 @@ export async function approveAndSendQuote(ctx: AppCtx, input: ApproveAndSendQuot
     const jobKey = idempotencyKey('dispatch', 'quote', versionId, input.channel);
     const existing = await existingDispatch(tx, jobKey);
     if (existing) return { ...existing, created: false };
+    await assertNotHandedOver(tx, ctx, quote.leadId);
 
     const now = ctx.clock.now();
     const version = await tx.quoteVersion.findFirstOrThrow({ where: { id: versionId } });
@@ -459,6 +466,7 @@ export async function createMessageDraft(ctx: AppCtx, input: MessageDraftInput, 
   const workspaceId = requireWorkspace(ctx);
   return withTx(ctx.db, async (tx) => {
     await assertSameWorkspace(tx, ctx, { leadId: input.leadId, templateId: input.templateId ?? null });
+    await assertNotHandedOver(tx, ctx, input.leadId);
     const { messageId, conversationId } = await createOutboundMessage(tx, ctx, { ...input, status: 'DRAFT', sendIntent: null, initiatedBy: null }, deps);
     const approval = await tx.approval.create({
       data: { workspaceId, kind: 'OUTBOUND_MESSAGE', status: 'PENDING', messageId, flags: [], requestedAt: ctx.clock.now() },
@@ -483,6 +491,8 @@ export async function approveAndSendMessage(ctx: AppCtx, input: { messageId: str
     const existing = await existingDispatch(tx, jobKey);
     if (existing) return { ...existing, created: false };
     if (message.status !== 'DRAFT') throw new InvalidTransitionError({ message: `message is ${message.status}, not DRAFT` });
+    const conversation = await tx.conversation.findFirstOrThrow({ where: { id: message.conversationId }, select: { leadId: true } });
+    await assertNotHandedOver(tx, ctx, conversation.leadId);
 
     const now = ctx.clock.now();
     const payloadHash = await messagePayloadHash(tx as unknown as PayloadReadDb, { workspaceId, messageId: message.id }, deps.contactKeyPepper);

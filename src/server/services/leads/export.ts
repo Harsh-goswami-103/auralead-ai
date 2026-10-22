@@ -13,8 +13,9 @@
  *   it is READY and unexpired (410 after), only when the stored sha256 still matches; every
  *   download is audited `lead.export.download`.
  *
- * The file lives at `STORAGE_DIR/exports/<workspaceId>/<exportId>.csv`, outside the repository,
- * written to a temp name and renamed so a reader never sees half a file.
+ * The file lives at `STORAGE_DIR/exports/<workspaceId>/<exportId>.<format>` (`leadExportRelPath`;
+ * csv, or xlsx per ADR-120), outside the repository, written to a temp name and renamed so a reader
+ * never sees half a file.
  *
  * Load and retention (ADR-73): a request with the same filters as one of the requester's exports
  * still preparing or ready reuses it; a workspace holds at most `LEAD_EXPORT_ACTIVE_CAP` active
@@ -82,9 +83,15 @@ export class ExportIntegrityError extends AppError {
 
 // ---- Files --------------------------------------------------------------------------------------
 
-export function leadExportRelPath(workspaceId: string, exportId: string): string {
+/** `LeadExport.format` values (ADR-120); the column defaults to csv. */
+export const LEAD_EXPORT_FORMATS = ['csv', 'xlsx'] as const;
+export type LeadExportFormat = (typeof LEAD_EXPORT_FORMATS)[number];
+
+/** `exports/<workspaceId>/<exportId>.<format>`, relative to STORAGE_DIR. */
+export function leadExportRelPath(workspaceId: string, exportId: string, format: LeadExportFormat): string {
   if (!/^[A-Za-z0-9_-]+$/.test(workspaceId) || !/^[A-Za-z0-9_-]+$/.test(exportId)) throw new Error('export ids must be plain identifiers');
-  return `exports/${workspaceId}/${exportId}.csv`;
+  if (!(LEAD_EXPORT_FORMATS as readonly string[]).includes(format)) throw new Error('unknown export format');
+  return `exports/${workspaceId}/${exportId}.${format}`;
 }
 
 function absolute(storageDir: string, relPath: string): string {

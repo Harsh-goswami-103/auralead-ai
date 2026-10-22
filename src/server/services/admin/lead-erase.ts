@@ -22,6 +22,20 @@
  * wrote, and any file already at its path is deleted after the commit. Every export of the
  * workspace, in any status, loses its search text (it may be the person's name or phone).
  *
+ * Lead-gen suite (ADR-118, ADR-120, ADR-124):
+ *  - The lead's `LeadHandoff` row (note and AI summary) is deleted.
+ *  - Lead Finder results of the person's place (imported as one of the leads, or carrying the
+ *    lead's place ID, from `Lead.placeId` or a Maps PROVIDER key) lose their Places content
+ *    (name, category, phone, website, rating, reviews, address, city, state, PIN code,
+ *    attributions), their website emails and their import link (`importedLeadId`,
+ *    `importedAt`); the place ID, keyword, location and `websiteListed` stay.
+ *  - Every import of the workspace that still holds a parsed-rows file may hold the person's row:
+ *    a PREVIEW import becomes EXPIRED, a QUEUED or RUNNING one FAILED, `storagePath` is cleared
+ *    and the file is deleted after the commit (the rows are never in the database).
+ *  - Exports are ended whatever their format (csv or xlsx); a queued export's file is deleted under
+ *    either name.
+ *  - Jobs whose payload names the handoff or an ended import are cancelled with the person's jobs.
+ *
  * Refused (409 ERASE_SEND_IN_FLIGHT) while a send to the person is SENDING: its settle would
  * write to rows that no longer exist. Retry once it settles.
  * Everything runs in one transaction with deferred foreign keys, so a referencing row this code
@@ -30,14 +44,14 @@
  */
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { Prisma, PrismaClient } from '@/generated/prisma/client';
+import { Prisma, type PrismaClient } from '@/generated/prisma/client';
 import type { Clock } from '@/lib/clock';
 import { ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import { withTx } from '@/server/db/tx';
 import { requestCancel } from '@/server/jobs/queue';
 import { contactKey } from '@/server/security/contact-key';
 import { recordAudit } from '@/server/services/audit/record';
-import { leadExportRelPath, PURGE_FAILED, withoutSearchText } from '@/server/services/leads/export';
+import { LEAD_EXPORT_FORMATS, leadExportRelPath, PURGE_FAILED, withoutSearchText } from '@/server/services/leads/export';
 
 type Tx = Prisma.TransactionClient;
 
@@ -62,7 +76,34 @@ export type EraseLeadResult = {
   exportsExpired: number;
   /** QUEUED lead CSV exports cancelled (FAILED, LEAD_ERASED) so they are never written with it. */
   exportsCancelled: number;
+  /** Lead Finder results of the person's place whose Places content, emails and import link were cleared. */
+  finderResultsBlanked: number;
+  /** PREVIEW, QUEUED or RUNNING imports ended because their parsed-rows file may hold the person. */
+  importsEnded: number;
 };
+
+/** Places content and website emails of a Lead Finder result (ADR-118), cleared by an erase. */
+const FINDER_RESULT_BLANK = {
+  name: null,
+  category: null,
+  phoneRaw: null,
+  hasPhone: false,
+  website: null,
+  ratingX10: null,
+  reviewCount: null,
+  address: null,
+  city: null,
+  state: null,
+  pincode: null,
+  attributions: Prisma.DbNull,
+  emails: [],
+  emailCount: 0,
+  importedLeadId: null,
+  importedAt: null,
+} satisfies Prisma.LeadFinderResultUpdateManyMutationInput;
+
+/** Maps sources whose PROVIDER key value is `<source>:<placeId>`. */
+const PLACE_PROVIDER_PREFIXES = ['GOOGLE_PLACES:', 'GMAPS_EXTENSION:'] as const;
 
 const MAX_MERGE_DEPTH = 50;
 
@@ -109,7 +150,7 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
       const requested = await tx.lead.findFirst({ where: { id: input.leadId, workspaceId }, select: { id: true } });
       if (!requested) throw new NotFoundError();
       const leadIds = await mergeGroup(tx, workspaceId, input.leadId);
-      const leads = await tx.lead.findMany({ where: { id: { in: leadIds }, workspaceId }, select: { id: true, phoneE164: true, emailNormalized: true, alternatePhones: true } });
+      const leads = await tx.lead.findMany({ where: { id: { in: leadIds }, workspaceId }, select: { id: true, phoneE164: true, emailNormalized: true, alternatePhones: true, placeId: true } });
 
       const conversations = await tx.conversation.findMany({ where: { workspaceId, leadId: { in: leadIds } }, select: { id: true, contactKey: true } });
       const conversationIds = conversations.map((c) => c.id);
@@ -149,8 +190,18 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
       const suppressionsKept = await tx.suppression.count({ where: suppressionWhere });
       await tx.suppression.updateMany({ where: suppressionWhere, data: { contactPlain: null } });
 
+      // Lead-gen rows (ADR-118, ADR-120, ADR-124): the handoff, and every import still holding a
+      // parsed-rows file (it may hold the person's row; the rows are never in the database).
+      const handoffs = await tx.leadHandoff.findMany({ where: { workspaceId, leadId: { in: leadIds } }, select: { id: true } });
+      const handoffIds = handoffs.map((x) => x.id);
+      const imports = await tx.leadImport.findMany({
+        where: { workspaceId, OR: [{ status: { in: ['PREVIEW', 'QUEUED', 'RUNNING'] } }, { storagePath: { not: null } }] },
+        select: { id: true, status: true, storagePath: true },
+      });
+      const pendingImportIds = imports.filter((i) => i.status === 'PREVIEW' || i.status === 'QUEUED' || i.status === 'RUNNING').map((i) => i.id);
+
       // Cancel the person's pending work: dispatch jobs, then any job whose payload names their rows.
-      const ids = [...leadIds, ...messageIds, ...quoteIds, ...versionIds, ...executionIds, ...conversationIds];
+      const ids = [...leadIds, ...messageIds, ...quoteIds, ...versionIds, ...executionIds, ...conversationIds, ...handoffIds, ...pendingImportIds];
       const attemptJobs = await tx.dispatchAttempt.findMany({ where: attemptWhere, select: { jobId: true } });
       const pending = await tx.job.findMany({ where: { workspaceId, status: { in: ['QUEUED', 'RUNNING'] } }, select: { id: true, payload: true } });
       const toCancel = new Set([...attemptJobs.map((a) => a.jobId), ...pending.filter((j) => containsAny(j.payload, ids)).map((j) => j.id)]);
@@ -174,8 +225,8 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
 
       const artifacts = await tx.quoteArtifact.findMany({ where: { workspaceId, quoteVersionId: { in: versionIds } }, select: { path: true } });
 
-      // CSV exports may hold this person's row, and their search text may be the person's name or
-      // phone: end the ready ones, cancel the queued ones, drop every search text (files go after commit).
+      // Lead exports (csv or xlsx) may hold this person's row, and their search text may be the person's
+      // name or phone: end the ready ones, cancel the queued ones, drop every search text (files go after commit).
       const exports = await tx.leadExport.findMany({ where: { workspaceId }, select: { id: true, status: true, path: true, filters: true, errorCode: true } });
       let exportsExpired = 0;
       let exportsCancelled = 0;
@@ -188,13 +239,37 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
           if (e.path) exportFiles.push(e.path);
         } else if (e.status === 'QUEUED') {
           exportsCancelled += (await tx.leadExport.updateMany({ where, data: { status: 'FAILED', completedAt: now, errorCode: 'LEAD_ERASED', filters } })).count;
-          exportFiles.push(leadExportRelPath(workspaceId, e.id));
+          // Whichever format its job is writing right now.
+          for (const format of LEAD_EXPORT_FORMATS) exportFiles.push(leadExportRelPath(workspaceId, e.id, format));
         } else {
           await tx.leadExport.updateMany({ where, data: { filters } });
           // A purge that gave up left the file on disk: it may hold the person's row too.
           if (e.status === 'EXPIRED' && e.errorCode === PURGE_FAILED && e.path) exportFiles.push(e.path);
         }
       }
+
+      // Imports still holding parsed rows: end the pending ones, forget every file (deleted after commit).
+      let importsEnded = 0;
+      const importFiles: string[] = [];
+      for (const i of imports) {
+        if (i.storagePath) importFiles.push(i.storagePath);
+        const where = { id: i.id, workspaceId, status: i.status };
+        if (i.status === 'PREVIEW') importsEnded += (await tx.leadImport.updateMany({ where, data: { status: 'EXPIRED', storagePath: null, finishedAt: now } })).count;
+        else if (i.status === 'QUEUED' || i.status === 'RUNNING') importsEnded += (await tx.leadImport.updateMany({ where, data: { status: 'FAILED', storagePath: null, finishedAt: now } })).count;
+        else await tx.leadImport.updateMany({ where, data: { storagePath: null } });
+      }
+
+      // Lead Finder results of the person's place keep only the place ID, keyword, location and websiteListed.
+      const placeIds = new Set<string>();
+      for (const lead of leads) if (lead.placeId) placeIds.add(lead.placeId);
+      for (const row of contactRows) {
+        if (row.kind !== 'PROVIDER') continue;
+        const prefix = PLACE_PROVIDER_PREFIXES.find((p) => row.value.startsWith(p));
+        if (prefix && row.value.length > prefix.length) placeIds.add(row.value.slice(prefix.length));
+      }
+      const finderResultsBlanked = (
+        await tx.leadFinderResult.updateMany({ where: { workspaceId, OR: [{ importedLeadId: { in: leadIds } }, { placeId: { in: [...placeIds] } }] }, data: FINDER_RESULT_BLANK })
+      ).count;
 
       // Deletes: foreign keys are checked at commit, when every referencing row is gone too.
       await tx.$executeRawUnsafe('PRAGMA defer_foreign_keys = ON');
@@ -216,6 +291,7 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
       await del('quotes', tx.quote.deleteMany({ where: { workspaceId, id: { in: quoteIds } } }));
       await del('quoteVersions', tx.quoteVersion.deleteMany({ where: { workspaceId, id: { in: versionIds } } }));
       await del('aiDrafts', tx.aiDraft.deleteMany({ where: { workspaceId, leadId: { in: leadIds } } }));
+      await del('leadHandoffs', tx.leadHandoff.deleteMany({ where: { workspaceId, id: { in: handoffIds } } }));
       await del('pipelineStageRuns', tx.pipelineStageRun.deleteMany({ where: { workspaceId, executionId: { in: executionIds } } }));
       await del('pipelineExecutions', tx.pipelineExecution.deleteMany({ where: { workspaceId, id: { in: executionIds } } }));
       await del('mergeReviews', tx.mergeReview.deleteMany({ where: { workspaceId, sourceRecordId: { in: recordIds } } }));
@@ -233,7 +309,7 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
           targetId: input.leadId,
           reason,
           workspaceId,
-          summary: { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length, exportsExpired, exportsCancelled },
+          summary: { leadIds, counts, suppressionsKept, jobsCancelled, webhookEventsPurged: touched.length, exportsExpired, exportsCancelled, finderResultsBlanked, importsEnded },
         },
       );
       return {
@@ -244,8 +320,10 @@ export async function eraseLead(db: PrismaClient, clock: Clock, input: EraseLead
         webhookEventsPurged: touched.length,
         exportsExpired,
         exportsCancelled,
+        finderResultsBlanked,
+        importsEnded,
         artifacts: artifacts.map((a) => a.path),
-        exportFiles,
+        exportFiles: [...exportFiles, ...importFiles],
       };
     },
     { timeoutMs: 120_000 },

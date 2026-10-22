@@ -9,12 +9,17 @@
  * - Email: trimmed and lowercased; malformed or placeholder addresses become null. An email is
  *   never invented from a name, website or phone.
  * - Website: http(s) only, scheme added when missing, no credentials, a dotted hostname. A
- *   supplied website is PRESENT_UNVERIFIED; otherwise UNKNOWN. Only enrichment (T12) moves it
- *   to REACHABLE/UNREACHABLE/BLOCKED, and only a human sets VERIFIED_ABSENT.
+ *   supplied website is PRESENT_UNVERIFIED. With no website value at all, the status is
+ *   NOT_LISTED when the source says the listing has none (`websiteListed: false`, ADR-119) and
+ *   UNKNOWN otherwise; a value that is not a usable URL is UNKNOWN, never NOT_LISTED. Only
+ *   enrichment (T12) moves it to REACHABLE/UNREACHABLE/BLOCKED, and only a human sets
+ *   VERIFIED_ABSENT.
+ * - PIN code: six digits (any Unicode digit script, spaces and hyphens ignored) not starting with
+ *   0; anything else becomes null, never a guess.
  * - A record is rejected (per row, with a reason code) when it has no name or no valid phone
  *   and no valid email.
  */
-import { parsePhones } from '@/lib/phone';
+import { normalizeDigits, parsePhones } from '@/lib/phone';
 import type { IngestFields } from '@/lib/schemas/ingest';
 
 export type NormalizedLead = {
@@ -26,9 +31,11 @@ export type NormalizedLead = {
   alternatePhones: string[];
   emailNormalized: string | null;
   website: string | null;
-  websiteStatus: 'UNKNOWN' | 'PRESENT_UNVERIFIED';
+  websiteStatus: 'UNKNOWN' | 'PRESENT_UNVERIFIED' | 'NOT_LISTED';
   address: string | null;
   city: string | null;
+  /** Six-digit Indian PIN code, or null. */
+  pincode: string | null;
   /** Stars x10 (4.5 is 45). */
   rating: number | null;
   reviewCount: number | null;
@@ -127,6 +134,15 @@ export function parseReviewCount(value: number | string | null | undefined): num
   return n;
 }
 
+const PINCODE_RE = /^[1-9]\d{5}$/;
+
+/** A six-digit Indian PIN code, or null. */
+export function normalizePincode(value: number | string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const s = typeof value === 'number' ? (Number.isInteger(value) ? String(value) : '') : normalizeDigits(value.normalize('NFKC')).replace(/[\s-]/g, '');
+  return PINCODE_RE.test(s) ? s : null;
+}
+
 export function normalizeLeadFields(fields: IngestFields): NormalizeResult {
   const displayName = cleanText(fields.name, MAX_NAME);
   if (displayName === null) return { ok: false, reasonCode: 'MISSING_NAME' };
@@ -137,6 +153,7 @@ export function normalizeLeadFields(fields: IngestFields): NormalizeResult {
   if (phones.primary === null && emailNormalized === null) return { ok: false, reasonCode: 'NO_VALID_CONTACT' };
 
   const website = normalizeWebsite(fields.website);
+  const notListed = fields.websiteListed === false && cleanText(fields.website, 2048) === null;
   return {
     ok: true,
     lead: {
@@ -148,9 +165,10 @@ export function normalizeLeadFields(fields: IngestFields): NormalizeResult {
       alternatePhones: phones.alternates,
       emailNormalized,
       website,
-      websiteStatus: website === null ? 'UNKNOWN' : 'PRESENT_UNVERIFIED',
+      websiteStatus: website !== null ? 'PRESENT_UNVERIFIED' : notListed ? 'NOT_LISTED' : 'UNKNOWN',
       address: cleanText(fields.address, 1000),
       city: cleanText(fields.city, 200),
+      pincode: normalizePincode(fields.pincode),
       rating: parseRatingX10(fields.rating),
       reviewCount: parseReviewCount(fields.reviewCount),
     },

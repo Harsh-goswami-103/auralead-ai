@@ -7,6 +7,8 @@
  *  - `aiMode` is OFF, DRAFT (the default: replies wait for a person) or AUTO (selectable only while
  *    workspace auto-send is on, and only by someone with `automation.manage`).
  *  - `humanTakeover` overrides all three until "Resume AI".
+ *  - Once the lead is handed over to the client (ADR-124), an EMPLOYEE actor's mode, takeover or
+ *    resume request is refused with 409 HANDED_OVER (`assertNotHandedOver`); the client's are not.
  *  - Every change (mode, takeover, resume, escalation) bumps `modeVersion` with a compare-and-set,
  *    and is audited. An automated reply pins the version it was created under
  *    (`Message.modeVersionAtCreate`), so the dispatch preflight skips it (HUMAN_TAKEOVER or
@@ -51,6 +53,7 @@ import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
 import { recordAudit } from '@/server/services/audit/record';
 import { decideAutoReply, loadReplyFacts, type ReplyDecision } from '@/server/services/ai/reply-guard';
+import { assertNotHandedOver } from '@/server/services/leads/handoff-guard';
 import { queueOutboundMessage } from './dispatch';
 import { checkDispatchEligibility, DEFERRABLE_REASONS, type ReasonCode } from './eligibility';
 
@@ -125,6 +128,8 @@ async function changeMode(
   return withTx(ctx.db, async (tx) => {
     const conversation = await tx.conversation.findFirst({ where: { id: input.conversationId } });
     if (!conversation) throw new NotFoundError();
+    // ADR-124: a handed-over lead's conversations belong to the client; an operator cannot change them.
+    await assertNotHandedOver(tx, ctx, conversation.leadId);
     if (input.expectedModeVersion !== undefined && conversation.modeVersion !== input.expectedModeVersion) {
       throw modeConflict(conversation.modeVersion, input.expectedModeVersion);
     }
