@@ -1,6 +1,6 @@
 /**
- * `npm run setup` (E12, ADR-44): writes `.env` from `.env.example`, generating local demo
- * secrets for blank secret keys. Never overwrites a key that already exists in `.env`; missing
+ * `npm run setup` (E12, ADR-44): writes `.env` from `.env.example` (a LIVE install,
+ * ADR-116), generating local secrets for blank secret keys. Never overwrites a key that already exists in `.env`; missing
  * keys are appended. Running it twice changes nothing.
  */
 import { randomBytes } from 'node:crypto';
@@ -91,6 +91,9 @@ function main(): void {
     console.log(`Mode: ${config.mode}`);
     console.log(`Database: ${config.paths.dbFile}`);
     for (const warning of config.paths.warnings) console.warn(`WARNING: ${warning}`);
+    if (config.mode === 'live') {
+      console.log('Next: npm run db:deploy, then npm run admin:bootstrap -- --email <your address> to invite the first administrator.');
+    }
   } catch (error) {
     if (error instanceof ConfigError) {
       console.error(error.message);

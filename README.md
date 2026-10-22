@@ -7,31 +7,50 @@ priced from the workspace's own price list, the worker renders its PDF, and the 
 accepts it from a share link. Nothing reaches a customer without an approval, and every send is
 checked against consent, the 24-hour WhatsApp window, opt-outs and pauses at the moment it goes out.
 
-The app runs in one of two modes, each with its own database:
+A fresh install runs in **LIVE** mode: real accounts by invitation, HTTPS (or localhost), provider
+integrations per workspace, and no sample data. It refuses to start without its secrets, which
+`npm run setup` generates.
 
-- **DEMO**: seeded businesses and identities, source and customer simulators, and demo transports.
-  It makes no outbound request at all.
-- **LIVE**: real accounts by invitation, HTTPS only, provider integrations per workspace. It refuses
-  to start without its secrets.
+For development there is an opt-in **DEMO** mode (`APP_MODE=demo`) with seeded sample businesses,
+simulators and demo transports; it has its own database and makes no outbound request. See
+[Development mode](#development-mode-demo).
 
 Status: see [docs/progress.md](docs/progress.md). Provider integrations and what has been verified
 against each provider: [docs/integrations.md](docs/integrations.md).
 
-## Quick start (DEMO)
+## Quick start
 
 Requires Node.js 22.23.2 (`.nvmrc`) and npm 10.9.8.
 
 ```bash
 npm ci
 npm run setup
+npm run db:deploy
+npm run build
+npm run admin:bootstrap -- --email you@yourcompany.in
+npm run start
+npm run start:worker
+```
+
+`npm run setup` writes a LIVE `.env` with generated secrets; back up `SUPPRESSION_PEPPER` and
+`CREDENTIALS_KEYRING` together. `admin:bootstrap` prints a single-use invite link: open it, choose a
+password, then sign in at http://localhost:3000/login and connect your providers per workspace. For
+a public host (HTTPS, `APP_ORIGIN`, proxies, backups) follow `/docs/going-live` and
+[docs/deployment.md](docs/deployment.md).
+
+## Development mode (DEMO)
+
+DEMO is never on by default. To work on the app with seeded sample data and simulated providers, set
+`APP_MODE=demo` and `NEXT_PUBLIC_APP_MODE=demo` in `.env`, then:
+
+```bash
 npm run db:reset
 npm run dev:all
 ```
 
-Open http://localhost:3000 and choose a demo identity on the sign-in page. The in-app guide at
-`/docs/getting-started` walks a simulated lead all the way to an accepted quotation.
-
-For a real deployment, follow `/docs/going-live` and [docs/deployment.md](docs/deployment.md).
+Choose a sample identity on the sign-in page; `/docs/getting-started` walks a simulated lead to an
+accepted quotation. DEMO uses its own database, so switching back to `live` finds your LIVE data
+unchanged.
 
 ## Scripts
 
@@ -44,7 +63,7 @@ use most:
 | `npm run db:path` | Prints the SQLite file this configuration uses (`--json` for every path) |
 | `npm run db:deploy` | Applies the migrations (`prisma migrate deploy`) |
 | `npm run db:migrate` | Creates and applies a migration in development (`prisma migrate dev`) |
-| `npm run db:seed` / `npm run db:reset` | Loads the DEMO seed / wipes the app tables and reseeds; both refuse LIVE |
+| `npm run db:seed` / `npm run db:reset` | DEMO only: loads the sample seed / wipes the app tables and reseeds; both refuse LIVE |
 | `npm run demo:refresh` | Moves the seeded DEMO dates to now without changing any id |
 | `npm run dev:all` | Next dev server and the worker together (`npm run dev` and `npm run worker` separately) |
 | `npm run build` | Generates the database client, builds the app, bundles the worker into `dist/worker.js` |
@@ -61,8 +80,9 @@ use most:
 
 In the app, `/docs` (public, no sign-in):
 
-- `/docs/getting-started`: run the demo locally and walk a lead to an accepted quotation
 - `/docs/going-live`: LIVE configuration, secrets, HTTPS, first administrator, build and run
+- `/docs/getting-started` (DEMO processes only): run the development mode and walk a lead to an
+  accepted quotation
 - `/docs/roles-and-panels`: what owners, members, employees and super admins can do
 - `/docs/lead-to-quote-workflow`: ingestion, scoring, drafts, approvals, quotations, PDF, sharing
 - `/docs/messaging-rules`: consent, the 24-hour window, Stop, suppression, reason codes, pauses
@@ -91,7 +111,7 @@ In this repository:
 | `src/lib/` | Framework-free code: config, paths, money, phone numbers, errors, redaction |
 | `src/components/` | UI: shadcn primitives, shared patterns, landing, visual effects |
 | `worker/` | The worker process |
-| `prisma/` | Schema, migrations and the deterministic DEMO seed |
+| `prisma/` | Schema, migrations and the deterministic DEMO (development) seed |
 | `scripts/` | Setup, backup, restore, erasure, bootstrap and verify scripts |
 | `content/docs/` | The in-app documentation |
 | `tests/` | Unit, integration, component and end-to-end tests |

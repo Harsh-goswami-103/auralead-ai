@@ -14,7 +14,7 @@ export const limitations: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Every provider integration is built against the provider\'s documentation and tested against recorded or documented fixtures, without network access. None has been checked against the real provider yet. The status of each one (implemented, fixture-tested, demo-verified, live-verified with date and evidence) is kept in `docs/integrations.md`.',
+          text: 'Every provider integration is built against the provider\'s documentation and tested against recorded or documented fixtures, without network access. None has been checked against the real provider yet. The verification status of each one, with its date and evidence, is kept in `docs/integrations.md`.',
         },
         {
           kind: 'list',
@@ -65,8 +65,12 @@ export const limitations: DocPage = {
             'A quotation "opened" means a browser kept the page visible for two seconds; it is labelled "Opened (may be automated)" because it is not proof that a person read it.',
             'The lead score is a heuristic fit score from the lead\'s own fields. It is not purchase intent and not consent.',
             'A send whose outcome is unknown stays "Delivery unknown" until the provider reports it or a person decides. It is never resolved by guessing.',
-            'DEMO data is invented and every demo provider is simulated; demo quotations carry "DEMO: not a valid offer".',
           ],
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'DEMO data is invented and every demo provider is simulated; demo quotations carry "DEMO: not a valid offer".',
         },
       ],
     },

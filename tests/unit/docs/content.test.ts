@@ -18,7 +18,7 @@ import path from 'node:path';
 import { parse as parseEnv } from 'dotenv';
 import { describe, expect, it } from 'vitest';
 import { DOC_MODES, inlineStrings, inlineText, pageAnchors, parseInline, type DocBlock, type DocPage, type InlineNode } from '@content/docs/format';
-import { DOC_PAGES, docNeighbours, getDocPage } from '@content/docs/index';
+import { DOC_PAGES, docNeighbours, docPagesFor, getDocPage } from '@content/docs/index';
 import { INVITE_TTL_MS } from '@/server/auth/invites';
 import { LOGIN_LOCKOUT } from '@/server/auth/login';
 import { ARGON2_PARAMS, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/server/auth/password';
@@ -249,6 +249,22 @@ describe('docs content structure', () => {
       expect(s.title.trim()).not.toBe('');
       expect(s.blocks.length).toBeGreaterThan(0);
       for (const m of s.appliesTo ?? []) expect(p.appliesTo).toContain(m);
+      for (const b of s.blocks) for (const m of b.appliesTo ?? []) expect(s.appliesTo ?? p.appliesTo).toContain(m);
+    }
+  });
+
+  it.each(docPagesFor('LIVE').map((p) => [p.slug, p] as const))('%s: the LIVE view says nothing about the demo (ADR-116)', (_slug, p) => {
+    expect(pageText(p)).not.toMatch(/\bdemo|simulat|seeded identit/i);
+    for (const s of p.sections) {
+      expect(s.blocks.length).toBeGreaterThan(0);
+      expect(s.appliesTo ?? ['LIVE']).toContain('LIVE');
+    }
+    // Links stay inside the LIVE docs.
+    for (const href of hrefsOf(nodesOf(p)).filter((h) => h.startsWith('/docs/') || h.startsWith('#'))) {
+      const [pathname = '', fragment] = href.split('#');
+      const target = pathname === '' ? p : getDocPage(pathname.split('/')[2] ?? '', 'LIVE');
+      expect(target, href).toBeDefined();
+      if (fragment !== undefined && target) expect(pageAnchors(target), href).toContain(fragment);
     }
   });
 

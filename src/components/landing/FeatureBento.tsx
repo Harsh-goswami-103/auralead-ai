@@ -6,8 +6,9 @@
  * chip and a SpotlightCard wash that follows the pointer in that hue; the featured card carries a
  * BorderBeam and the middle row tilts slightly on a mouse (flat on touch and under reduced
  * motion). State sequences (quote states, job states) read as small rail steppers that keep their
- * order at every width. Two columns at md, the six-column bento from lg. Server-safe; the visual
- * wrappers are client islands.
+ * order at every width. Two columns at md, the six-column bento from lg. The last card follows the
+ * mode: DEMO describes its simulators, LIVE the provider accounts it connects (ADR-116: LIVE never
+ * mentions the demo). Server-safe; the visual wrappers are client islands.
  */
 import {
   BadgeCheck,
@@ -21,6 +22,7 @@ import {
   Gauge,
   Handshake,
   History,
+  KeyRound,
   LayoutDashboard,
   Link2,
   MessageCircle,
@@ -40,6 +42,7 @@ import { BorderBeam } from '@/components/visual/BorderBeam';
 import { SpotlightCard } from '@/components/visual/SpotlightCard';
 import { Stagger, StaggerItem } from '@/components/visual/Reveal';
 import { TiltCard } from '@/components/visual/TiltCard';
+import type { LandingMode } from './cta';
 import { SectionIntro } from './SectionIntro';
 
 type Accent = 'aura' | 'zest' | 'volt' | 'flare';
@@ -270,13 +273,26 @@ function DemoSimulators() {
   );
 }
 
+/** The sources and channels a LIVE workspace connects with its own provider accounts. */
+function ConnectedSources() {
+  return (
+    <ul aria-label="Sources and channels you connect" className="mt-auto flex flex-wrap gap-2">
+      {['sheets', 'meta', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND'].map((source) => (
+        <li key={source}>
+          <SourceChip source={source} withIcon />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const PANELS: readonly { name: string; who: string; dot: string }[] = [
   { name: 'Client', who: 'Owners: leads, inbox, pricing, quotations', dot: 'bg-aura' },
   { name: 'Operator', who: 'Employees: lead console, approvals, sources', dot: 'bg-zest' },
   { name: 'Platform admin', who: 'Workspaces, people, jobs, audit', dot: 'bg-flare' },
 ];
 
-export function FeatureBento() {
+export function FeatureBento({ mode }: { mode: LandingMode }) {
   return (
     <section id="features" aria-labelledby="features-title" data-landing-section="features" className="relative isolate scroll-mt-20 py-10 sm:py-12">
       <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-10 px-4 sm:px-6 lg:px-8">
@@ -360,13 +376,23 @@ export function FeatureBento() {
             </SpotlightCard>
           </StaggerItem>
           <StaggerItem inView className="lg:col-span-3">
-            <SpotlightCard as="article" className={card('zest')}>
-              <CardHead icon={FlaskConical} accent="zest" title="A demo you can click through">
-                Fictitious businesses in Delhi NCR, Mumbai and Bengaluru, with a simulator for every source and provider. In DEMO mode nothing leaves the app,
-                and every simulated status says so.
-              </CardHead>
-              <DemoSimulators />
-            </SpotlightCard>
+            {mode === 'demo' ? (
+              <SpotlightCard as="article" className={card('zest')}>
+                <CardHead icon={FlaskConical} accent="zest" title="A demo you can click through">
+                  Fictitious businesses in Delhi NCR, Mumbai and Bengaluru, with a simulator for every source and provider. In DEMO mode nothing leaves the
+                  app, and every simulated status says so.
+                </CardHead>
+                <DemoSimulators />
+              </SpotlightCard>
+            ) : (
+              <SpotlightCard as="article" className={card('zest')}>
+                <CardHead icon={KeyRound} accent="zest" title="Your own provider accounts">
+                  WhatsApp Cloud API, Resend or SMTP email, Meta Lead Ads, Google Sheets and your AI provider connect with each workspace&apos;s own
+                  credentials, stored encrypted. Every integration shows its status: connected, verification required or limited.
+                </CardHead>
+                <ConnectedSources />
+              </SpotlightCard>
+            )}
           </StaggerItem>
         </Stagger>
       </div>

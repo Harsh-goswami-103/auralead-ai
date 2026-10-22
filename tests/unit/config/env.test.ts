@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, parseConfig } from '@/lib/config';
+import { ConfigError, parseConfig, parseDataPaths } from '@/lib/config';
 
 const LOCAL = 'C:\\Users\\Asus\\AppData\\Local';
 const pathOpts = { platform: 'win32' as const, cwd: 'C:\\work', homedir: 'C:\\Users\\Asus' };
@@ -28,9 +28,39 @@ function issues(fn: () => unknown): string[] {
   throw new Error('expected ConfigError');
 }
 
-describe('parseConfig: demo defaults', () => {
-  it('an empty environment is a valid DEMO config', () => {
-    const c = parseConfig({ LOCALAPPDATA: LOCAL }, pathOpts);
+describe('parseConfig: LIVE is the default (ADR-116)', () => {
+  it('an empty environment is LIVE and refuses to boot without its secrets', () => {
+    const found = issues(() => parseConfig({ LOCALAPPDATA: LOCAL }, pathOpts)).join('\n');
+
+    for (const key of ['SESSION_SECRET', 'SHARE_NONCE_KEY', 'SUPPRESSION_PEPPER', 'CREDENTIALS_KEYRING']) {
+      expect(found).toContain(`${key}: required in LIVE mode`);
+    }
+  });
+
+  it('a blank APP_MODE is LIVE too', () => {
+    const c = parseConfig({ APP_MODE: '', LOCALAPPDATA: LOCAL, ...liveSecrets() }, pathOpts);
+
+    expect(c.mode).toBe('live');
+    expect(c.paths.dbFile).toBe(`${LOCAL}\\auralead\\live\\app.db`);
+  });
+});
+
+describe('parseDataPaths: the data location alone, for the Prisma CLI', () => {
+  it('resolves the LIVE paths without any secret, so prisma generate runs before npm run setup', () => {
+    const p = parseDataPaths({ LOCALAPPDATA: LOCAL }, pathOpts);
+
+    expect(p.dbFile).toBe(`${LOCAL}\\auralead\\live\\app.db`);
+  });
+
+  it('follows an explicit APP_MODE and rejects an unknown one', () => {
+    expect(parseDataPaths({ APP_MODE: 'demo', LOCALAPPDATA: LOCAL }, pathOpts).dbFile).toBe(`${LOCAL}\\auralead\\demo\\app.db`);
+    expect(issues(() => parseDataPaths({ APP_MODE: 'staging', LOCALAPPDATA: LOCAL }, pathOpts)).join('\n')).toMatch(/APP_MODE/);
+  });
+});
+
+describe('parseConfig: DEMO is an explicit opt-in', () => {
+  it('APP_MODE=demo alone is a valid DEMO config', () => {
+    const c = parseConfig({ APP_MODE: 'demo', LOCALAPPDATA: LOCAL }, pathOpts);
 
     expect(c.mode).toBe('demo');
     expect(c.publicMode).toBe('demo');
@@ -47,7 +77,7 @@ describe('parseConfig: demo defaults', () => {
 
   it('parses provided demo secrets and the key ring', () => {
     const s = liveSecrets();
-    const c = parseConfig({ LOCALAPPDATA: LOCAL, ...s }, pathOpts);
+    const c = parseConfig({ APP_MODE: 'demo', LOCALAPPDATA: LOCAL, ...s }, pathOpts);
 
     expect(c.secrets.sessionSecret).toBe(s.SESSION_SECRET);
     expect(c.secrets.credentials?.activeKid).toBe('k2');
@@ -58,6 +88,7 @@ describe('parseConfig: demo defaults', () => {
   it('parses booleans, numbers and SEED_NOW', () => {
     const c = parseConfig(
       {
+        APP_MODE: 'demo',
         OUTBOUND_PAUSED: '1',
         TRUSTED_PROXY_HOPS: '2',
         AUTH_COOKIE_INSECURE_DEV: 'true',
@@ -93,8 +124,8 @@ describe('parseConfig: demo defaults', () => {
   });
 
   it('test control needs a strong token', () => {
-    expect(issues(() => parseConfig({ AURALEAD_TEST_CONTROL: '1' }, pathOpts)).join('\n')).toMatch(/TEST_CONTROL_TOKEN/);
-    expect(issues(() => parseConfig({ AURALEAD_TEST_CONTROL: '1', TEST_CONTROL_TOKEN: 'short' }, pathOpts)).join('\n')).toMatch(
+    expect(issues(() => parseConfig({ APP_MODE: 'demo', AURALEAD_TEST_CONTROL: '1' }, pathOpts)).join('\n')).toMatch(/TEST_CONTROL_TOKEN/);
+    expect(issues(() => parseConfig({ APP_MODE: 'demo', AURALEAD_TEST_CONTROL: '1', TEST_CONTROL_TOKEN: 'short' }, pathOpts)).join('\n')).toMatch(
       /TEST_CONTROL_TOKEN/,
     );
   });
@@ -106,14 +137,14 @@ describe('parseConfig: demo defaults', () => {
   });
 
   it('rejects a malformed key ring even in DEMO', () => {
-    expect(issues(() => parseConfig({ CREDENTIALS_KEYRING: 'not json' }, pathOpts)).join('\n')).toMatch(/CREDENTIALS_KEYRING/);
+    expect(issues(() => parseConfig({ APP_MODE: 'demo', CREDENTIALS_KEYRING: 'not json' }, pathOpts)).join('\n')).toMatch(/CREDENTIALS_KEYRING/);
     expect(
-      issues(() => parseConfig({ CREDENTIALS_KEYRING: JSON.stringify({ k1: 'c2hvcnQ=' }), CREDENTIALS_ACTIVE_KID: 'k1' }, pathOpts)).join(
+      issues(() => parseConfig({ APP_MODE: 'demo', CREDENTIALS_KEYRING: JSON.stringify({ k1: 'c2hvcnQ=' }), CREDENTIALS_ACTIVE_KID: 'k1' }, pathOpts)).join(
         '\n',
       ),
     ).toMatch(/32 bytes/);
     expect(
-      issues(() => parseConfig({ CREDENTIALS_KEYRING: JSON.stringify({ k1: key32() }), CREDENTIALS_ACTIVE_KID: 'k9' }, pathOpts)).join('\n'),
+      issues(() => parseConfig({ APP_MODE: 'demo', CREDENTIALS_KEYRING: JSON.stringify({ k1: key32() }), CREDENTIALS_ACTIVE_KID: 'k9' }, pathOpts)).join('\n'),
     ).toMatch(/CREDENTIALS_ACTIVE_KID/);
   });
 });

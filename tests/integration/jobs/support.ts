@@ -35,7 +35,7 @@ export function spawnJobWorker(url: string, options: SpawnWorkerOptions): Spawne
     env: {
       DATABASE_URL: url,
       APP_MODE: 'demo',
-      NEXT_PUBLIC_APP_MODE: undefined,
+      NEXT_PUBLIC_APP_MODE: 'demo',
       AURALEAD_TEST_CONTROL: '1',
       TEST_CONTROL_TOKEN: TEST_TOKEN,
       LOG_LEVEL: 'warn',

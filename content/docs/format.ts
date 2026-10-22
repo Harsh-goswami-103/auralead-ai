@@ -20,14 +20,16 @@ export type DocMode = (typeof DOC_MODES)[number];
 export type CodeLanguage = 'bash' | 'powershell' | 'env' | 'text';
 export type CalloutTone = 'note' | 'warning' | 'limit';
 
-export type DocBlock =
+/** `appliesTo` on a block: only when it applies to fewer modes than its section (ADR-116). */
+export type DocBlock = { appliesTo?: readonly DocMode[] } & (
   | { kind: 'paragraph'; text: string }
   | { kind: 'list'; items: readonly string[] }
   | { kind: 'ordered'; items: readonly string[] }
   | { kind: 'code'; language: CodeLanguage; caption: string; code: string }
   | { kind: 'callout'; tone: CalloutTone; text: string }
   | { kind: 'table'; caption: string; head: readonly string[]; rows: readonly (readonly string[])[] }
-  | { kind: 'subheading'; id: string; text: string };
+  | { kind: 'subheading'; id: string; text: string }
+);
 
 export type DocSection = {
   /** Stable anchor id (kebab-case), unique within the page. */

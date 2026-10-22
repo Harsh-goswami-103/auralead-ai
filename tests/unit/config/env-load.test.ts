@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse } from 'dotenv';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parseConfig } from '@/lib/config';
 import { loadEnvFile } from '@/lib/env-load';
 import { runSetup, GENERATED_SECRET_KEYS } from '../../../scripts/setup';
 
@@ -70,7 +71,7 @@ describe('loadEnvFile', () => {
 describe('runSetup (npm run setup)', () => {
   const examplePath = path.join(repoRoot, '.env.example');
 
-  it('writes every .env.example key and fills generated demo secrets', () => {
+  it('writes every .env.example key and fills generated secrets', () => {
     const envPath = path.join(dir, '.env');
 
     const result = runSetup({ examplePath, envPath });
@@ -138,8 +139,21 @@ describe('runSetup (npm run setup)', () => {
 
     loadEnvFile({ path: envPath, env });
 
-    expect(env.APP_MODE).toBe('demo');
+    expect(env.APP_MODE).toBe('live');
     expect(existsSync(envPath)).toBe(true);
     expect(JSON.parse(env.CREDENTIALS_KEYRING ?? '')).toBeTypeOf('object');
+  });
+
+  it('a fresh setup is a LIVE install that boots, with DEMO left as an opt-in (ADR-116)', () => {
+    const envPath = path.join(dir, '.env');
+    runSetup({ examplePath, envPath });
+    const written = parse(readFileSync(envPath));
+
+    expect(written.APP_MODE).toBe('live');
+    expect(written.NEXT_PUBLIC_APP_MODE).toBe('live');
+    expect(written.AURALEAD_TEST_CONTROL).toBe('0');
+    const config = parseConfig({ ...written, LOCALAPPDATA: path.join(dir, 'local') }, { platform: 'win32', cwd: dir, homedir: dir });
+    expect(config.mode).toBe('live');
+    expect(config.paths.dbFile).toBe(path.win32.join(dir, 'local', 'auralead', 'live', 'app.db'));
   });
 });

@@ -1206,3 +1206,13 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Covered by:** `tests/integration/webhooks/sheets-signature.test.ts`, `tests/unit/sheets/apps-script-generator.test.ts`, `tests/integration/sheets/preview-sync.test.ts`.
 - **Reversibility:** 4.
 
+
+### ADR-116 LIVE is the default mode; DEMO is an explicit development opt-in (owner request, 2026-10-22)
+- **Decision:**
+  - `APP_MODE` defaults to `live`: `.env.example` (and so `npm run setup`) writes `APP_MODE=live` and `NEXT_PUBLIC_APP_MODE=live`, and `src/lib/config.ts` treats an unset or blank `APP_MODE` as LIVE, which refuses to boot without its secrets. DEMO stays available only by setting `APP_MODE=demo`; DEMO behaviour, the seed, the simulators and the demo adapters are unchanged.
+  - `prisma.config.ts` reads only the mode and data paths (`getDataPaths()` / `parseDataPaths()` in `src/lib/config.ts`, no secrets), so the postinstall `prisma generate` in `npm ci` works on a fresh clone before `npm run setup` has written the LIVE secrets.
+  - A LIVE process shows no demo wording: the landing page's last feature card, its first principle and the capture stage's second fact follow the mode (LIVE describes the provider accounts it connects), the footers no longer print "This instance runs in LIVE mode", and `/docs` in LIVE lists only pages that apply to LIVE, leaves out DEMO-only sections and blocks (blocks gained an optional `appliesTo`), shows no Applies to tags, and answers 404 for a DEMO-only page. A DEMO process still shows every page with its tags.
+  - `npm run setup` prints the LIVE next steps (`db:deploy`, `admin:bootstrap`); the README's quick start is the LIVE install, with DEMO under "Development mode".
+- **Why:** The owner asked for the product to present and run as a production product; a fresh install opened the demo with seeded sample businesses. The plan (ADR-04, E12) made DEMO the default, so this is a deviation.
+- **Covered by:** `tests/unit/config/env.test.ts`, `tests/unit/config/env-load.test.ts`, `tests/unit/landing/landing-page.test.ts`, `tests/unit/docs/docs-render.test.ts`, `tests/unit/docs/content.test.ts`.
+- **Reversibility:** 5 (defaults and copy only; DEMO is one env line away).
