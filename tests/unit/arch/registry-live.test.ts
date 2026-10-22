@@ -14,10 +14,50 @@ import { describe, expect, it } from 'vitest';
 import { FixedClock } from '@/lib/clock';
 import { IntegrationStatus } from '@/lib/domain/enums';
 import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, sheetsReadClient, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
+// Lead-gen suite resolvers under test (docs/handoff/lead-gen-suite-plan.md §6), each in its slice's block.
+// ---- lead-gen F1 finder ----
+
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const REGISTRY = 'src/server/adapters/registry.ts';
-const DEMO_MODULES = ['src/server/adapters/whatsapp/demo.ts', 'src/server/adapters/email/demo.ts'];
+const DEMO_MODULES = [
+  'src/server/adapters/whatsapp/demo.ts',
+  'src/server/adapters/email/demo.ts',
+  // ---- lead-gen F1 finder ----
+
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
+];
 const LIVE_MODULES = [
   'src/server/adapters/whatsapp/cloud-api.ts',
   'src/server/adapters/whatsapp/media.ts',
@@ -30,6 +70,58 @@ const LIVE_MODULES = [
   'src/server/adapters/meta/graph.ts',
   // T34
   'src/server/adapters/sheets/google.ts',
+  // ---- lead-gen F1 finder ----
+
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
+];
+/** Every `live*` function of the registry (the LIVE branches); a slice lists the ones it adds in its block. */
+const LIVE_FUNCTIONS = [
+  'liveAiCheck',
+  'liveCloudApiOptions',
+  'liveEmailTransport',
+  'liveGraphClient',
+  'liveMetaLeadsClient',
+  'liveMetaMarketingClient',
+  'liveMetaToken',
+  'liveResendClient',
+  'liveResendOptions',
+  'liveSmtpCheck',
+  'liveSheetsClient',
+  'liveSmtpOptions',
+  'liveWhatsAppTransport',
+  // ---- lead-gen F1 finder ----
+
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 ];
 
 function resolve(from: string, spec: string): string | null {
@@ -80,9 +172,7 @@ describe('LIVE never imports the demo transport in the registry path (static)', 
     expect(demoNames.size).toBeGreaterThan(0); // the DEMO branch does use them
     const sf = source(REGISTRY);
     const liveFns = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && (s.name?.text ?? '').startsWith('live'));
-    expect(liveFns.map((f) => f.name!.text).sort()).toEqual(
-      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveMetaLeadsClient', 'liveMetaMarketingClient', 'liveMetaToken', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSheetsClient', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
-    );
+    expect(liveFns.map((f) => f.name!.text).sort()).toEqual([...LIVE_FUNCTIONS].sort());
     const used: string[] = [];
     for (const fn of liveFns) {
       const visit = (n: ts.Node) => {
@@ -218,3 +308,23 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
     }
   });
 });
+
+// Lead-gen suite runtime cases (every status x credential state for a new resolver), each in its slice block.
+// ---- lead-gen F1 finder ----
+
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----

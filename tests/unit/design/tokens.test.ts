@@ -6,6 +6,9 @@
 import { describe, expect, it } from 'vitest';
 import { declarations, globalsCss, hexToken, resolveToken, rootTokens, ruleBody, tokensCss } from './token-source';
 
+/** The WhatsApp-like chat skin (ADR-121): its own tokens, never a reused status or panel hue. */
+const CHAT_TOKENS = ['chat-wallpaper', 'chat-bubble-in', 'chat-bubble-out', 'chat-accent', 'chat-tick-read', 'chat-meta'] as const;
+
 describe('token names', () => {
   it('keeps every pre-v2 token defined in :root', () => {
     const legacy = [
@@ -76,6 +79,22 @@ describe('reserved hues', () => {
   });
 });
 
+describe('chat skin (ADR-121)', () => {
+  it('defines every --chat-* token in :root as a solid #rrggbb color', () => {
+    for (const name of CHAT_TOKENS) expect(hexToken(name), `--${name}`).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('reuses no reserved hue: status, demo, AI, the action color, the Operator panel hue or the Sheets chart series', () => {
+    const reserved = ['success', 'warning', 'danger', 'info', 'demo', 'ai', 'aura', 'azure', 'zest', 'chart-2', 'chart-2-hi'].map((name) => hexToken(name));
+    for (const name of CHAT_TOKENS) expect(reserved, `--${name}`).not.toContain(hexToken(name));
+    expect(new Set(CHAT_TOKENS.map((name) => hexToken(name))).size).toBe(CHAT_TOKENS.length);
+  });
+
+  it('keeps the chat tokens out of every gradient', () => {
+    for (const m of tokensCss.matchAll(/--grad-[\w-]+\s*:\s*([^;]+);/g)) expect(m[1]).not.toMatch(/var\(--chat-/);
+  });
+});
+
 describe('Tailwind theme (globals.css)', () => {
   const theme = declarations(ruleBody(globalsCss, '@theme inline'));
 
@@ -105,6 +124,10 @@ describe('Tailwind theme (globals.css)', () => {
       expect(rootTokens.has(`dur-${d}`), `--dur-${d}`).toBe(true);
     }
     for (const e of ['enter', 'exit', 'emphasized', 'ambient']) expect(rootTokens.has(`ease-${e}`), `--ease-${e}`).toBe(true);
+  });
+
+  it('maps every --chat-* token to a color utility (bg-chat-bubble-out, text-chat-meta, ...)', () => {
+    for (const name of CHAT_TOKENS) expect(theme.get(`color-${name}`), `--color-${name}`).toBe(`var(--${name})`);
   });
 
   it('keeps the type scale at 56px or below', () => {

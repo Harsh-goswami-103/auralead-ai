@@ -87,6 +87,25 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'invite.redeem': 'Invitation accepted',
   'demo.seed': 'Demo data loaded',
   'demo.refresh': 'Demo dates refreshed',
+  // Lead-gen suite audit actions, each in its slice's block (docs/handoff/lead-gen-suite-plan.md §6).
+  // ---- lead-gen F1 finder ----
+
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 };
 
 const FAMILIES: ReadonlyArray<readonly [prefix: string, icon: LucideIcon]> = [

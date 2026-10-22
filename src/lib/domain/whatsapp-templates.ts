@@ -15,6 +15,10 @@
  *  - QUICK_REPLY buttons, each given the stable payload id of its mapped intent (ADR-62).
  * Anything else (named parameters, header variables, image/video/location headers, URL buttons
  * with a variable) is reported as not sendable from this app instead of failing at the provider.
+ *
+ * Per-lead variables (ADR-123): `resolveLeadTemplateVariables` fills the positions mapped to a lead
+ * or workspace source for one lead, for bulk sends and the composer. It reports a missing value
+ * and never invents one.
  */
 
 export const TEMPLATE_INTENT_VALUES = ['FIRST_TOUCH', 'QUOTE_READY', 'FOLLOW_UP', 'CALL_ACK'] as const;
@@ -33,6 +37,9 @@ export const QUICK_REPLY_INTENT_LABELS: Readonly<Record<QuickReplyIntentValue, s
 /** Where a positional variable's value comes from (documentation for the people and the AI that fill it). */
 export const TEMPLATE_VARIABLE_SOURCES = {
   'lead.displayName': 'Customer name',
+  'lead.firstName': 'Customer first name',
+  'lead.city': 'Customer city',
+  'lead.category': 'Customer business category',
   'workspace.name': 'Business name',
   'quote.number': 'Quotation number',
   'quote.total': 'Quotation total',
@@ -44,6 +51,115 @@ export type TemplateVariableSource = keyof typeof TEMPLATE_VARIABLE_SOURCES;
 
 export function isTemplateVariableSource(value: string): value is TemplateVariableSource {
   return Object.prototype.hasOwnProperty.call(TEMPLATE_VARIABLE_SOURCES, value);
+}
+
+// ---- Per-lead variables (ADR-123) ---------------------------------------------------------------
+
+/** The sources one lead and its workspace resolve. None is contact data (no phone, no email). */
+export const LEAD_TEMPLATE_VARIABLE_SOURCES = ['lead.firstName', 'lead.displayName', 'lead.city', 'lead.category', 'workspace.name'] as const;
+export type LeadTemplateVariableSource = (typeof LEAD_TEMPLATE_VARIABLE_SOURCES)[number];
+
+const LEAD_SOURCE_SET = new Set<string>(LEAD_TEMPLATE_VARIABLE_SOURCES);
+
+export function isLeadTemplateVariableSource(value: string): value is LeadTemplateVariableSource {
+  return LEAD_SOURCE_SET.has(value);
+}
+
+/** Longest value one body parameter may carry (the bulk form's limit, BulkTemplateVariables). */
+export const TEMPLATE_VARIABLE_MAX_LENGTH = 200;
+
+/** The lead facts the resolver reads (a Lead row satisfies it). */
+export type TemplateLeadFacts = { displayName: string | null; city: string | null; category: string | null };
+/** The workspace facts the resolver reads (a Workspace row satisfies it). */
+export type TemplateWorkspaceFacts = { name: string | null };
+
+/** What a send fills: the template's body positions, their mapped sources and the values the caller already has. */
+export type LeadTemplateVariableMapping = {
+  /** The body positions the template needs (`templateShape(...).bodyVariables`). */
+  positions: readonly string[];
+  /** Source by position (`parseTemplateMapping(...).body`); an unmapped position is `manual`. */
+  sources: Readonly<Record<string, TemplateVariableSource>>;
+  /**
+   * Values by position: typed by the sender for `manual` positions, or computed by the caller for
+   * the sources this resolver cannot see (`quote.*`, `ai.firstTouch`). Lead and workspace sources
+   * ignore them, so per-lead values stay per lead.
+   */
+  literals?: Readonly<Record<string, string>>;
+};
+
+/**
+ * Why a position has no value: the lead or workspace has none (NO_VALUE), a manual position was
+ * left empty (NOT_PROVIDED), a quote or AI source was not supplied by the caller (NEEDS_CONTEXT),
+ * or the value is longer than one parameter may be (TOO_LONG; never cut).
+ */
+export type MissingTemplateVariableReason = 'NO_VALUE' | 'NOT_PROVIDED' | 'NEEDS_CONTEXT' | 'TOO_LONG';
+export type MissingTemplateVariable = { position: string; source: TemplateVariableSource; reason: MissingTemplateVariableReason };
+
+export type LeadTemplateVariables = {
+  /** True when every position has a value. */
+  ok: boolean;
+  /** Values by position, numerically ordered; only positions that resolved (never a placeholder). */
+  values: Record<string, string>;
+  missing: MissingTemplateVariable[];
+};
+
+/** Words skipped before a first name (titles, not names). */
+const HONORIFICS = new Set(['mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'shri', 'sri', 'smt', 'kumari']);
+
+/**
+ * The first name in a display name: the first word after any title, letters (with combining marks),
+ * apostrophes and hyphens only. A name that starts with an article ("The Bake House") or a number
+ * is a business name and has none: the caller maps `lead.displayName` instead.
+ */
+export function leadFirstName(displayName: string | null | undefined): string | null {
+  const words = (displayName ?? '').trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < words.length && HONORIFICS.has(words[i]!.replace(/\.$/, '').toLowerCase())) i++;
+  const word = words[i];
+  if (word === undefined || word.toLowerCase() === 'the') return null;
+  const name = word.replace(/[^\p{L}\p{M}'-]/gu, '').replace(/^['-]+|['-]+$/g, '');
+  if (!/^\p{L}/u.test(name)) return null;
+  return name;
+}
+
+/** One line: whitespace runs (newlines, tabs, repeated spaces) folded to one space, trimmed. */
+function oneLine(value: string | null | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function leadSourceValue(source: LeadTemplateVariableSource, lead: TemplateLeadFacts, workspace: TemplateWorkspaceFacts): string | null {
+  switch (source) {
+    case 'lead.firstName':
+      return leadFirstName(lead.displayName);
+    case 'lead.displayName':
+      return lead.displayName;
+    case 'lead.city':
+      return lead.city;
+    case 'lead.category':
+      return lead.category;
+    case 'workspace.name':
+      return workspace.name;
+  }
+}
+
+/**
+ * Positional body values for one lead (pure). Lead and workspace sources come from the rows;
+ * `manual` and unmapped positions keep the caller's literal; quote and AI sources take a literal the
+ * caller computed. Anything without a value is listed in `missing`, never filled with a stand-in.
+ */
+export function resolveLeadTemplateVariables(mapping: LeadTemplateVariableMapping, lead: TemplateLeadFacts, workspace: TemplateWorkspaceFacts): LeadTemplateVariables {
+  const positions = [...new Set(mapping.positions.filter((p) => /^\d+$/.test(p)).map((p) => String(Number(p))))].sort((a, b) => Number(a) - Number(b));
+  const values: Record<string, string> = {};
+  const missing: MissingTemplateVariable[] = [];
+  for (const position of positions) {
+    const source: TemplateVariableSource = mapping.sources[position] ?? 'manual';
+    const fromLead = isLeadTemplateVariableSource(source);
+    const value = oneLine(fromLead ? leadSourceValue(source, lead, workspace) : mapping.literals?.[position]);
+    if (value === '') missing.push({ position, source, reason: fromLead ? 'NO_VALUE' : source === 'manual' ? 'NOT_PROVIDED' : 'NEEDS_CONTEXT' });
+    else if (value.length > TEMPLATE_VARIABLE_MAX_LENGTH) missing.push({ position, source, reason: 'TOO_LONG' });
+    else values[position] = value;
+  }
+  return { ok: missing.length === 0, values, missing };
 }
 
 export type NotSendableReason = 'NAMED_PARAMETERS' | 'HEADER_VARIABLES' | 'MEDIA_HEADER' | 'URL_BUTTON_VARIABLE' | 'NO_BODY';

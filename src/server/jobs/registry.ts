@@ -28,6 +28,25 @@ import { metaLeadBackfillJob, metaLeadFetchJob } from './handlers/meta-lead-fetc
 import { campaignActionJob, campaignReadBackJob } from './handlers/campaign-action';
 import { campaignMetricsSyncJob } from './handlers/campaign-metrics-sync';
 import { sheetsSyncJob } from './handlers/sheets-sync';
+// Lead-gen suite handlers (docs/handoff/lead-gen-suite-plan.md §6): each slice imports only inside its block.
+// ---- lead-gen F1 finder ----
+
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -81,6 +100,25 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   campaignActionJob,
   campaignReadBackJob,
   sheetsSyncJob,
+  // Lead-gen suite job types (LEAD_GEN_JOB_TYPES in src/lib/domain/lead-gen.ts), each in its slice's block.
+  // ---- lead-gen F1 finder ----
+
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {
