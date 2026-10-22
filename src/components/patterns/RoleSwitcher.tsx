@@ -15,7 +15,7 @@
  *
  * The check mark follows the route: a panel only one persona lands on marks that persona; the
  * client panel, which both client personas share (ADR-126), marks none, because the route alone
- * cannot tell who is signed in.
+ * cannot tell who is signed in; the trigger then names the panel ("Client panel"), not "Choose".
  *
  * The floating trigger is a solid pill. On panel routes below 1024px it sits above the bottom
  * tab bar and the iOS safe area. On /login it is not rendered, because the card there already
@@ -68,10 +68,22 @@ function useSwitch() {
   return { pending, error, switchTo };
 }
 
+function personasOn(pathname: string | null) {
+  return SWITCHER_PERSONAS.filter((p) => pathname === p.home || pathname?.startsWith(`${p.home}/`));
+}
+
 function activePersona(pathname: string | null): PersonaKey | null {
-  const hits = SWITCHER_PERSONAS.filter((p) => pathname === p.home || pathname?.startsWith(`${p.home}/`));
+  const hits = personasOn(pathname);
   // Two personas share the client panel: the route alone cannot say which one is signed in.
   return hits.length === 1 ? hits[0]!.key : null;
+}
+
+/** The trigger's label: the persona when the route names one, the shared panel when it names several. */
+function triggerLabel(pathname: string | null): string {
+  const hits = personasOn(pathname);
+  if (hits.length === 1) return hits[0]!.label;
+  // The first persona of a shared panel carries the bare panel name as its hint ("Client panel").
+  return hits.length > 1 ? hits[0]!.hint : 'Choose';
 }
 
 function PersonaButton(props: { persona: (typeof SWITCHER_PERSONAS)[number]; onPick: (key: PersonaKey) => void; pending: PersonaKey | null; active: PersonaKey | null; large: boolean }) {
@@ -167,7 +179,7 @@ export function RoleSwitcher() {
   const active = activePersona(pathname);
   if (pathname === '/login') return null;
   const onPanel = pathname?.startsWith('/dashboard/') || pathname === '/dashboard';
-  const activeLabel = SWITCHER_PERSONAS.find((p) => p.key === active)?.label ?? 'Choose';
+  const activeLabel = triggerLabel(pathname);
   return (
     <div
       data-demo-role-switcher

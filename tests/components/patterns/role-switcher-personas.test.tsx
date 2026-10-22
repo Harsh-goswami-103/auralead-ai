@@ -54,9 +54,19 @@ describe('the Codecraft client persona', () => {
     expect(SWITCHER_PERSONAS.find((p) => p.key === 'client')!.home).toBe('/dashboard/user');
   });
 
-  it('marks no persona as current on the client panel, which both client personas share', async () => {
+  it('marks no persona as current on the client panel, which both client personas share, and names the panel on the trigger', async () => {
     const dialog = await openSwitcher('/dashboard/user/leads');
     expect(within(dialog).queryAllByRole('button', { current: 'page' })).toHaveLength(0);
+    // Not "Choose": someone is signed in, the route just cannot tell which of the two.
+    const trigger = screen.getByRole('button', { name: /^Demo role/ }).textContent;
+    expect(trigger).toContain('Client panel');
+    expect(trigger).not.toContain('Choose');
+  });
+
+  it('still says "Choose" off the panels', () => {
+    stubResizeObserver();
+    nav.pathname = '/docs';
+    render(<RoleSwitcher />);
     expect(screen.getByRole('button', { name: /^Demo role/ }).textContent).toContain('Choose');
   });
 
