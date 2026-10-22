@@ -1995,6 +1995,8 @@ model LeadFinderResult {
   emailStatus      String
   simulated        Boolean       @default(false)
   contentExpiresAt DateTime?
+  /// Set when `leadFinder.purge` nulled the Places content (ADR-118 evidence).
+  contentPurgedAt  DateTime?
   /// The lead this place was imported as (a plain column, no foreign key; erasure nulls it).
   importedLeadId   String?
   importedAt       DateTime?
@@ -2027,6 +2029,7 @@ model LeadImport {
   dataSource        ImportDataSource?
   consentAttested   Boolean           @default(false)
   consentAttestedBy String?
+  consentAttestedAt DateTime?
   consentNoticeText String?
   consentNoticeHash String?
   status            LeadImportStatus  @default(PREVIEW)

@@ -184,7 +184,7 @@ export const INTEGRATION_CATALOG: readonly IntegrationCatalogEntry[] = [
     prerequisites: [
       'In Google Cloud, create a project with billing enabled and enable the Places API (New).',
       'Create an API key and restrict it to the Places API (New). Every search and every Refresh is a paid call on this key.',
-      'Read the Google Maps Platform terms for your key: results here are a 24-hour working copy shown with Google Maps attribution, and only place IDs are kept longer.',
+      'Read the Google Maps Platform terms for your key: results here are a 24-hour working copy shown with Google Maps attribution; place IDs are kept, and imported leads keep their Places details for at most 30 days unless the contact is confirmed.',
     ],
     webhookPath: null,
     disclosures: [
