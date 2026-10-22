@@ -7,6 +7,9 @@
  * with its authored templates and the approval queue. Checks stay at "renders the seeded facts",
  * so later slices can restyle these pages.
  */
+import dns from 'node:dns';
+import net from 'node:net';
+import tls from 'node:tls';
 import { createElement, type FC, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -24,6 +27,7 @@ import EmployeeLeadPage from '@/app/dashboard/employee/[ws]/leads/[leadId]/page'
 import IntegrationsPage from '@/app/dashboard/employee/[ws]/integrations/page';
 import IntegrationSetupPage from '@/app/dashboard/employee/[ws]/integrations/[kind]/page';
 import ApprovalsPage from '@/app/dashboard/employee/[ws]/approvals/page';
+import { outboundAttempts, resetOutboundAttempts } from '@/server/adapters/http/outbound';
 import { createSession, sessionCookieName } from '@/server/auth/session';
 import { seedId } from '../../../prisma/seed/ids';
 import { HANDOFF_FIXTURE, PRESENTATION_SLUG, STORY_LEADS, presentationPlaces } from '../../../prisma/seed/fixtures/presentation';
@@ -50,8 +54,12 @@ const nameOf = (place: string) => presentationPlaces().find((p) => p.key === pla
 let testDb: TestDb;
 let db: PrismaClient;
 let runtime: TestRuntime;
+// DEMO zero outbound (plan §5): the wire is watched from before the seed until the last page renders.
+let wire: { connect: { mock: { calls: unknown[] } }; tls: { mock: { calls: unknown[] } }; lookup: { mock: { calls: unknown[] } } };
 
 beforeAll(async () => {
+  resetOutboundAttempts();
+  wire = { connect: vi.spyOn(net.Socket.prototype, 'connect'), tls: vi.spyOn(tls, 'connect'), lookup: vi.spyOn(dns, 'lookup') };
   testDb = await createTestDb({ label: 'seed-presentation-pages' });
   db = testDb.client();
   // The runtime's pepper keys the seeded consents and chats, as `npm run db:seed` does.
@@ -123,5 +131,14 @@ describe('the operator panel (Employee persona)', () => {
     for (const name of ['website_intro', 'follow_up', 'meeting_confirm', 'brochure_share', 'discount_blast']) expect(setup).toContain(name);
     expect(await db.workspace.count({ where: { id: WS } })).toBe(1);
     expect(text(await ApprovalsPage(ws))).toBeTruthy();
+  });
+});
+
+describe('DEMO zero outbound', () => {
+  it('seeding the pack and rendering both panels made no outbound attempt, socket or DNS lookup', () => {
+    expect(outboundAttempts()).toEqual([]);
+    expect(wire.connect.mock.calls).toHaveLength(0);
+    expect(wire.tls.mock.calls).toHaveLength(0);
+    expect(wire.lookup.mock.calls).toHaveLength(0);
   });
 });
