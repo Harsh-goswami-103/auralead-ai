@@ -2,7 +2,9 @@
  * R43 / P20 (T09): the demo seed is deterministic, covers the PRD fixture list (fictitious Indian
  * businesses in Delhi NCR, Mumbai and Bengaluru: clinic, gym, property agency, e-commerce,
  * freelancer), refuses LIVE targets, resets to the identical content, and `demo:refresh`
- * re-bases fixture times without changing any id.
+ * re-bases fixture times without changing any id. ADR-126: the sixth, presentation workspace
+ * (codecraft-web) and its fourth persona are part of the same content; the pepper that keys its
+ * consent and chat rows changes those two tables only.
  */
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -119,6 +121,9 @@ describe('demo seed determinism', () => {
     }
     const owner = await a.user.findUniqueOrThrow({ where: { email: DEMO_PERSONAS.user.email }, include: { memberships: true } });
     expect(owner.memberships.some((m) => m.role === 'OWNER')).toBe(true);
+    // ADR-126: the client persona owns the presentation workspace only.
+    const client = await a.user.findUniqueOrThrow({ where: { email: DEMO_PERSONAS.client.email }, include: { memberships: true } });
+    expect(client.memberships.map((m) => [m.workspaceId, m.role])).toEqual([[seedId('workspace', 'codecraft-web'), 'OWNER']]);
     const employee = await a.user.findUniqueOrThrow({ where: { email: DEMO_PERSONAS.employee.email }, include: { employeeAssignments: true } });
     const active = employee.employeeAssignments.filter((x) => x.active);
     expect(active.length).toBeGreaterThanOrEqual(2);
@@ -147,6 +152,20 @@ describe('demo seed determinism', () => {
     const audit = await a.auditEvent.findMany({ where: { action: 'demo.seed' } });
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({ actorKind: 'SYSTEM', simulated: true, createdAt: T0 });
+  });
+
+  it('keys the presentation consents and chats with the configured pepper, and nothing else changes with it', async () => {
+    const { client } = await freshDb('seed-pepper');
+    await seedDemo(client, { config: { ...DEMO, secrets: { suppressionPepper: `determinism-pepper-${'q'.repeat(32)}` } }, now: T0 });
+    const [withPepper, standIn] = await Promise.all([contentHash(client), contentHash(a)]);
+    expect(withPepper.rows).toBe(standIn.rows);
+    expect(withPepper.hash).not.toBe(standIn.hash);
+    const differing: string[] = [];
+    for (const table of Object.keys(standIn.tables)) {
+      const only = { excludeTables: Object.keys(standIn.tables).filter((x) => x !== table) };
+      if ((await contentHash(client, only)).hash !== (await contentHash(a, only)).hash) differing.push(table);
+    }
+    expect(differing.sort()).toEqual(['ConsentRecord', 'Conversation']);
   });
 
   it('refuses to seed an already seeded database (reset is explicit)', async () => {

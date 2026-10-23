@@ -7,10 +7,15 @@
  * ordinary DEMO session (POST /api/demo/session, 404 in LIVE). No privilege is decided here.
  *
  * Look (design spec §6 "Auth"): each persona is a card in its panel's signature hue. Workspace
- * owner (Client panel) is aura, Employee (Operator panel) is zest and Super admin (Platform
- * admin) is flare. Each card has an icon chip and a corner wash, and lifts on hover. The hue is
- * orientation only; the label and hint name the persona. Each button's accessible name starts with
- * the persona label, since the icon is aria-hidden; tests and e2e use /^Workspace owner/.
+ * owner and Codecraft client (both Client panel) are aura, Employee (Operator panel) is zest and
+ * Super admin (Platform admin) is flare. Each card has an icon chip and a corner wash, and lifts
+ * on hover. The hue is orientation only; the label and hint name the persona. Each button's
+ * accessible name starts with the persona label, since the icon is aria-hidden; tests and e2e use
+ * /^Workspace owner/, which no other label starts with.
+ *
+ * The check mark follows the route: a panel only one persona lands on marks that persona; the
+ * client panel, which both client personas share (ADR-126), marks none, because the route alone
+ * cannot tell who is signed in; the trigger then names the panel ("Client panel"), not "Choose".
  *
  * The floating trigger is a solid pill. On panel routes below 1024px it sits above the bottom
  * tab bar and the iOS safe area. On /login it is not rendered, because the card there already
@@ -19,7 +24,7 @@
  */
 import { usePathname } from 'next/navigation';
 import { useId, useState, type CSSProperties } from 'react';
-import { ArrowRight, Building2, Check, ChevronUp, Headset, LoaderCircle, ShieldCheck, Users, type LucideIcon } from 'lucide-react';
+import { ArrowRight, Building2, Check, ChevronUp, Globe, Headset, LoaderCircle, ShieldCheck, Users, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -29,6 +34,7 @@ import { isSafeRedirect, postJson } from './api-client';
 /** Mirrors DEMO_PERSONAS in src/server/auth/demo-personas.ts (checked by live-bundle.test.ts). */
 export const SWITCHER_PERSONAS = [
   { key: 'user', label: 'Workspace owner', home: '/dashboard/user', hint: 'Client panel' },
+  { key: 'client', label: 'Codecraft client', home: '/dashboard/user', hint: 'Client panel, Codecraft Web Studio' },
   { key: 'employee', label: 'Employee', home: '/dashboard/employee', hint: 'Operator panel' },
   { key: 'admin', label: 'Super admin', home: '/dashboard/admin', hint: 'Platform panel' },
 ] as const;
@@ -39,6 +45,7 @@ type SwitchError = { message: string; reference: string | null };
 /** Panel signature hue and icon per persona (Client = aura, Operator = zest, Platform admin = flare). */
 const PERSONA_LOOK: Readonly<Record<PersonaKey, { icon: LucideIcon; hue: string }>> = {
   user: { icon: Building2, hue: 'var(--aura)' },
+  client: { icon: Globe, hue: 'var(--aura)' },
   employee: { icon: Headset, hue: 'var(--zest)' },
   admin: { icon: ShieldCheck, hue: 'var(--flare)' },
 };
@@ -61,9 +68,22 @@ function useSwitch() {
   return { pending, error, switchTo };
 }
 
+function personasOn(pathname: string | null) {
+  return SWITCHER_PERSONAS.filter((p) => pathname === p.home || pathname?.startsWith(`${p.home}/`));
+}
+
 function activePersona(pathname: string | null): PersonaKey | null {
-  const hit = SWITCHER_PERSONAS.find((p) => pathname === p.home || pathname?.startsWith(`${p.home}/`));
-  return hit?.key ?? null;
+  const hits = personasOn(pathname);
+  // Two personas share the client panel: the route alone cannot say which one is signed in.
+  return hits.length === 1 ? hits[0]!.key : null;
+}
+
+/** The trigger's label: the persona when the route names one, the shared panel when it names several. */
+function triggerLabel(pathname: string | null): string {
+  const hits = personasOn(pathname);
+  if (hits.length === 1) return hits[0]!.label;
+  // The first persona of a shared panel carries the bare panel name as its hint ("Client panel").
+  return hits.length > 1 ? hits[0]!.hint : 'Choose';
 }
 
 function PersonaButton(props: { persona: (typeof SWITCHER_PERSONAS)[number]; onPick: (key: PersonaKey) => void; pending: PersonaKey | null; active: PersonaKey | null; large: boolean }) {
@@ -159,7 +179,7 @@ export function RoleSwitcher() {
   const active = activePersona(pathname);
   if (pathname === '/login') return null;
   const onPanel = pathname?.startsWith('/dashboard/') || pathname === '/dashboard';
-  const activeLabel = SWITCHER_PERSONAS.find((p) => p.key === active)?.label ?? 'Choose';
+  const activeLabel = triggerLabel(pathname);
   return (
     <div
       data-demo-role-switcher

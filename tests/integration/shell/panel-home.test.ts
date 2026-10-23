@@ -74,13 +74,15 @@ describe('loadUserHome', () => {
 describe('loadEmployeeHome', () => {
   it('lists only active assignments with their capabilities and discount caps', async () => {
     const home = await loadEmployeeHome(await ctxFor('employee', 'kesari-crafts'));
-    expect(home.assignments.map((a) => a.slug)).toEqual(['kesari-crafts', 'smile-avenue-dental']);
+    // Sorted by name; codecraft-web is the presentation workspace (ADR-126).
+    expect(home.assignments.map((a) => a.slug)).toEqual(['codecraft-web', 'kesari-crafts', 'smile-avenue-dental']);
     expect(home.inactiveCount).toBe(1);
-    const kesari = home.assignments[0]!;
+    const kesari = home.assignments.find((a) => a.slug === 'kesari-crafts')!;
     expect(kesari).toMatchObject({ name: 'Kesari Crafts Online', maxDiscountBps: 1500, current: true });
     expect(kesari.capabilities).toContain('sheets.manage');
     expect(kesari.capabilities).not.toContain('pricing.override');
-    expect(home.assignments[1]!.current).toBe(false);
+    expect(home.assignments.filter((a) => a.current).map((a) => a.slug)).toEqual(['kesari-crafts']);
+    expect(home.assignments.find((a) => a.slug === 'codecraft-web')!.capabilities).not.toContain('consent.import');
   });
 
   it('shows an unassigned employee no workspace', async () => {
@@ -97,9 +99,10 @@ describe('loadEmployeeHome', () => {
 describe('loadAdminHome', () => {
   it('counts workspaces, people and assignments for the platform', async () => {
     const home = await loadAdminHome(await ctxFor('admin'));
-    expect(home.workspaces).toEqual({ total: 5, active: 5, suspended: 0, automationPaused: 0 });
-    expect(home.people).toEqual({ owners: 5, members: 1, employees: 3, superAdmins: 1, disabled: 0 });
-    expect(home.activeAssignments).toBe(3);
+    // Six DEMO workspaces (the sixth, codecraft-web, is the presentation workspace, ADR-126).
+    expect(home.workspaces).toEqual({ total: 6, active: 6, suspended: 0, automationPaused: 0 });
+    expect(home.people).toEqual({ owners: 6, members: 1, employees: 3, superAdmins: 1, disabled: 0 });
+    expect(home.activeAssignments).toBe(4);
     expect(home.outboundPaused).toBe(false);
     expect(home.worker).toBeNull();
   });
