@@ -77,6 +77,10 @@ describe('starting a run', () => {
     expect(rateLimit).toHaveBeenCalledTimes(1);
     // The same request key from another person is a conflict, never their run.
     await expect(startFinderRun(await h.owner(), input, { keyRing: null })).rejects.toBeInstanceOf(IdempotencyConflictError);
+    // The same key with a different search is a conflict too, never the first run handed back under it.
+    await expect(startFinderRun(ctx, { ...input, keywords: ['gym'] }, { keyRing: null })).rejects.toMatchObject({ status: 409 });
+    await expect(startFinderRun(ctx, { ...input, maxPerQuery: 60 }, { keyRing: null })).rejects.toBeInstanceOf(IdempotencyConflictError);
+    expect(rateLimit).toHaveBeenCalledTimes(1);
     await finishActiveRuns();
   });
 
@@ -291,6 +295,50 @@ describe('results, import and expiry', () => {
     expect(refreshed).toMatchObject({ refreshed: 1, erased: 1 });
     expect((await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: pick.id } })).name).toBeNull();
     h.clock.set(NOW);
+  });
+
+  it('a place erased after its 24-hour purge is recognised as erased too and never refreshed', async () => {
+    const ctx = await h.operator();
+    const { run } = await startFinderRun(ctx, body({ keywords: ['travel agency'], locations: ['Jabalpur'] }), { keyRing: null });
+    await drain(h.worker);
+    const pick = await h.db.leadFinderResult.findFirstOrThrow({ where: { runId: run.id, hasPhone: true }, orderBy: { createdAt: 'asc' } });
+    const leadId = (await importFinderResults(ctx, { runId: run.id, resultIds: [pick.id], requestKey: 'finder-import-erase-late' }, INGEST)).results[0]!.leadId!;
+
+    // The 24-hour purge comes first: the row is stamped purged, so it looks merely "expired" ...
+    h.clock.set(new Date(new Date(NOW).getTime() + DAY + 2 * HOUR).toISOString());
+    await drain(h.worker);
+    expect((await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: pick.id } })).contentPurgedAt).not.toBeNull();
+
+    // ... until the person's erasure: then it must read as erased, and Refresh must not bring the listing back.
+    const erased = await eraseLead(h.db, h.clock, { workspaceId: WS_A, leadId, reason: 'DPDP request REF-2', contactKeyPepper: INGEST.contactKeyPepper, storageDir: os.tmpdir(), correlationId: 'req_finder_erase_late' });
+    expect(erased.finderResultsBlanked).toBe(1);
+    const view = await getFinderRunView(ctx, run.id, NONE);
+    expect(view.results.find((r) => r.id === pick.id)).toMatchObject({ erased: true, hasDetails: false, name: null, importedLeadId: null, placeId: pick.placeId });
+    resetOutboundAttempts();
+    const refreshed = await refreshFinderResults(ctx, { runId: run.id, resultIds: [pick.id] }, { keyRing: null });
+    expect(refreshed).toMatchObject({ requested: 1, refreshed: 0, erased: 1 });
+    expect(outboundAttempts()).toEqual([]);
+    expect(await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: pick.id } })).toMatchObject({ name: null, phoneRaw: null, address: null });
+    h.clock.set(NOW);
+  });
+
+  it('reports how many websites are still being checked for emails, in the list and in the run view', async () => {
+    const ctx = await h.operator();
+    const { run } = await startFinderRun(ctx, StartFinderRunBody.parse({ requestKey: key(), keywords: ['hotel'], locations: ['Gwalior'], maxPerQuery: 20, extractEmails: true }), { keyRing: null });
+    // The search ends first; the email checks of the last page are separate jobs that finish later
+    // (this harness runs no email job, so every website of the run is still waiting).
+    await drain(h.worker);
+    const waiting = await h.db.leadFinderResult.count({ where: { runId: run.id, emailStatus: 'PENDING' } });
+    expect(waiting).toBeGreaterThan(0);
+    expect((await listFinderRuns(ctx)).find((r) => r.id === run.id)).toMatchObject({ status: 'SUCCEEDED', emailsPending: waiting });
+    expect((await getFinderRunView(ctx, run.id, NONE)).run).toMatchObject({ emailsPending: waiting });
+    // Once the checks are written, nothing is pending; a run that never asked for emails reports none.
+    await h.db.leadFinderResult.updateMany({ where: { runId: run.id, emailStatus: 'PENDING' }, data: { emailStatus: 'NONE_FOUND' } });
+    expect((await listFinderRuns(ctx)).find((r) => r.id === run.id)).toMatchObject({ emailsPending: 0 });
+    const plain = await startFinderRun(ctx, body({ keywords: ['hotel'], locations: ['Jabalpur'] }), { keyRing: null });
+    await drain(h.worker);
+    await h.db.leadFinderResult.updateMany({ where: { runId: plain.run.id }, data: { emailStatus: 'PENDING' } });
+    expect((await listFinderRuns(ctx)).find((r) => r.id === plain.run.id)).toMatchObject({ emailsPending: 0 });
   });
 
   it('lists the recent runs newest first', async () => {

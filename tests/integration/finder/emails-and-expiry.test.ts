@@ -52,6 +52,16 @@ const PAGES: Record<string, Record<string, { status?: number; type?: string; bod
     '/robots.txt': { status: 404, body: 'none' },
     '/': { status: 500, body: 'broken' },
   },
+  // A robots.txt that answers with a server error is "unreachable" (RFC 9309): the site is not read.
+  'epsilon.test': {
+    '/robots.txt': { status: 503, body: 'try later' },
+    '/': { body: '<p>info@epsilon.test</p>' },
+  },
+  // A robots.txt that is refused (4xx) means the site has no rules: it is read.
+  'zeta.test': {
+    '/robots.txt': { status: 403, body: 'no' },
+    '/': { body: '<p>hello@zeta.test</p>' },
+  },
 };
 
 async function startSites(): Promise<Site> {
@@ -105,6 +115,8 @@ describe('LIVE email extraction', () => {
           place('ChIJEmailGamma0003', 'Gamma Cafe', 'http://gamma.test/'),
           place('ChIJEmailDelta0004', 'Delta Dhaba', 'http://missing.test/'),
           place('ChIJEmailNoSite005', 'No Site Kitchen'),
+          place('ChIJEmailEpsilon006', 'Epsilon Eats', 'http://epsilon.test/'),
+          place('ChIJEmailZeta00007', 'Zeta Zone', 'http://zeta.test/'),
         ],
       },
     });
@@ -134,14 +146,21 @@ describe('LIVE email extraction', () => {
     expect(by('ChIJEmailGamma0003')).toMatchObject({ emailStatus: 'FAILED', emailCount: 0 });
     expect(by('ChIJEmailDelta0004')).toMatchObject({ emailStatus: 'FAILED', emailCount: 0 });
     expect(by('ChIJEmailNoSite005')).toMatchObject({ emailStatus: 'NO_WEBSITE', emailCount: 0 });
+    // A robots.txt that answers with a server error is not read as "no rules": that site is BLOCKED.
+    expect(by('ChIJEmailEpsilon006')).toMatchObject({ emailStatus: 'BLOCKED', emailCount: 0 });
+    // A robots.txt that is refused (403) means the site has none: it is read.
+    expect(by('ChIJEmailZeta00007')).toMatchObject({ emailStatus: 'FOUND', emailCount: 1 });
+    expect(finderEmails(by('ChIJEmailZeta00007').emails)).toEqual([{ address: 'hello@zeta.test', sourceUrl: 'http://zeta.test/', kind: 'ROLE' }]);
 
-    expect(await h.db.leadFinderRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: 'SUCCEEDED', emailsFound: 3 });
+    expect(await h.db.leadFinderRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: 'SUCCEEDED', emailsFound: 4 });
     // Only the listed hosts, robots.txt first, never a disallowed page, always the bot User-Agent.
     expect(site.requests.filter((r) => r.host === 'alpha.test').map((r) => r.path)).toEqual(['/robots.txt', '/', '/contact', '/about']);
     expect(site.requests.filter((r) => r.host === 'beta.test').map((r) => r.path)).toEqual(['/robots.txt']);
+    expect(site.requests.filter((r) => r.host === 'epsilon.test').map((r) => r.path)).toEqual(['/robots.txt']);
+    expect(site.requests.filter((r) => r.host === 'zeta.test').map((r) => r.path)).toEqual(['/robots.txt', '/']);
     expect(site.requests.every((r) => r.ua.startsWith('AuraLeadBot/1.0'))).toBe(true);
     const audits = await h.db.auditEvent.findMany({ where: { action: 'finder.emails.extract', targetId: run.id } });
-    expect(audits.reduce((n, a) => n + ((a.summary as { found: number }).found ?? 0), 0)).toBe(3);
+    expect(audits.reduce((n, a) => n + ((a.summary as { found: number }).found ?? 0), 0)).toBe(4);
     expect(JSON.stringify(audits.map((a) => a.summary))).not.toContain('@');
   });
 });

@@ -3,10 +3,10 @@
 /**
  * The workspace's recent Lead Finder runs (ADR-118, slice F1): each with its keywords and
  * locations, status (icon + label), a progress bar over its keyword x location searches, the
- * places found, and the Simulated chip for DEMO runs. While a run waits or searches, the page is
- * re-read on the operator polling schedule (`usePolling`); once the schedule runs out it says the
- * worker is late instead of polling forever. A run that can still be stopped has "Cancel"
- * (needs `finder.run`).
+ * places found, and the Simulated chip for DEMO runs. While a run waits or searches, or websites
+ * are still being checked for emails, the page is re-read on the operator polling schedule
+ * (`usePolling`); once the schedule runs out it says the worker is late instead of polling forever.
+ * A run that can still be stopped has "Cancel" (needs `finder.run`).
  */
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -26,7 +26,8 @@ import { finderErrorText, finderHref, isActiveRun, RUN_STATUS } from './finder-v
 export function FinderRunsList(props: { runs: FinderRunDto[]; selectedId: string | null; workspaceSlug: string; timeZone: string; cancelGate: Gate | null }) {
   const router = useRouter();
   const csrfToken = useCsrfToken();
-  const active = props.runs.some((r) => isActiveRun(r.status));
+  // A search can be finished while the email checks of its last pages are still queued.
+  const active = props.runs.some((r) => isActiveRun(r.status) || r.emailsPending > 0);
   const { exhausted } = usePolling(active, () => router.refresh());
 
   async function cancel(runId: string) {
@@ -74,6 +75,11 @@ export function FinderRunsList(props: { runs: FinderRunDto[]; selectedId: string
                   {run.cellsDone} of {run.cellsTotal} {run.cellsTotal === 1 ? 'search' : 'searches'} · {run.resultsFound.toLocaleString('en-IN')} {run.resultsFound === 1 ? 'place' : 'places'}
                   {run.extractEmails ? ` · ${run.emailsFound.toLocaleString('en-IN')} ${run.emailsFound === 1 ? 'email' : 'emails'}` : ''}
                 </span>
+                {run.emailsPending > 0 ? (
+                  <span className="text-xs text-fg-2">
+                    Checking {run.emailsPending.toLocaleString('en-IN')} {run.emailsPending === 1 ? 'website' : 'websites'} for emails
+                  </span>
+                ) : null}
                 <span className="text-xs text-fg-3">Started {formatDateTime(new Date(run.createdAt), props.timeZone)}</span>
                 {isActiveRun(run.status) ? (
                   <GatedAction label="Cancel" pendingLabel="Cancelling..." size="sm" variant="ghost" icon={<CircleStop aria-hidden="true" />} gate={props.cancelGate} onAction={() => cancel(run.id)} />

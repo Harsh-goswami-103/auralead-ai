@@ -78,6 +78,7 @@ function view(results: FinderResultDto[], simulated = true, over: Partial<Finder
       cellsDone: 1,
       resultsFound: results.length,
       emailsFound: 0,
+      emailsPending: 0,
       simulated,
       errorCode: null,
       createdAt: '2026-10-23T06:00:00.000Z',
@@ -136,7 +137,9 @@ describe('FinderResults', () => {
   it('filters are links that keep the run and toggle the column filter', () => {
     renderResults(view(ROWS, true, { filters: { noWebsite: true, hasPhone: false, notImported: false } }));
     const noWebsite = document.querySelector('[data-filter="noWebsite"]') as HTMLAnchorElement;
-    expect(noWebsite.getAttribute('aria-pressed')).toBe('true');
+    expect(noWebsite.getAttribute('aria-current')).toBe('true');
+    expect(noWebsite.getAttribute('aria-pressed')).toBeNull();
+    expect((document.querySelector('[data-filter="hasPhone"]') as HTMLAnchorElement).getAttribute('aria-current')).toBeNull();
     expect(noWebsite.getAttribute('href')).toBe('/dashboard/employee/codecraft-web/finder?run=run_1');
     const hasPhone = document.querySelector('[data-filter="hasPhone"]') as HTMLAnchorElement;
     expect(hasPhone.getAttribute('href')).toBe('/dashboard/employee/codecraft-web/finder?run=run_1&noWebsite=1&hasPhone=1');

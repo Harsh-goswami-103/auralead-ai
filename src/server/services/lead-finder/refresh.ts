@@ -8,7 +8,7 @@
  * (never fetched again). Audited `finder.results.refresh` with counts only. DEMO
  * rebuilds the simulated listing from its ID and never contacts anything.
  */
-import type { Prisma } from '@/generated/prisma/client';
+import { Prisma } from '@/generated/prisma/client';
 import { NotFoundError } from '@/lib/errors';
 import type { PlaceRecord } from '@/server/adapters/places/port';
 import type { AppCtx } from '@/server/auth/context';
@@ -19,7 +19,7 @@ import { recordAudit } from '@/server/services/audit/record';
 import { enqueueFinderPurge, FINDER_CONTENT_TTL_MS } from './jobs';
 import { resolveWorkspacePlaces, type PlacesDeps } from './provider';
 import { erasedResult, hasDetails, loadFinderRun, PlacesNotConfiguredError } from './runs';
-import { placesErrorCode, stopsRun } from './search';
+import { placeHasContent, placesErrorCode, stopsRun } from './search';
 
 export type RefreshResult = { requested: number; refreshed: number; failed: number; notExpired: number; erased: number; errorCode: string | null };
 
@@ -48,7 +48,7 @@ export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; 
   let errorCode: string | null = null;
   for (const row of expired) {
     const call = await provider.value.getPlace(row.placeId, { keyword: row.keyword, location: row.location });
-    if (call.ok && call.data.placeId === row.placeId) {
+    if (call.ok && call.data.placeId === row.placeId && placeHasContent(call.data)) {
       fresh.push({ id: row.id, place: call.data });
       continue;
     }
@@ -81,7 +81,8 @@ export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; 
           city: place.city?.slice(0, 200) ?? null,
           state: place.state?.slice(0, 200) ?? null,
           pincode: place.pincode,
-          attributions: place.attributions.length > 0 ? (place.attributions as unknown as Prisma.InputJsonValue) : undefined,
+          // The copy is replaced as a whole: attributions Google no longer sends must not linger.
+          attributions: place.attributions.length > 0 ? (place.attributions as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           contentExpiresAt: expiresAt,
           contentPurgedAt: null,
         },

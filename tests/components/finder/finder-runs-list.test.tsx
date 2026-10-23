@@ -42,6 +42,7 @@ function run(over: Partial<FinderRunDto>): FinderRunDto {
     cellsDone: 1,
     resultsFound: 20,
     emailsFound: 0,
+    emailsPending: 0,
     simulated: true,
     errorCode: null,
     createdAt: '2026-10-23T06:00:00.000Z',
@@ -92,6 +93,26 @@ describe('FinderRunsList', () => {
   it('does not poll when every run has finished', () => {
     vi.useFakeTimers();
     renderList([run({ status: 'SUCCEEDED', cellsDone: 2 })]);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('keeps polling a finished run while websites are still being checked for emails, and says so', () => {
+    vi.useFakeTimers();
+    renderList([run({ status: 'SUCCEEDED', cellsDone: 2, extractEmails: true, emailsFound: 3, emailsPending: 2 })]);
+    const row = document.querySelector('[data-run-id="run_1"]') as HTMLElement;
+    expect(within(row).getByText(/Checking 2 websites for emails/)).toBeTruthy();
+    expect(within(row).getByText(/3 emails/)).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+    expect(refresh).toHaveBeenCalled();
+    cleanup();
+    refresh.mockReset();
+    renderList([run({ status: 'SUCCEEDED', cellsDone: 2, extractEmails: true, emailsFound: 5, emailsPending: 0 })]);
+    expect(screen.queryByText(/Checking .* for emails/)).toBeNull();
     act(() => {
       vi.advanceTimersByTime(10_000);
     });

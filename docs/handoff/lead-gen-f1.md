@@ -88,11 +88,12 @@ Refresh details, Google Maps attribution (LIVE) or Simulated chip (DEMO), config
 ## For the integrator (requests; not edited here, outside F1's paths)
 
 1. `tests/components/integrations/source-actions.test.tsx:99` lists the workspace sections
-   verbatim and now fails (it lacks "Lead finder"). Update it with the merged list when reordering
-   `WORKSPACE_SECTIONS` (Lead finder first for the story; F1's entry sits in its anchor block).
-2. `src/server/services/admin/lead-erase.ts` `FINDER_RESULT_BLANK`: add `contentPurgedAt: null`.
-   Then a place erased after its 24-hour purge is also recognised as erased and never refreshed
-   (ADR-128; today only places erased before the purge are). No schema change needed.
+   verbatim; it now ends with "Lead finder" (where F1's entry sits in its anchor block). Update it
+   with the merged list when moving Lead finder to the front of `WORKSPACE_SECTIONS` (the story
+   order), and expect the other slices to touch the same line.
+2. Done in the F1 review (one line, outside F1's paths): `src/server/services/admin/lead-erase.ts`
+   `FINDER_RESULT_BLANK` now also clears `contentPurgedAt`, so a place erased after its 24-hour
+   purge is recognised as erased and never refreshed (ADR-128). Keep it when merging.
 3. Wire `ConfirmContactButton` into both lead pages (it needs `placesContentExpiresAt`,
    `contactConfirmedAt`, `contactConfirmedVia` in the lead read models), and show
    `PlacesAttribution` (LIVE) next to lead fields that came from Places (ADR-118 (b)).
@@ -109,8 +110,21 @@ Refresh details, Google Maps attribution (LIVE) or Simulated chip (DEMO), config
    (30 days unless confirmed).
 6. Activity icons: `finder.*` has no family in `FAMILIES`, so it falls back to the History icon.
 
+## Added in the F1 review
+
+- robots.txt answers follow RFC 9309: 4xx or a non-text file means no rules, 5xx or 429 means
+  "unreachable" (site BLOCKED, nothing else requested), no answer means FAILED.
+- Refresh replaces the whole copy (attributions Google no longer sends are cleared).
+- A repeated start request key with another search is a 409, not the first run handed back.
+- `FinderRunDto.emailsPending` (websites still waiting for their email check): the runs list keeps
+  polling a finished run until it is 0, because the last pages' email jobs finish after the search.
+- Filter links use `aria-current` instead of `aria-pressed` (not allowed on links).
+
 ## Open questions
 
+- The email crawler's User-Agent is `AuraLeadBot/1.0 (+<app origin>/docs/bot)`, the convention the website
+  enrichment already uses, but no `/docs/bot` page exists yet (F6 docs could add one that says what the bot
+  reads and how to opt out through robots.txt).
 - Lead CSV/XLSX exports (F2) still write every lead column; for an unconfirmed Places lead the
   review suggested exporting the place ID and link instead of the Places-sourced fields within the
   30 days. Not F1's file.
@@ -124,8 +138,10 @@ Refresh details, Google Maps attribution (LIVE) or Simulated chip (DEMO), config
 Nothing from the F1 P0/P1 list. Not built: a runs-history page beyond the latest 10 runs,
 pagination of more than 200 selected results in one import (the grid selects per page of 50).
 
-## Gate (last run on this branch)
+## Gate (last run on this branch, after the F1 review)
 
-`npm run typecheck` exit 0; `npx eslint <F1 paths> <shared files>` clean;
+`npm run typecheck` exit 0; `npx eslint` on the F1 paths, the shared files and `lead-erase.ts` clean;
 `npx vitest run --maxWorkers=2 tests/unit/arch tests/unit/lib/domain-enums.test.ts tests/unit/integrations tests/unit/docs tests/integration/authz/tenant-matrix.test.ts tests/unit/finder tests/integration/finder tests/components/finder`
-26 files, 732 tests passed.
+plus `tests/components/integrations`, `tests/integration/integrations`, `tests/integration/ops/lead-erase.test.ts`,
+`tests/unit/lib/lead-gen.test.ts`, `tests/integration/messaging`, `tests/unit/messaging`, `tests/integration/jobs`,
+`tests/unit/jobs`: 69 files, 1176 tests passed.

@@ -58,6 +58,11 @@ export type FinderRunDto = {
   cellsDone: number;
   resultsFound: number;
   emailsFound: number;
+  /**
+   * Websites still waiting for their email check. The search itself can be finished while the last
+   * pages' checks are still queued, so the page keeps reading while this is above zero.
+   */
+  emailsPending: number;
   simulated: boolean;
   errorCode: string | null;
   createdAt: string;
@@ -119,7 +124,7 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
-export function runDto(row: LeadFinderRun, viewerId: string | null): FinderRunDto {
+export function runDto(row: LeadFinderRun, viewerId: string | null, emailsPending = 0): FinderRunDto {
   return {
     id: row.id,
     status: row.status,
@@ -132,6 +137,7 @@ export function runDto(row: LeadFinderRun, viewerId: string | null): FinderRunDt
     cellsDone: row.cellsDone,
     resultsFound: row.resultsFound,
     emailsFound: row.emailsFound,
+    emailsPending: row.extractEmails ? emailsPending : 0,
     simulated: row.simulated,
     errorCode: row.errorCode,
     createdAt: row.createdAt.toISOString(),
@@ -233,16 +239,26 @@ export type StartFinderRunDeps = PlacesDeps & {
   rateLimit?: () => void;
 };
 
+/**
+ * A repeated request key hands the first run back, but only to the same person and for the same
+ * search: another person, or other terms, are a conflict (never the first run under a new name).
+ */
+function replayOf(existing: LeadFinderRun, input: StartFinderRunInput, userId: string): { run: FinderRunDto; created: false } {
+  const sameSearch =
+    JSON.stringify([stringList(existing.keywords), stringList(existing.locations), existing.maxPerQuery, existing.extractEmails, stringList(existing.emailBlacklist)]) ===
+    JSON.stringify([input.keywords, input.locations, input.maxPerQuery, input.extractEmails, input.emailBlacklist]);
+  if (existing.requestedBy !== userId) throw new IdempotencyConflictError({ message: 'finder request key used by another person' });
+  if (!sameSearch) throw new IdempotencyConflictError({ safeDetails: { requestKey: input.requestKey }, userMessage: 'This search request was already used for a different search. Start the search again.' });
+  return { run: runDto(existing, userId), created: false };
+}
+
 export async function startFinderRun(ctx: AppCtx, input: StartFinderRunInput, deps: StartFinderRunDeps): Promise<{ run: FinderRunDto; created: boolean }> {
   requireCapability(ctx, 'finder.run');
   const workspaceId = requireWorkspace(ctx);
   const actor = requireActor(ctx);
 
   const existing = await ctx.db.leadFinderRun.findFirst({ where: { requestKey: input.requestKey } });
-  if (existing) {
-    if (existing.requestedBy !== actor.userId) throw new IdempotencyConflictError({ message: 'finder request key used by another person' });
-    return { run: runDto(existing, actor.userId), created: false };
-  }
+  if (existing) return replayOf(existing, input, actor.userId);
   deps.rateLimit?.();
 
   // LIVE: a search needs the workspace's own usable key (decrypted outside any transaction).
@@ -256,7 +272,7 @@ export async function startFinderRun(ctx: AppCtx, input: StartFinderRunInput, de
   const cellsTotal = input.keywords.length * input.locations.length;
   return withTx(ctx.db, async (tx) => {
     const again = await tx.leadFinderRun.findFirst({ where: { requestKey: input.requestKey } });
-    if (again) return { run: runDto(again, actor.userId), created: false };
+    if (again) return replayOf(again, input, actor.userId);
     const active = await tx.leadFinderRun.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } });
     if (active >= FINDER_ACTIVE_RUN_CAP) throw new FinderRunLimitError({ safeDetails: { limit: FINDER_ACTIVE_RUN_CAP } });
     const row = await tx.leadFinderRun.create({
@@ -321,7 +337,10 @@ export async function listFinderRuns(ctx: AppCtx): Promise<FinderRunDto[]> {
   requireCapability(ctx, 'leads.read');
   const viewer = ctx.actor?.userId ?? null;
   const rows = await ctx.db.leadFinderRun.findMany({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: LIST_LIMIT });
-  return rows.map((r) => runDto(r, viewer));
+  const withEmails = rows.filter((r) => r.extractEmails).map((r) => r.id);
+  const pending = withEmails.length === 0 ? [] : await ctx.db.leadFinderResult.groupBy({ by: ['runId'], where: { runId: { in: withEmails }, emailStatus: 'PENDING' }, _count: { _all: true } });
+  const pendingOf = new Map(pending.map((p) => [p.runId, p._count._all]));
+  return rows.map((r) => runDto(r, viewer, pendingOf.get(r.id) ?? 0));
 }
 
 function filterWhere(runId: string, filters: FinderResultFilters): Prisma.LeadFinderResultWhereInput {
@@ -344,12 +363,13 @@ export async function getFinderRunView(ctx: AppCtx, runId: string, filters: Find
   const run = await loadFinderRun(ctx, runId);
   const now = ctx.clock.now();
   const where = filterWhere(run.id, filters);
-  const [total, all, noWebsite, hasPhone, notImported] = await Promise.all([
+  const [total, all, noWebsite, hasPhone, notImported, emailsPending] = await Promise.all([
     ctx.db.leadFinderResult.count({ where }),
     ctx.db.leadFinderResult.count({ where: { runId: run.id } }),
     ctx.db.leadFinderResult.count({ where: { runId: run.id, websiteListed: false } }),
     ctx.db.leadFinderResult.count({ where: { runId: run.id, hasPhone: true } }),
     ctx.db.leadFinderResult.count({ where: { runId: run.id, importedLeadId: null } }),
+    ctx.db.leadFinderResult.count({ where: { runId: run.id, emailStatus: 'PENDING' } }),
   ]);
   const pageCount = Math.max(1, Math.ceil(total / FINDER_LIMITS.pageSize));
   const current = Math.min(Math.max(1, page), pageCount);
@@ -364,7 +384,7 @@ export async function getFinderRunView(ctx: AppCtx, runId: string, filters: Find
     attributions.push(a);
   }
   return {
-    run: runDto(run, ctx.actor?.userId ?? null),
+    run: runDto(run, ctx.actor?.userId ?? null, emailsPending),
     results,
     filters,
     page: current,

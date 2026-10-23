@@ -105,7 +105,7 @@ describe('DEMO routes and page', () => {
     expect(words).toContain('Import selected');
     expect(html).toContain('data-places-attribution="simulated"');
     expect(words).not.toContain('Results from Google Maps');
-    expect(html).toContain('aria-pressed="true" data-filter="noWebsite"');
+    expect(html).toContain('aria-current="true" data-filter="noWebsite"');
   });
 
   it('the finderRun limit answers 429 with Retry-After after 10 starts in an hour', async () => {

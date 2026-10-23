@@ -64,6 +64,15 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+/**
+ * Whether a listing carries any Places content besides its ID. A content-less, never-purged row is
+ * how an erased place is recognised (runs.ts `erasedResult`), so such a listing is neither stored
+ * nor accepted as a refresh: it has nothing to show or import anyway.
+ */
+export function placeHasContent(p: PlaceRecord): boolean {
+  return [p.name, p.category, p.phone, p.website, p.rating, p.reviewCount, p.address, p.city, p.state, p.pincode].some((v) => v !== null);
+}
+
 /** The keyword and location of a cell (keywords outer, locations inner), or null past the end. */
 export function cellTerms(run: Pick<LeadFinderRun, 'keywords' | 'locations'>, cell: number): { keyword: string; location: string } | null {
   const keywords = stringList(run.keywords);
@@ -126,7 +135,7 @@ export async function applySearchPage(
   const contentExpiresAt = new Date(now.getTime() + FINDER_CONTENT_TTL_MS);
 
   const unique = new Map<string, PlaceRecord>();
-  for (const p of input.places) if (!unique.has(p.placeId)) unique.set(p.placeId, p);
+  for (const p of input.places) if (!unique.has(p.placeId) && placeHasContent(p)) unique.set(p.placeId, p);
   const known = unique.size === 0 ? [] : await tx.leadFinderResult.findMany({ where: { workspaceId: ctx.workspaceId, runId: run.id, placeId: { in: [...unique.keys()] } }, select: { placeId: true } });
   for (const k of known) unique.delete(k.placeId);
 

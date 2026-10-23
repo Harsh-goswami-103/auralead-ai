@@ -37,6 +37,24 @@ function pathOf(url: URL): string {
   return `${url.pathname}${url.search}`;
 }
 
+/**
+ * How a site's robots.txt answered (RFC 9309, 2.3.1):
+ *  - `rules`: it was read, or the site has none (404 and other 4xx, or a file that is not text);
+ *  - `unreachable`: a server error or throttling (5xx, 429): the crawler assumes everything is
+ *    disallowed, so the site is not read (BLOCKED);
+ *  - `failed`: no answer at all (DNS, connect, timeout, a blocked destination): the site cannot be
+ *    read (FAILED), and nothing else is requested from it.
+ */
+type RobotsAnswer = { kind: 'rules'; rules: ReturnType<typeof robotsRules> } | { kind: 'unreachable' } | { kind: 'failed' };
+
+function robotsFailure(error: unknown): RobotsAnswer {
+  const e = error as { code?: unknown; safeDetails?: { httpStatus?: unknown } } | null;
+  const status = typeof e?.safeDetails?.httpStatus === 'number' ? e.safeDetails.httpStatus : null;
+  if (status !== null) return status >= 500 || status === 429 ? { kind: 'unreachable' } : { kind: 'rules', rules: [] };
+  if (e?.code === 'ENRICHMENT_UNSUPPORTED_CONTENT_TYPE') return { kind: 'rules', rules: [] };
+  return { kind: 'failed' };
+}
+
 export async function crawlSiteEmails(website: string, blacklist: readonly string[], fetchPage: PageFetcher, signal?: AbortSignal): Promise<SiteEmailOutcome> {
   let start: URL;
   try {
@@ -46,23 +64,25 @@ export async function crawlSiteEmails(website: string, blacklist: readonly strin
   }
   if (start.protocol !== 'http:' && start.protocol !== 'https:') return { status: 'FAILED', emails: [], pagesRead: 0 };
 
-  const rulesByOrigin = new Map<string, ReturnType<typeof robotsRules>>();
-  const rulesFor = async (url: URL) => {
+  const rulesByOrigin = new Map<string, RobotsAnswer>();
+  const rulesFor = async (url: URL): Promise<RobotsAnswer> => {
     const cached = rulesByOrigin.get(url.origin);
     if (cached) return cached;
-    let rules: ReturnType<typeof robotsRules> = [];
+    let answer: RobotsAnswer;
     try {
       const res = await fetchPage(`${url.origin}/robots.txt`, signal);
-      rules = robotsRules(res.body);
-    } catch {
-      // No robots.txt (404, not text) or none reachable: no rules. The page fetch decides the rest.
-      rules = [];
+      answer = { kind: 'rules', rules: robotsRules(res.body) };
+    } catch (error) {
+      answer = robotsFailure(error);
     }
-    rulesByOrigin.set(url.origin, rules);
-    return rules;
+    rulesByOrigin.set(url.origin, answer);
+    return answer;
   };
 
-  if (!robotsAllows(await rulesFor(start), pathOf(start))) return { status: 'BLOCKED', emails: [], pagesRead: 0 };
+  const startRules = await rulesFor(start);
+  if (startRules.kind === 'unreachable') return { status: 'BLOCKED', emails: [], pagesRead: 0 };
+  if (startRules.kind === 'failed') return { status: 'FAILED', emails: [], pagesRead: 0 };
+  if (!robotsAllows(startRules.rules, pathOf(start))) return { status: 'BLOCKED', emails: [], pagesRead: 0 };
   let home: SafeFetchResult;
   try {
     home = await fetchPage(start.toString(), signal);
@@ -75,7 +95,8 @@ export async function crawlSiteEmails(website: string, blacklist: readonly strin
   for (const page of contactPageUrls(home.body, home.finalUrl, 10)) {
     if (contactPages >= MAX_CONTACT_PAGES) break;
     const url = new URL(page);
-    if (!robotsAllows(await rulesFor(url), pathOf(url))) continue;
+    const rules = await rulesFor(url);
+    if (rules.kind !== 'rules' || !robotsAllows(rules.rules, pathOf(url))) continue;
     contactPages += 1;
     try {
       const res = await fetchPage(page, signal);

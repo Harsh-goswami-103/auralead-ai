@@ -162,6 +162,40 @@ describe('LIVE runs', () => {
     expect(await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: royal.id } })).toMatchObject({ name: 'Fixture Royal Dental Clinic', ratingX10: 42, reviewCount: 41, contentPurgedAt: null });
   });
 
+  it('a listing that carries no content at all (only an ID) is not stored, and is not a refresh either: it would read as an erased place', async () => {
+    h.graph.on('POST', SEARCH_PATH, { status: 200, body: { places: [{ id: 'ChIJBareIdOnlyNoContent01' }, { id: 'ChIJHasNameOnlyListing02', displayName: { text: 'Name Only Dental' } }] } });
+    const { run } = await startFinderRun(await h.owner(), body(), h.deps());
+    await drain(h.worker);
+    const rows = await h.db.leadFinderResult.findMany({ where: { runId: run.id } });
+    expect(rows.map((r) => r.placeId)).toEqual(['ChIJHasNameOnlyListing02']);
+    expect(await h.db.leadFinderRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: 'SUCCEEDED', resultsFound: 1 });
+
+    // Refresh: an answer without any content leaves the expired copy as it was and counts as failed.
+    h.clock.set(new Date(rows[0]!.contentExpiresAt!.getTime() + 60_000).toISOString());
+    h.graph.reset();
+    h.graph.on('GET', DETAILS_PATH, { status: 200, body: { id: 'ChIJHasNameOnlyListing02' } });
+    const r = await refreshFinderResults(await h.owner(), { runId: run.id, resultIds: [rows[0]!.id] }, h.deps());
+    expect(r).toMatchObject({ refreshed: 0, failed: 1 });
+    const view = await getFinderRunView(await h.owner(), run.id, { noWebsite: false, hasPhone: false, notImported: false });
+    expect(view.results[0]).toMatchObject({ erased: false, hasDetails: false });
+  });
+
+  it('Refresh replaces a copy that expired but was not purged yet completely: attributions Google no longer sends do not linger', async () => {
+    h.graph.on('POST', SEARCH_PATH, placesAnswer('response.search-page-1.json'));
+    const { run } = await startFinderRun(await h.owner(), body(), h.deps());
+    await drain(h.worker);
+    const royal = await h.db.leadFinderResult.findFirstOrThrow({ where: { runId: run.id, placeId: 'ChIJF1nderFixtureRoyalDental02' } });
+    expect(royal.attributions).not.toBeNull();
+    // Past its 24 hours; the purge job (end of that hour) has not run, so the old content is still stored.
+    h.clock.set(new Date(royal.contentExpiresAt!.getTime() + 60_000).toISOString());
+    h.graph.reset();
+    h.graph.on('GET', DETAILS_PATH, { status: 200, body: { id: 'ChIJF1nderFixtureRoyalDental02', displayName: { text: 'Fixture Royal Dental Clinic' }, nationalPhoneNumber: '0731 400 2002' } });
+    const r = await refreshFinderResults(await h.owner(), { runId: run.id, resultIds: [royal.id] }, h.deps());
+    expect(r).toMatchObject({ refreshed: 1, failed: 0 });
+    const after = await h.db.leadFinderResult.findUniqueOrThrow({ where: { id: royal.id } });
+    expect(after).toMatchObject({ name: 'Fixture Royal Dental Clinic', ratingX10: null, reviewCount: null, attributions: null, contentPurgedAt: null });
+  });
+
   it('the connection test asks Google for place IDs only and verifies the integration', async () => {
     h.graph.on('POST', SEARCH_PATH, { status: 200, body: { places: [{ id: 'ChIJF1nderFixtureSmileDental01' }] } }, placesAnswer('error.400-api-key-invalid.json'));
     const testers = liveAdapters({ keyRing: KEY_RING, graphVersion: null, places: { http: h.graph.http } }).testers;

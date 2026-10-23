@@ -122,7 +122,7 @@ export function FinderResults(props: FinderResultsProps) {
               <Link
                 key={f.key}
                 href={finderHref(workspaceSlug, { ...q, [f.key]: !on, page: 1 })}
-                aria-pressed={on}
+                aria-current={on ? 'true' : undefined}
                 data-filter={f.key}
                 className={cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors duration-fast',
