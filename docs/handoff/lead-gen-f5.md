@@ -14,7 +14,9 @@ Spec: plan §5 "F5", ADR-124, ADR-125; the readings F5 settled are ADR-132 (appe
     `Lead.handedOverAt`; every open conversation `aiMode OFF` + `humanTakeover` under a `modeVersion`
     CAS (409 `MODE_VERSION_CONFLICT`), audited `conversation.handoff` per conversation; PENDING
     `OUTBOUND_MESSAGE` approvals of the lead INVALIDATED (`LEAD_HANDED_OVER`) and their DRAFT messages
-    NOT_SENT; the open pipeline execution stopped (first unfinished stage FAILED, reason `HANDED_OVER`);
+    NOT_SENT; the operator side's queued, not-yet-sent sends (initiator an EMPLOYEE or `system:*`)
+    cancelled (attempt CANCELLED `LEAD_HANDED_OVER`, job CANCELLED or asked to stop, message NOT_SENT;
+    the client's own queued sends and quotation sends stay; the count is `cancelledSends` in the audit); the open pipeline execution stopped (first unfinished stage FAILED, reason `HANDED_OVER`);
     the `LeadHandoff` row (`summaryStatus` PENDING, or NOT_CONFIGURED in LIVE without AI, decided
     before the tx by `selectWorkspaceAi`); `handoff.summary` enqueued for PENDING; PII-free
     `lead.handoff` audit (stages, ids, counts, summary status, `hasNote`, `requestKey`; never the note).
@@ -147,3 +149,7 @@ Nothing from P0. `leads/[leadId]/confirm-contact` is left to F1 (its P1 "Confirm
   60 files, 1021 tests passed, 0 failed, 0 skipped. Also `tests/integration/inbox tests/components/inbox
   tests/components/metrics tests/integration/shell tests/integration/bulk tests/integration/ops/lead-erase.test.ts`:
   12 files, 65 passed.
+
+Final run after the queued-sends cancellation and the DEMO tripwire test were added: `npm run typecheck`
+exit 0; eslint on every F5 and edited shared file, 0 problems; the same vitest set plus
+`tests/integration/dispatch tests/integration/messaging`: 92 files, 1173 tests passed, 0 failed, 0 skipped.

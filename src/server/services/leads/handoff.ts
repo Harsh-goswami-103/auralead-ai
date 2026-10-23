@@ -15,8 +15,10 @@
  *     version changed). The conversations are updated directly, not through takeOverConversation,
  *     because the handoff guard refuses an EMPLOYEE once `handedOverAt` is set.
  *  3. The lead's PENDING outbound-message approvals: INVALIDATED (`LEAD_HANDED_OVER`), and their
- *     DRAFT messages NOT_SENT, as a rejection would do. Quotation approvals stay: the client
- *     carries on with the quote flow.
+ *     DRAFT messages NOT_SENT, as a rejection would do. The operator side's queued sends that have
+ *     not gone out (an EMPLOYEE's or the automation's): attempts CANCELLED (`LEAD_HANDED_OVER`),
+ *     jobs cancelled, messages NOT_SENT. Quotation approvals and quotation sends stay, and so do
+ *     the client's own queued sends: the client carries on with the quote flow.
  *  4. The lead's open pipeline execution: its first unfinished stage is recorded FAILED with
  *     reason HANDED_OVER, which stops the executor (a FAILED stage ends the run; a job in flight
  *     settles with no effect).
@@ -53,6 +55,9 @@ export const HANDOFF_SUMMARY_PAYLOAD_VERSION = 1;
 export const HANDOFF_INVALIDATION_REASON = 'LEAD_HANDED_OVER';
 /** `PipelineStageRun.reasonCode` of the stage a handoff stops. */
 export const HANDOFF_PIPELINE_REASON = 'HANDED_OVER';
+/** `DispatchAttempt.reasonCode` of the operator side's queued sends a handoff cancels. */
+export const HANDOFF_CANCEL_REASON = 'LEAD_HANDED_OVER';
+const SYSTEM_INITIATOR = /^system:/;
 /** Handoffs the client's list returns at most. */
 export const HANDOFF_LIST_LIMIT = 100;
 
@@ -117,6 +122,35 @@ async function withdrawMessageApprovals(tx: ScopedTx, leadId: string, now: Date)
   const messageIds = pending.map((p) => p.messageId).filter((id): id is string => id !== null);
   if (messageIds.length > 0) await tx.message.updateMany({ where: { id: { in: messageIds }, status: 'DRAFT' }, data: { status: 'NOT_SENT' } });
   return result.count;
+}
+
+/**
+ * The operator side's sends to the lead that are queued but have not gone out (held by a pause,
+ * quiet hours, a cap or a busy worker): started by an EMPLOYEE (composer, approval send, bulk) or
+ * by the automation (`system:*`: AI replies, the pipeline). Each attempt is CANCELLED
+ * (`LEAD_HANDED_OVER`), its queued job cancelled (a claimed one is asked to stop and finds its
+ * attempt cancelled before any send), its message NOT_SENT. The client's own queued sends and
+ * quotation sends stay: the client carries on with the quote flow (ADR-132).
+ */
+async function cancelOperatorQueuedSends(tx: ScopedTx, leadId: string, now: Date): Promise<number> {
+  const queued = await tx.dispatchAttempt.findMany({
+    where: { state: 'QUEUED', quoteVersionId: null, message: { direction: 'OUT', conversation: { leadId } } },
+    select: { id: true, jobId: true, messageId: true, initiatedBy: true },
+  });
+  if (queued.length === 0) return 0;
+  const people = [...new Set(queued.map((a) => a.initiatedBy).filter((id) => !SYSTEM_INITIATOR.test(id)))];
+  const employees = people.length === 0 ? new Set<string>() : new Set((await tx.user.findMany({ where: { id: { in: people }, globalRole: 'EMPLOYEE' }, select: { id: true } })).map((u) => u.id));
+  const operatorSide = queued.filter((a) => SYSTEM_INITIATOR.test(a.initiatedBy) || employees.has(a.initiatedBy));
+  if (operatorSide.length === 0) return 0;
+  const cancelled = await tx.dispatchAttempt.updateMany({
+    where: { id: { in: operatorSide.map((a) => a.id) }, state: 'QUEUED' },
+    data: { state: 'CANCELLED', reasonCode: HANDOFF_CANCEL_REASON, updatedAt: now },
+  });
+  const jobIds = [...new Set(operatorSide.map((a) => a.jobId))];
+  await tx.job.updateMany({ where: { id: { in: jobIds }, status: 'QUEUED' }, data: { status: 'CANCELLED', finishedAt: now, updatedAt: now } });
+  await tx.job.updateMany({ where: { id: { in: jobIds }, status: 'RUNNING', cancelRequestedAt: null }, data: { cancelRequestedAt: now, updatedAt: now } });
+  await tx.message.updateMany({ where: { id: { in: operatorSide.map((a) => a.messageId) }, status: 'PENDING' }, data: { status: 'NOT_SENT' } });
+  return cancelled.count;
 }
 
 /** Stops the lead's open pipeline execution at its first unfinished stage. Null when there is none. */
@@ -188,6 +222,7 @@ export async function handOverLead(ctx: AppCtx, input: HandOverInput, deps: AiDe
 
     const conversationIds = await takeOverConversations(tx, ctx, lead.id, lead.simulated);
     const invalidatedApprovals = await withdrawMessageApprovals(tx, lead.id, now);
+    const cancelledSends = await cancelOperatorQueuedSends(tx, lead.id, now);
     const halted = await haltOpenExecution(tx, workspaceId, lead.id, now);
     const handoff = await tx.leadHandoff.create({
       data: { workspaceId, leadId: lead.id, fromUserId: actorId, note, summaryStatus, status: 'HANDED_OVER', createdAt: now },
@@ -220,6 +255,7 @@ export async function handOverLead(ctx: AppCtx, input: HandOverInput, deps: AiDe
         conversationIds,
         conversations: conversationIds.length,
         invalidatedApprovals,
+        cancelledSends,
         pipelineHalted: halted === null ? null : { executionId: halted.executionId, stage: halted.stage },
         summaryStatus,
         summaryJobId,

@@ -64,6 +64,7 @@ export async function handoffFootprint(h: InboundHarness, leadId: string) {
     conversations,
     approvals: await h.db.approval.findMany({ where: { message: { conversationId: { in: conversationIds } } }, orderBy: { id: 'asc' }, select: { id: true, status: true } }),
     messages: await h.db.message.findMany({ where: { conversationId: { in: conversationIds } }, orderBy: { id: 'asc' }, select: { id: true, status: true } }),
+    attempts: await h.db.dispatchAttempt.findMany({ where: { message: { conversationId: { in: conversationIds } } }, orderBy: { id: 'asc' }, select: { id: true, state: true, reasonCode: true, job: { select: { status: true } } } }),
     stageRuns: await h.db.pipelineStageRun.findMany({ where: { execution: { leadId } }, orderBy: { id: 'asc' }, select: { id: true, stage: true, status: true, reasonCode: true } }),
     audits: await h.db.auditEvent.count({ where: { OR: [{ targetId: leadId }, { targetId: { in: conversationIds } }] } }),
     jobs: await h.db.job.count({ where: { type: 'handoff.summary' } }),

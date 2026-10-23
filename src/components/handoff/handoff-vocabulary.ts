@@ -35,6 +35,7 @@ export function handoffEffects(input: { salesStage: string; summaryAvailable: bo
     input.salesStage === 'CONVERTED' ? 'The lead stays in Converted.' : 'The lead moves to Converted.',
     'AI replies stop: every open conversation of this lead is set to AI off and marked as handled by a person.',
     'Message drafts still waiting for approval are withdrawn.',
+    'Messages queued by you or the automation that have not gone out yet are cancelled.',
     'The automated pipeline stops for this lead.',
     input.summaryAvailable
       ? 'A short summary of the conversation is written for the client, next to your note.'

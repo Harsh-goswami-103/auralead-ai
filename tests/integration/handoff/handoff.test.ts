@@ -14,12 +14,14 @@ import { previewBulkAction } from '@/server/services/bulk/bulk';
 import { acknowledgeHandoff, handOverLead, HANDOFF_SUMMARY_JOB, listClientHandoffs, loadLeadHandoff } from '@/server/services/leads/handoff';
 import { leadFilterWhere } from '@/server/services/leads/list';
 import { loadClientCommandCenter } from '@/server/services/metrics/command-center';
+import { resumeConversationAi, setConversationAiMode } from '@/server/services/messaging/conversations';
 import { createMessageDraft } from '@/server/services/messaging/dispatch';
 import { sendComposerMessage } from '@/server/services/messaging/inbox';
+import { createQuote } from '@/server/services/quotes/versioning';
 import { createLead, grantConsent } from '../dispatch/support';
 import { leadWithConversation } from '../messaging/conversation-support';
 import { createInboundHarness, PEPPER, WS_A, type InboundHarness } from '../messaging/inbound-support';
-import { userCtx } from '../quotes/support';
+import { SERVICE, userCtx } from '../quotes/support';
 import { DEMO_AI, drain, EMPLOYEE_ID, handoffFootprint, handoffWorker, operatorWithHandoff, requestKey } from './support';
 
 let h: InboundHarness;
@@ -53,6 +55,59 @@ async function runningExecution(leadId: string) {
     await h.db.pipelineStageRun.create({ data: { workspaceId: WS_A, executionId: execution.id, stage, status, startedAt: h.clock.now() } });
   }
   return execution;
+}
+
+/**
+ * A WhatsApp send queued on the conversation that has not gone out (message PENDING, attempt and
+ * dispatch job QUEUED, due in an hour), as the dispatch path leaves a deferred send.
+ */
+async function queuedSend(conversationId: string, opts: { initiatedBy: string; sendIntent: 'AUTOMATED' | 'MANUAL_SINGLE'; quoteVersionId?: string; tag: string }) {
+  const now = h.clock.now();
+  const message = await h.db.message.create({
+    data: {
+      workspaceId: WS_A,
+      conversationId,
+      channel: 'WHATSAPP',
+      direction: 'OUT',
+      kind: opts.quoteVersionId ? 'DOCUMENT' : 'TEXT',
+      body: opts.quoteVersionId ? null : 'Following up on your enquiry.',
+      quoteVersionId: opts.quoteVersionId ?? null,
+      status: 'PENDING',
+      statusRank: 0,
+      simulated: true,
+      sendIntent: opts.sendIntent,
+      initiatedBy: opts.initiatedBy,
+    },
+  });
+  const job = await h.db.job.create({
+    data: {
+      workspaceId: WS_A,
+      type: 'dispatch.whatsapp',
+      payload: { messageId: message.id },
+      status: 'QUEUED',
+      runAt: new Date(now.getTime() + 60 * 60_000),
+      maxAttempts: 5,
+      idempotencyKey: `handoff-queued:${opts.tag}`,
+      correlationId: 'req_handoff_queued',
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  const attempt = await h.db.dispatchAttempt.create({
+    data: {
+      workspaceId: WS_A,
+      messageId: message.id,
+      quoteVersionId: opts.quoteVersionId ?? null,
+      channel: 'WHATSAPP',
+      attemptNo: 1,
+      state: 'QUEUED',
+      sendIntent: opts.sendIntent,
+      initiatedBy: opts.initiatedBy,
+      idempotencyKey: `handoff-queued-attempt:${opts.tag}`,
+      jobId: job.id,
+    },
+  });
+  return { messageId: message.id, attemptId: attempt.id, jobId: job.id };
 }
 
 /** A lead with a WhatsApp thread (DRAFT mode), an AUTO email thread and a pending message draft. */
@@ -128,9 +183,35 @@ describe('handOverLead', () => {
     expect(audit.summary).toMatchObject({ from: 'CONVERTED', to: 'CONVERTED', conversations: 0, invalidatedApprovals: pendingBefore, pipelineHalted: null, hasNote: false });
   });
 
+  it("cancels the operator's and the automation's queued sends that have not gone out; the client's own queued send and a quotation send stay", async () => {
+    const { lead, conversation } = await leadWithConversation(h, 'Please message me tomorrow morning');
+    // Queued, not sent yet (a pause, quiet hours or a busy worker can hold a send for hours).
+    const operatorSend = await sendComposerMessage(employee, { conversationId: conversation.id, requestKey: requestKey('composer'), kind: 'TEXT', body: 'We will send the designs tomorrow.' }, DEPS);
+    const clientSend = await sendComposerMessage(owner, { conversationId: conversation.id, requestKey: requestKey('composer'), kind: 'TEXT', body: 'Hi, this is the clinic team.' }, DEPS);
+    const automated = await queuedSend(conversation.id, { initiatedBy: 'system:pipeline.advance', sendIntent: 'AUTOMATED', tag: `auto-${lead.id}` });
+    const { version } = await createQuote(owner, { leadId: lead.id, items: [{ serviceId: SERVICE.CONSULT, qty: 1 }], discount: { kind: 'NONE', value: 0n }, scopeText: 'Clinic website', timelineText: 'Two weeks' });
+    const quoteSend = await queuedSend(conversation.id, { initiatedBy: EMPLOYEE_ID, sendIntent: 'MANUAL_SINGLE', quoteVersionId: version.id, tag: `quote-${lead.id}` });
+
+    const result = await handOverLead(employee, { leadId: lead.id, expectedStageVersion: await stageVersion(lead.id), requestKey: requestKey() }, DEMO_AI);
+
+    for (const send of [operatorSend, automated]) {
+      expect(await h.db.dispatchAttempt.findUniqueOrThrow({ where: { id: send.attemptId } })).toMatchObject({ state: 'CANCELLED', reasonCode: 'LEAD_HANDED_OVER' });
+      expect(await h.db.job.findUniqueOrThrow({ where: { id: send.jobId } })).toMatchObject({ status: 'CANCELLED' });
+      expect(await h.db.message.findUniqueOrThrow({ where: { id: send.messageId } })).toMatchObject({ status: 'NOT_SENT' });
+    }
+    for (const send of [clientSend, quoteSend]) {
+      expect(await h.db.dispatchAttempt.findUniqueOrThrow({ where: { id: send.attemptId } })).toMatchObject({ state: 'QUEUED' });
+      expect(await h.db.job.findUniqueOrThrow({ where: { id: send.jobId } })).toMatchObject({ status: 'QUEUED' });
+      expect(await h.db.message.findUniqueOrThrow({ where: { id: send.messageId } })).toMatchObject({ status: 'PENDING' });
+    }
+    const audit = await h.db.auditEvent.findFirstOrThrow({ where: { action: 'lead.handoff', targetId: lead.id } });
+    expect(audit.summary).toMatchObject({ handoffId: result.handoffId, cancelledSends: 2 });
+  });
+
   it('a stale stage version is 409 STAGE_VERSION_CONFLICT and writes nothing', async () => {
-    const { lead } = await workedLead('Can you send prices?');
+    const { lead, whatsapp } = await workedLead('Can you send prices?');
     await runningExecution(lead.id);
+    await sendComposerMessage(employee, { conversationId: whatsapp.id, requestKey: requestKey('composer'), kind: 'TEXT', body: 'Our prices are on the way.' }, DEPS);
     const before = await handoffFootprint(h, lead.id);
     await expect(handOverLead(employee, { leadId: lead.id, note: NOTE, expectedStageVersion: before.lead.stageVersion + 1, requestKey: requestKey() }, DEMO_AI)).rejects.toMatchObject({
       status: 409,
@@ -140,8 +221,9 @@ describe('handOverLead', () => {
   });
 
   it('a conversation compare-and-set lost to a concurrent change rolls the whole handoff back', async () => {
-    const { lead } = await workedLead('Do you also do logos?');
+    const { lead, whatsapp } = await workedLead('Do you also do logos?');
     await runningExecution(lead.id);
+    await sendComposerMessage(employee, { conversationId: whatsapp.id, requestKey: requestKey('composer'), kind: 'TEXT', body: 'Yes, logos too.' }, DEPS);
     const before = await handoffFootprint(h, lead.id);
     // Another person changes a conversation's mode between the handoff's read and its write: the
     // conversation compare-and-set matches no row. Everything written before it (the lead's stage
@@ -203,7 +285,12 @@ describe('after the handoff', () => {
 
     const HANDED_OVER = { status: 409, code: 'HANDED_OVER' };
     await expect(sendComposerMessage(employee, { conversationId: conversation.id, requestKey: requestKey('composer'), kind: 'TEXT', body: 'Any update?' }, DEPS)).rejects.toMatchObject(HANDED_OVER);
+    await expect(createMessageDraft(employee, { leadId: lead.id, channel: 'WHATSAPP', kind: 'TEXT', body: 'Checking in.' }, DEPS)).rejects.toMatchObject(HANDED_OVER);
     await expect(sendFromQueue(employee, afterDraft.approvalId, {}, DEPS)).rejects.toMatchObject(HANDED_OVER);
+    // The handoff's AI off and takeover stand against the operator; only the client changes them.
+    await expect(resumeConversationAi(employee, { conversationId: conversation.id })).rejects.toMatchObject(HANDED_OVER);
+    await expect(setConversationAiMode(employee, { conversationId: conversation.id, aiMode: 'DRAFT' })).rejects.toMatchObject(HANDED_OVER);
+    expect(await h.db.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({ aiMode: 'OFF', humanTakeover: true });
     const action = { action: 'SEND_EMAIL' as const, subject: 'Website packages', body: 'Fast websites for local businesses.' };
     const preview = await previewBulkAction(employee, { leadIds: [lead.id], ...action }, DEPS);
     expect(preview).toMatchObject({ eligible: 0, failed: 1 });
