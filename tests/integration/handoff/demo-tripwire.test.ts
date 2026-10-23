@@ -3,10 +3,7 @@
 // host name, call no fetch and log no outbound attempt. The summary is the labelled local
 // generator even when the workspace holds an AI integration and the job's dependencies carry a key
 // ring and a transport: DEMO never reads them, so nothing could reach a provider.
-import dns from 'node:dns';
-import net from 'node:net';
-import tls from 'node:tls';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { outboundAttempts, resetOutboundAttempts } from '@/server/adapters/http/outbound';
 import type { AppCtx } from '@/server/auth/context';
 import type { AiDeps } from '@/server/services/ai/run-task';
@@ -16,6 +13,7 @@ import { KEY_RING } from '../ai/support';
 import { leadWithConversation } from '../messaging/conversation-support';
 import { createInboundHarness, WS_A, type InboundHarness } from '../messaging/inbound-support';
 import { drain, handoffWorker, operatorWithHandoff, requestKey } from './support';
+import { armOutboundTripwire, tripwireArmed } from '../../support/tripwire';
 
 let h: InboundHarness;
 let employee: AppCtx;
@@ -37,24 +35,11 @@ beforeAll(async () => {
   // An AI integration with a stored key and a WhatsApp display number: DEMO must ignore the first.
   await h.db.integration.create({ data: { workspaceId: WS_A, kind: 'AI_ANTHROPIC', status: 'CONNECTED', config: { modelId: 'claude-sonnet-5-5' }, secrets: { apiKey: 'v1.k1.not-a-real-envelope' } } });
   await h.db.integration.update({ where: { id: h.integrationId }, data: { config: { phoneNumberId: '109876543210987', displayPhoneNumber: '+919812300000' } } });
-  vi.spyOn(net.Socket.prototype, 'connect').mockImplementation(function (this: net.Socket) {
-    counters.connect += 1;
-    throw new Error('tripwire: socket connect attempted');
-  });
-  vi.spyOn(tls, 'connect').mockImplementation(() => {
-    counters.tls += 1;
-    throw new Error('tripwire: tls connect attempted');
-  });
-  vi.spyOn(dns, 'lookup').mockImplementation((() => {
-    counters.lookup += 1;
-    throw new Error('tripwire: dns lookup attempted');
-  }) as never);
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-    counters.fetch += 1;
-    throw new Error('tripwire: fetch attempted');
-  });
   resetOutboundAttempts();
 }, 120_000);
+
+// Armed before every test: restoreMocks (vitest config) restores spies before each test, so a spy set in beforeAll would be gone.
+beforeEach(() => armOutboundTripwire(counters));
 
 afterAll(async () => {
   vi.restoreAllMocks();
@@ -63,6 +48,7 @@ afterAll(async () => {
 
 describe('DEMO handoff and reach-out', () => {
   it('hand over, the summary job, the reach-out panel and click-to-chat make no outbound call', async () => {
+    expect(tripwireArmed(), 'the wire tripwire is armed for this test').toBe(true);
     const { lead } = await leadWithConversation(h, 'How much is a website and how long does it take?');
     const { stageVersion } = await h.db.lead.findUniqueOrThrow({ where: { id: lead.id } });
 

@@ -39,7 +39,7 @@ import { hmacSha256, safeEqual } from '@/server/security/hmac';
 import { approveQuoteVersionApproval } from '@/server/services/approvals/quote-approvals';
 import { destinationKeyFor, messagePayloadHash, type PayloadReadDb } from '@/server/services/approvals/payload-hash';
 import { recordAudit } from '@/server/services/audit/record';
-import { assertNotHandedOver } from '@/server/services/leads/handoff-guard';
+import { assertNotHandedOver, newConversationMode } from '@/server/services/leads/handoff-guard';
 import { nextQuoteStatus } from '@/server/services/quotes/state-machine';
 import { effectiveQuoteStatus } from '@/server/services/quotes/versioning';
 import { projectSent, projectUnsent } from './delivery-state';
@@ -162,7 +162,7 @@ type MessageContent = {
 async function ensureConversation(tx: ScopedTx, ctx: AppCtx, leadId: string, channel: Channel, contactKey: string): Promise<{ id: string }> {
   const open = await tx.conversation.findFirst({ where: { leadId, channel, closedAt: null }, select: { id: true } });
   if (open) return open;
-  return tx.conversation.create({ data: { workspaceId: requireWorkspace(ctx), leadId, channel, contactKey, createdAt: ctx.clock.now() }, select: { id: true } });
+  return tx.conversation.create({ data: { workspaceId: requireWorkspace(ctx), leadId, channel, contactKey, createdAt: ctx.clock.now(), ...(await newConversationMode(tx, leadId)) }, select: { id: true } });
 }
 
 async function createOutboundMessage(

@@ -42,6 +42,7 @@ import { contactKey, normalizeContact } from '@/server/security/contact-key';
 import { hmacSha256 } from '@/server/security/hmac';
 import { encryptSecret, webhookPayloadAad, type KeyRing } from '@/server/security/secrets';
 import { recordAudit, type AuditCtx } from '@/server/services/audit/record';
+import { newConversationMode } from '@/server/services/leads/handoff-guard';
 import { ingestBatch } from '@/server/services/leads/ingest';
 import { createQuoteFromProposal } from '@/server/services/leads/console';
 import { canonicalJson, decryptProcessingPayload, PROCESSED_RETENTION_MS, schedulePurge, scopeKeyFor, sha256Hex, UNRESOLVED_RETENTION_MS } from '@/server/services/webhooks/events';
@@ -540,7 +541,7 @@ export async function processWhatsAppInbound(job: JobHandlerContext, deps: Inbou
     const key = contactKey(deps.contactKeyPepper, 'phone', phone);
     const conversation =
       (await tx.conversation.findFirst({ where: { leadId, channel: 'WHATSAPP', closedAt: null } })) ??
-      (await tx.conversation.create({ data: { workspaceId, leadId, channel: 'WHATSAPP', contactKey: key, createdAt: now } }));
+      (await tx.conversation.create({ data: { workspaceId, leadId, channel: 'WHATSAPP', contactKey: key, createdAt: now, ...(await newConversationMode(tx, leadId)) } }));
 
     const existing = await tx.message.findFirst({ where: { channel: 'WHATSAPP', providerMessageId: item.message.id }, select: { id: true } });
     const inbound =

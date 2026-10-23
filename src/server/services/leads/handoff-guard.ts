@@ -48,6 +48,18 @@ export async function handedOverLeadIds(db: GuardDb, leadIds: readonly string[])
 }
 
 /**
+ * The mode a conversation opened for this lead starts in. The handoff turns the AI off and takes
+ * every open thread over (ADR-124); a thread that opens afterwards (the customer writes first, or
+ * the client messages a lead that had no thread) starts the same way, so the thread never offers AI
+ * drafts for a lead the client has taken. Empty for a lead that was not handed over (the column
+ * defaults apply).
+ */
+export async function newConversationMode(db: GuardDb, leadId: string): Promise<{ aiMode?: 'OFF'; humanTakeover?: true }> {
+  const lead = await db.lead.findFirst({ where: { id: leadId }, select: { handedOverAt: true } });
+  return lead?.handedOverAt ? { aiMode: 'OFF', humanTakeover: true } : {};
+}
+
+/**
  * Throws `HandedOverError` (409 HANDED_OVER) when the lead was handed over and the acting person is
  * an EMPLOYEE. An unknown lead is left to the caller (its own lookup answers 404).
  */

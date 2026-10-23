@@ -7,10 +7,7 @@
  * thread ends Read, labelled Simulated; the scripted provider stand-in of the other chat tests is
  * never touched.
  */
-import dns from 'node:dns';
-import net from 'node:net';
-import tls from 'node:tls';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLogger } from '@/lib/logger';
 import { outboundAttempts, resetOutboundAttempts } from '@/server/adapters/http/outbound';
 import { demoOutboxDir, readDemoOutbox } from '@/server/adapters/whatsapp/demo';
@@ -27,6 +24,7 @@ import { createWorker } from '../../../worker/worker';
 import { createLead } from '../dispatch/support';
 import { customerSays, inboundMessage, repliesTo } from '../messaging/conversation-support';
 import { createInboundHarness, inbound, PEPPER, WS_A, type InboundHarness } from '../messaging/inbound-support';
+import { armOutboundTripwire, tripwireArmed } from '../../support/tripwire';
 
 const counters = { connect: 0, tls: 0, lookup: 0, fetch: 0 };
 let h: InboundHarness;
@@ -34,22 +32,6 @@ let drain: () => Promise<number>;
 
 beforeAll(async () => {
   h = await createInboundHarness('chat-tripwire');
-  vi.spyOn(net.Socket.prototype, 'connect').mockImplementation(function (this: net.Socket) {
-    counters.connect += 1;
-    throw new Error('tripwire: socket connect attempted');
-  });
-  vi.spyOn(tls, 'connect').mockImplementation(() => {
-    counters.tls += 1;
-    throw new Error('tripwire: tls connect attempted');
-  });
-  vi.spyOn(dns, 'lookup').mockImplementation((() => {
-    counters.lookup += 1;
-    throw new Error('tripwire: dns lookup attempted');
-  }) as never);
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-    counters.fetch += 1;
-    throw new Error('tripwire: fetch attempted');
-  });
   resetOutboundAttempts();
 
   // The production handlers and the production DEMO transport (no `whatsapp` double, no AI double):
@@ -79,6 +61,9 @@ beforeAll(async () => {
   };
 }, 120_000);
 
+// Armed before every test: restoreMocks (vitest config) restores spies before each test, so a spy set in beforeAll would be gone.
+beforeEach(() => armOutboundTripwire(counters));
+
 afterAll(async () => {
   vi.restoreAllMocks();
   await h?.destroy();
@@ -86,6 +71,7 @@ afterAll(async () => {
 
 describe('DEMO chat outbound tripwire', () => {
   it('a customer question, the AI reply and its delivered and read ticks open no socket and make no outbound attempt', async () => {
+    expect(tripwireArmed(), 'the wire tripwire is armed for this test').toBe(true);
     const owner = await h.owner();
     await setWorkspaceAutoSend(owner, { enabled: true });
     const lead = await createLead(h.db);

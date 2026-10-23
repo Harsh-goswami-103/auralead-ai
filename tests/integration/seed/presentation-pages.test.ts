@@ -7,12 +7,9 @@
  * with its authored templates and the approval queue. Checks stay at "renders the seeded facts",
  * so later slices can restyle these pages.
  */
-import dns from 'node:dns';
-import net from 'node:net';
-import tls from 'node:tls';
 import { createElement, type FC, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@/generated/prisma/client';
 import { FixedClock } from '@/lib/clock';
 import { CsrfProvider } from '@/components/patterns/csrf';
@@ -37,6 +34,7 @@ import { seedId } from '../../../prisma/seed/ids';
 import { HANDOFF_FIXTURE, PRESENTATION_SLUG, STORY_LEADS, presentationPlaces } from '../../../prisma/seed/fixtures/presentation';
 import { seedDemo } from '../../../prisma/seed/seed';
 import { createTestDb, type TestDb } from '../../support/db';
+import { armOutboundTripwire, newTripwireCounters, tripwireArmed } from '../../support/tripwire';
 import { testConfig, uninstallRuntime, useRuntime, type TestRuntime } from '../auth/support';
 
 const pageHeaders = vi.hoisted(() => ({ current: new Headers() }));
@@ -58,18 +56,20 @@ const nameOf = (place: string) => presentationPlaces().find((p) => p.key === pla
 let testDb: TestDb;
 let db: PrismaClient;
 let runtime: TestRuntime;
-// DEMO zero outbound (plan §5): the wire is watched from before the seed until the last page renders.
-let wire: { connect: { mock: { calls: unknown[] } }; tls: { mock: { calls: unknown[] } }; lookup: { mock: { calls: unknown[] } } };
+// DEMO zero outbound (plan §5): the wire is watched while the seed runs and while every page renders.
+const wire = newTripwireCounters();
 
 beforeAll(async () => {
   resetOutboundAttempts();
-  wire = { connect: vi.spyOn(net.Socket.prototype, 'connect'), tls: vi.spyOn(tls, 'connect'), lookup: vi.spyOn(dns, 'lookup') };
+  armOutboundTripwire(wire);
   testDb = await createTestDb({ label: 'seed-presentation-pages' });
   db = testDb.client();
   // The runtime's pepper keys the seeded consents and chats, as `npm run db:seed` does.
   await seedDemo(db, { config: CONFIG, now: T0 });
   runtime = useRuntime(db, CONFIG, new FixedClock(NOW));
 }, 120_000);
+// Armed again before every test: restoreMocks (vitest config) restores spies before each test, so the one set for the seed is gone.
+beforeEach(() => armOutboundTripwire(wire));
 afterAll(async () => {
   uninstallRuntime();
   await testDb?.destroy();
@@ -205,9 +205,8 @@ describe('the lead-gen suite in the pages', () => {
 
 describe('DEMO zero outbound', () => {
   it('seeding the pack and rendering both panels made no outbound attempt, socket or DNS lookup', () => {
+    expect(tripwireArmed(), 'the wire tripwire is armed for this test').toBe(true);
     expect(outboundAttempts()).toEqual([]);
-    expect(wire.connect.mock.calls).toHaveLength(0);
-    expect(wire.tls.mock.calls).toHaveLength(0);
-    expect(wire.lookup.mock.calls).toHaveLength(0);
+    expect(wire).toEqual({ connect: 0, tls: 0, lookup: 0, fetch: 0 });
   });
 });

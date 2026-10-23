@@ -6,10 +6,7 @@
  * outbound attempts, opens 0 sockets and resolves 0 host names. The email reaches the demo outbox as
  * a simulated send; the WhatsApp send to the Maps lead is skipped NO_WHATSAPP_OPT_IN (D4).
  */
-import dns from 'node:dns';
-import net from 'node:net';
-import tls from 'node:tls';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OutboundBlockedInDemoError } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { outboundAttempts, outboundRequest, resetOutboundAttempts } from '@/server/adapters/http/outbound';
@@ -23,6 +20,7 @@ import { createWorker } from '../../../worker/worker';
 import { approvedTemplate } from '../dispatch/support';
 import { userCtx } from '../quotes/support';
 import { createQuoteFromProposal, createSliceHarness, sessionFor, simulateGmaps, WS_A, WS_A_SLUG, type Auth, type SliceHarness } from '../slice/support';
+import { armOutboundTripwire, tripwireArmed } from '../../support/tripwire';
 
 let h: SliceHarness;
 let employee: Auth;
@@ -31,24 +29,11 @@ const counters = { connect: 0, tls: 0, lookup: 0, fetch: 0 };
 beforeAll(async () => {
   h = await createSliceHarness('outbound-tripwire');
   employee = await sessionFor(h, 'employee');
-  vi.spyOn(net.Socket.prototype, 'connect').mockImplementation(function (this: net.Socket) {
-    counters.connect += 1;
-    throw new Error('tripwire: socket connect attempted');
-  });
-  vi.spyOn(tls, 'connect').mockImplementation(() => {
-    counters.tls += 1;
-    throw new Error('tripwire: tls connect attempted');
-  });
-  vi.spyOn(dns, 'lookup').mockImplementation((() => {
-    counters.lookup += 1;
-    throw new Error('tripwire: dns lookup attempted');
-  }) as never);
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-    counters.fetch += 1;
-    throw new Error('tripwire: fetch attempted');
-  });
   resetOutboundAttempts();
 }, 120_000);
+
+// Armed before every test: restoreMocks (vitest config) restores spies before each test, so a spy set in beforeAll would be gone.
+beforeEach(() => armOutboundTripwire(counters));
 
 afterAll(async () => {
   vi.restoreAllMocks();
@@ -57,6 +42,7 @@ afterAll(async () => {
 
 describe('DEMO outbound tripwire', () => {
   it('blocks every host, including localhost, before any socket opens', async () => {
+    expect(tripwireArmed(), 'the wire tripwire is armed for this test').toBe(true);
     for (const url of ['https://graph.facebook.com/v23.0/123/messages', 'https://api.resend.com/emails', 'http://127.0.0.1:3000/x', 'http://localhost/x']) {
       await expect(outboundRequest('demo', url, { method: 'POST', body: '{}' }, h.clock.now())).rejects.toBeInstanceOf(OutboundBlockedInDemoError);
     }
