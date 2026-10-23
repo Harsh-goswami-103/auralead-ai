@@ -80,6 +80,21 @@ async function autoThread() {
   return { lead, conversationId: conversation.id, modeVersion: mode.modeVersion };
 }
 
+/**
+ * Runs due jobs one at a time, on `worker`, until the customer's message is recorded: that is
+ * `webhook.process`, whose transaction also queues `reply.auto`. Other due jobs (the DEMO
+ * delivered and read ticks of earlier sends, `wa.demoStatus`) may run first, so a single tick
+ * is not enough.
+ */
+async function processUntilRecorded(wamid: string, worker: { tick(): Promise<string> } = h.worker): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    const recorded = await h.db.message.findFirst({ where: { workspaceId: WS_A, channel: 'WHATSAPP', providerMessageId: wamid }, select: { id: true } });
+    if (recorded) return;
+    if ((await worker.tick()) !== 'ran') break;
+  }
+  expect(await h.db.message.count({ where: { workspaceId: WS_A, channel: 'WHATSAPP', providerMessageId: wamid } })).toBe(1);
+}
+
 async function onlyReply(wamid: string) {
   const replies = await repliesTo(h, (await inboundMessage(h, wamid)).id);
   expect(replies).toHaveLength(1);
@@ -257,7 +272,7 @@ describe('limits and re-checks', () => {
   it('a lead handed over after the message arrived gets no reply (re-checked by the job)', async () => {
     const { lead } = await autoThread();
     const wamid = await customerSays(h, lead, 'Do you do teeth whitening?');
-    expect(await h.worker.tick()).toBe('ran'); // webhook.process queues reply.auto
+    await processUntilRecorded(wamid); // webhook.process queues reply.auto
     await h.db.lead.update({ where: { id: lead.id }, data: { handedOverAt: h.clock.now() } });
     await h.drain();
     expect(port.calls).toHaveLength(0);
@@ -289,7 +304,7 @@ describe('limits and re-checks', () => {
     port.answer(async () => {
       newer = await customerSays(h, lead, 'Actually, what about aligners?');
       // Another worker records the newer message before this reply's final transaction.
-      expect(await secondWorker(h).tick()).toBe('ran');
+      await processUntilRecorded(newer, secondWorker(h));
       return reply('Teeth whitening takes one visit.');
     });
     const first = await customerSays(h, lead, 'Do you do teeth whitening?');
