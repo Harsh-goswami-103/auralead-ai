@@ -17,12 +17,14 @@ Column meanings:
 |---|---|---|---|---|
 | WhatsApp Cloud API (send, templates, media) | Yes | Yes | Yes | No |
 | WhatsApp quality rating and messaging limit | Yes | Yes | Yes | No |
+| WhatsApp template authoring (create, delete, document header sample; template studio, ADR-123) | Yes | Yes (documented-shape fixtures) | Yes | No |
 | WhatsApp webhooks (inbound, statuses) | Yes | Yes | Yes | No |
 | Meta Lead Ads webhook and lead fetch | Yes | Yes | Yes | No |
 | Meta Marketing API (metrics, pause/resume) | Yes | Yes | Yes | No |
 | Resend (email send, webhooks) | Yes (inbound email not supported, ADR-102) | Yes | Yes | No |
 | SMTP (nodemailer) | Yes (no inbound, no bounce tracking) | Yes (local fake server) | Yes | No |
 | Google Sheets and Apps Script | Yes | Yes | Yes | No |
+| Google Places API (New) (Lead Finder: Text Search, Place Details; ADR-118) | Yes | Yes (documented-shape fixtures, scripted transport) | Yes | No |
 | Google_Map_Extractor bridge (receiver, tokens, `extension-bridge/`) | Yes | Yes (contract and chaos tests, fake `chrome.*`) | Yes | No |
 | Anthropic (drafts) | Yes | Yes | Yes | No |
 | OpenAI (drafts) | Yes | Yes | Yes | No |
@@ -83,6 +85,28 @@ configured on the server (sends are skipped `NOT_CONFIGURED`, the connection tes
 | Graph throttling and permission codes on reads | Throttling 4, 17, 32, 613, 80007, 80008, 130429 or HTTP 429; permission 3, 10, 200, 294 or HTTP 403; token 190 or HTTP 401 | UNVERIFIED |
 | Scheduled checks | Hourly connection re-test and quality check, template sync every 6 hours, while the integration is CONNECTED or DEGRADED (time-bucket job keys) | Design choice |
 
+#### Template authoring (template studio, ADR-123 and ADR-131, checked 2026-10-23)
+
+Verification level: **fixture-tested**, not live-verified. The three write calls of the template studio (create, delete, and the
+resumable upload of a document-header sample) and the `rejected_reason` field of the template list are built from Meta's
+published references as known on 2026-10-23, which were **not read first-hand** (`developers.facebook.com` is not reachable
+from the build environment). `tests/fixtures/whatsapp/template-admin/SOURCES.json` marks every fixture `verified: false`. A
+scripted Graph transport exercises the adapter (`tests/integration/contract/template-admin.test.ts`,
+`tests/integration/templates/studio-live.test.ts`); no request has reached Meta.
+
+| Call | Where it is described | Level |
+|---|---|---|
+| Template create | Table above ("Template create") | Fixture-tested, UNVERIFIED live |
+| Template delete | Table above ("Template delete") | Fixture-tested, UNVERIFIED live |
+| Document header sample (resumable upload on the app, `appId`) | Table above ("Document header sample") | Fixture-tested, UNVERIFIED live |
+| `rejected_reason` in the template list | Table above ("Template list") | Fixture-tested, UNVERIFIED live |
+| Name-already-exists subcode (2388024) and the recategorized-answer shape | Fixtures `error.template-name-taken.json`, `response.template-create-recategorized.json` | UNVERIFIED |
+
+One live check with a real WhatsApp Business account and a Meta app settles all of them: submit a text template, submit one with
+a PDF header, read the verdict through the sync, delete the rejected one. Meta's own limits that the studio form enforces
+(`TEMPLATE_RULES_CHECKED_ON` in `src/lib/domain/template-authoring.ts`, 2026-10-23) belong to the same check. In DEMO the same
+port is played by `template-admin-demo.ts` with zero network and every result labelled simulated.
+
 ### AI providers (T32 connection tests, checked 2026-10-20)
 
 How the pages were read: **not first-hand** (the provider documentation hosts are not reachable from the build environment).
@@ -97,6 +121,45 @@ methods define the paths; response shapes in the fixtures follow the SDK types. 
 | Anthropic connection test | `GET /v1/models?limit=1` (key check), then `GET /v1/models/<modelId>` (the configured model, or the adapter default `claude-opus-5-5`); the key only in `x-api-key`; no retries | Fixture-tested, UNVERIFIED live |
 | OpenAI connection test | `GET /v1/models`; CONNECTED only when the configured model id is in the list (OpenAI has no default model here) | Fixture-tested, UNVERIFIED live |
 | Outcomes | 401/403 ERROR `PROVIDER_AUTH`; unknown model ERROR `AI_MODEL_NOT_FOUND`; 429, 5xx and timeouts leave the status unverified (or DEGRADED after CONNECTED); never CONNECTED without a real answer | Design choice |
+| Lead-gen tasks (2026-10-23) | `conversation_reply` (ADR-122), `template_copy` (ADR-123) and `handoff_summary` (ADR-124) ask for strict JSON through `runStructuredTask` with one repair attempt; the output policy runs on the text. The `template_copy` schema writes optional texts as `anyOf: [string, null]` | Fixture-tested with a scripted AI port and a mock Anthropic transport; the `anyOf` form is UNVERIFIED against the live API |
+
+### Google Places API (New) (Lead Finder, ADR-118, checked 2026-10-23)
+
+Verification level: **fixture-tested**, not live-verified. How the pages were read: **not first-hand**. The shapes come from
+Google's published references for `places:searchText`, `places.get` and the `google.rpc.Status` error model as they appeared in
+web-search results on 2026-10-23, not from reading the pages. `tests/fixtures/places/documented-shape/` holds ten
+documented-shape fixtures with fictitious businesses; `SOURCES.json` marks every one `verified: false`. A scripted transport
+exercises the adapter (`tests/integration/finder/google-places-contract.test.ts`, `tests/integration/finder/live-run.test.ts`); no request has reached Google. `PLACES_CHECKED_ON`
+in `src/server/adapters/places/google-places.ts` is the same date.
+
+Pages cited (not read first-hand):
+
+- Text Search (New): https://developers.google.com/maps/documentation/places/web-service/text-search
+- Place Details (New): https://developers.google.com/maps/documentation/places/web-service/place-details
+- Error model: https://cloud.google.com/apis/design/errors
+- Linked from the product, not re-read for this check: https://maps.google.com/help/terms_maps/ (Google Maps Additional Terms of
+  Service) and https://policies.google.com/privacy (Google Privacy Policy)
+
+| Behaviour | What the app does | Status |
+|---|---|---|
+| Text Search | `POST https://places.googleapis.com/v1/places:searchText`, JSON `{textQuery: "<keyword> in <location>", pageSize: 20, pageToken?, languageCode: "en", regionCode: "IN"}`; headers `X-Goog-Api-Key` and `X-Goog-FieldMask`. One HTTP call per job; up to 3 pages of 20 per keyword and location, the next page repeats the body with `pageToken`. A last page carries no `nextPageToken` | UNVERIFIED |
+| Field mask | `places.id`, `places.displayName`, `places.primaryTypeDisplayName`, `places.nationalPhoneNumber`, `places.internationalPhoneNumber`, `places.websiteUri`, `places.rating`, `places.userRatingCount`, `places.formattedAddress`, `places.addressComponents`, `places.googleMapsUri`, `places.attributions` and `nextPageToken`. Never reviews or photos; latitude and longitude are not requested; `googleMapsUri` is requested but never stored (a Maps link is rebuilt from the place ID). City comes from `locality`, state from `administrative_area_level_1`, PIN code from `postal_code` | UNVERIFIED (field names and `addressComponents` types) |
+| Billing of this mask | The mask includes phone, website, rating and review-count fields. Which Places pricing tier Google applies to such a request, and what a page costs, were not checked; the finder form counts requests, never money | NOT CHECKED |
+| Place Details (Refresh) | `GET https://places.googleapis.com/v1/places/<placeId>` with the same fields unprefixed in `X-Goog-FieldMask`, `languageCode=en`, `regionCode=IN`; at most 10 per request; needs `finder.run` | UNVERIFIED |
+| Connection test | One Text Search asking for `places.id` with page size 1, only when a person presses the button; a paid call, so `GOOGLE_PLACES` is not in the hourly integration checks | Design choice (ADR-118) |
+| Errors | 400 with ErrorInfo reason `API_KEY_INVALID`, or 401: the key is rejected and the run stops (`PLACES_AUTH`); other 400 `INVALID_ARGUMENT`: that search is skipped; 403 `PERMISSION_DENIED` (API not enabled, billing off, key restricted): the run stops (`PLACES_PERMISSION`); 404; 429 `RESOURCE_EXHAUSTED` with `Retry-After` (capped at one hour) and 5xx or no answer: retried with back-off up to 8 attempts, then that search is skipped. A run with a skipped search ends PARTIAL, or FAILED when it found nothing | UNVERIFIED (messages from community reports) |
+| Key handling | The key travels only in `X-Goog-Api-Key`, is stored as an encrypted `GOOGLE_PLACES` credential and is scrubbed from every text the client returns | Design |
+| What is kept | A 24-hour working copy of the content; place IDs, keyword, location, `websiteListed`, website emails and the import link outlive it; leads keep Places fields 30 days unless the contact is confirmed (ADR-118 (a) and (d)) | Design; a risk reduction, not a licence |
+| Attribution | LIVE shows "Google Maps", the returned attributions and the line "Results from Google Maps. Use is subject to the Google Maps Additional Terms of Service and the Google Privacy Policy." with links to both | Design; the exact attribution requirements were not re-read |
+| Excel export | LIVE writes place ID, a Maps link built from it, keyword, location, the workspace's own columns and website emails only | Design (ADR-118 (c)) |
+
+Terms: the Google Maps Platform terms that govern Places content (storage, caching, attribution, the permitted uses of exported
+data) were **not re-read** for this check. The handling above follows ADR-118, which says it reduces risk and is not a licence;
+the owner remains responsible for the terms that apply to their own API key. The email search that can follow a finder run is
+not a Google call: it fetches the listed websites themselves with the `AuraLeadBot` User-Agent (`/docs/bot`), robots.txt first.
+
+One live check settles the table: a key with billing and the Places API (New) enabled, one search of one keyword and location,
+one Refresh, and a read of Google's current terms and attribution rules.
 
 ### Resend (T33, checked 2026-10-20)
 

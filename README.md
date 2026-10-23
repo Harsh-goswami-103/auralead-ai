@@ -18,6 +18,36 @@ simulators and demo transports; it has its own database and makes no outbound re
 Status: see [docs/progress.md](docs/progress.md). Provider integrations and what has been verified
 against each provider: [docs/integrations.md](docs/integrations.md).
 
+## What it does
+
+An operator (the agency or sales team) and a client (the business that owns the workspace) share one
+product, from finding a business to an accepted quotation:
+
+- **Find.** The Lead Finder searches Google Maps through the Google Places API (New) by keyword and
+  location, filters for businesses with no website listed, imports the chosen ones as leads and
+  downloads a limited Excel file. Google content is a 24-hour working copy shown with Google Maps
+  attribution; an optional email search reads only a business's own website and honours robots.txt.
+- **Import.** An Excel or CSV file is mapped, previewed and imported through the same ingestion as
+  every other source, with row-level reasons. A workspace owner may record WhatsApp opt-ins from a
+  list the business collected itself, under an attestation; a file never re-subscribes anyone who
+  said Stop. Leads export as CSV or Excel.
+- **Reach out.** Leads from a map or a file have no WhatsApp opt-in. The operator records a real one
+  (with the notice the customer saw and how they agreed) or publishes a click-to-chat link so the
+  customer writes first. The template studio writes, previews, submits and tracks WhatsApp templates
+  (Marketing or Utility, Stop button, PDF brochure header), then they are sent singly or in bulk
+  with each lead's own details.
+- **Chat.** A WhatsApp-style inbox in both panels. In Auto mode the AI answers service questions from
+  the workspace's price list only, inside the 24-hour window, with a disclosure line and a cap of
+  four replies in a row; prices, calls, complaints and requests for a person always go to a person.
+- **Hand over.** The operator hands a converted lead to the client with a note and an AI summary; the
+  AI stops, the operator side turns read-only and the client continues in the existing quotation,
+  PDF, share link and acceptance flow.
+
+Nothing reaches a customer without the consent, window, opt-out and pause checks, and DEMO makes no
+outbound request. The Google Places and template-creation calls are tested against documented-shape
+fixtures and have not been checked against the live services yet; see
+[docs/integrations.md](docs/integrations.md).
+
 ## Quick start
 
 Requires Node.js 22.23.2 (`.nvmrc`) and npm 10.9.8.
@@ -49,8 +79,47 @@ npm run dev:all
 ```
 
 Choose a sample identity on the sign-in page; `/docs/getting-started` walks a simulated lead to an
-accepted quotation. DEMO uses its own database, so switching back to `live` finds your LIVE data
-unchanged.
+accepted quotation and the lead-generation story below. DEMO uses its own database, so switching
+back to `live` finds your LIVE data unchanged.
+
+### The presentation seed and its personas
+
+The seed holds six invented businesses. Five are the original sample businesses; the sixth is the
+presentation workspace **Codecraft Web Studio** (slug `codecraft-web`, Indore), a web-development
+studio whose data covers every step of the story. The role switcher offers four personas:
+
+| Persona | Person | Opens |
+|---|---|---|
+| Workspace owner | Ananya Sharma | `/dashboard/user`, Smile Avenue Dental Clinic |
+| Codecraft client | Aarav Mehta | `/dashboard/user`, Codecraft Web Studio |
+| Employee | Imran Qureshi | `/dashboard/employee`, three active assignments; in Codecraft Web Studio every capability except `consent.import` |
+| Super admin | Meera Krishnan | `/dashboard/admin` |
+
+What Codecraft Web Studio holds:
+
+- a finished simulated finder search ("restaurants, dental clinic, salon" in Indore and Bhopal): 40
+  places, 20 with no website listed, 12 already imported as leads;
+- three recorded WhatsApp opt-ins, five templates (three approved, one pending, one rejected with its
+  reason) and a simulated WhatsApp integration with a display number for the click-to-chat link;
+- three open conversations: an Auto thread whose service questions were answered from the price
+  list, a price question that escalated and waits under Needs you, and a lead that wrote in through
+  the click-to-chat link and was handed over to the client;
+- its own scoring (it prefers businesses without a website) and Automatic sending switched on.
+
+The walk, in order: find with the No website listed filter, import and download Excel, one lead's
+score breakdown, a template to the opted-in leads, the chat (an AI answer, a price question
+escalating, a takeover), the template studio with the simulated review, the hand-over, then the
+client's quotation, PDF and public accept page. `/docs/getting-started` has the clicks.
+
+To present: build once (`npm run build`), run `npm run start` and `npm run start:worker`, and run
+`npm run demo:refresh` about ten minutes before so every window and date is current. A database
+seeded before Codecraft Web Studio existed does not have it (`npm run db:seed` leaves a seeded
+database alone): run `npm run db:reset` once, and again after a rehearsal, because
+`demo:refresh` also moves the messages and consents you created by hand. The simulated finder
+results of this workspace stay available for a year; searches you start yourself keep the 24-hour
+rule. To add a live proof, the owner provides a Google Places API key with billing, a Meta app with
+the WhatsApp test number and the presenter's phone as a recipient, and an Anthropic key; receiving
+a customer's messages in LIVE needs a public HTTPS address.
 
 ## Scripts
 
@@ -83,11 +152,23 @@ In the app, `/docs` (public, no sign-in):
 - `/docs/going-live`: LIVE configuration, secrets, HTTPS, first administrator, build and run
 - `/docs/getting-started` (DEMO processes only): run the development mode and walk a lead to an
   accepted quotation
-- `/docs/roles-and-panels`: what owners, members, employees and super admins can do
+- `/docs/roles-and-panels`: what owners, members, employees and super admins can do, and the
+  capabilities
+- `/docs/lead-finder`: the Google Places search, the 24-hour working copy, attribution, export
+  limits, No website listed and the email search
+- `/docs/import-and-export`: Excel and CSV import, the attested opt-in column, data sources, limits,
+  lead export
+- `/docs/inbox-and-ai-replies`: the inbox, Off, Draft and Auto, what the AI may answer, escalation,
+  the disclosure line and the reply cap
+- `/docs/template-studio`: writing, previewing and submitting WhatsApp templates, category rules,
+  brochures, review
+- `/docs/reach-out-and-handoff`: recording an opt-in, the click-to-chat link, handing a lead to the
+  client
 - `/docs/lead-to-quote-workflow`: ingestion, scoring, drafts, approvals, quotations, PDF, sharing
 - `/docs/messaging-rules`: consent, the 24-hour window, Stop, suppression, reason codes, pauses
 - `/docs/security`: authentication, sessions, CSRF, CSP, isolation, rate limits, encryption, logging
 - `/docs/data-and-privacy`: data locations, backups, restore, erasure, retention, DPDP notes
+- `/docs/bot`: what the AuraLeadBot crawler reads and how a website owner stops it
 - `/docs/troubleshooting` and `/docs/limitations`
 
 The pages are typed data in `content/docs/`; `tests/unit/docs/content.test.ts` fails when a page
