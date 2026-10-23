@@ -324,6 +324,9 @@ describe('results, import and expiry', () => {
 
   it('reports how many websites are still being checked for emails, in the list and in the run view', async () => {
     const ctx = await h.operator();
+    // The list is the 10 newest runs by creation time and every run of this file is created at NOW: start
+    // this test's runs a minute later so they are always in it (equal times fall back to a random id order).
+    h.clock.set(new Date(new Date(NOW).getTime() + 60_000).toISOString());
     const { run } = await startFinderRun(ctx, StartFinderRunBody.parse({ requestKey: key(), keywords: ['hotel'], locations: ['Gwalior'], maxPerQuery: 20, extractEmails: true }), { keyRing: null });
     // The search ends first; the email checks of the last page are separate jobs that finish later
     // (this harness runs no email job, so every website of the run is still waiting).
@@ -339,6 +342,7 @@ describe('results, import and expiry', () => {
     await drain(h.worker);
     await h.db.leadFinderResult.updateMany({ where: { runId: plain.run.id }, data: { emailStatus: 'PENDING' } });
     expect((await listFinderRuns(ctx)).find((r) => r.id === plain.run.id)).toMatchObject({ emailsPending: 0 });
+    h.clock.set(NOW);
   });
 
   it('lists the recent runs newest first', async () => {
