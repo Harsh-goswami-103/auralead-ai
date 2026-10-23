@@ -39,7 +39,9 @@ import { createDemoWhatsAppTransport, createFileDemoOutbox, demoOutboxDir } from
 import type { WhatsAppTransport } from './whatsapp/port';
 // Lead-gen suite adapters (docs/handoff/lead-gen-suite-plan.md §6): each slice imports only inside its block.
 // ---- lead-gen F1 finder ----
-
+import { createDemoPlacesProvider } from './places/demo';
+import { createGooglePlacesClient, type GooglePlacesClient, type PlacesHttp } from './places/google-places';
+import type { PlacesProvider } from './places/port';
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 
@@ -410,6 +412,50 @@ function liveSheetsClient(input: { integration: IntegrationUse | null; clock: Cl
 
 // ---- lead-gen F1 finder ----
 
+// Google Places (ADR-118, slice F1).
+
+export type PlacesSeams = { http?: PlacesHttp; baseUrl?: string };
+
+export type PlacesResolveInput = {
+  mode: ProcessMode;
+  workspaceMode: 'DEMO' | 'LIVE';
+  /** LIVE: the workspace's GOOGLE_PLACES integration, decrypted by the caller (null when none is stored). Ignored in DEMO. */
+  integration: IntegrationUse | null;
+  clock: Clock;
+  seams?: PlacesSeams;
+};
+
+/**
+ * The Lead Finder's places provider: DEMO gets the simulated directory (zero outbound); LIVE gets
+ * the Places API (New) client for a saved key on an integration of any checkable status, or a
+ * typed problem. A search may run while the integration is CONFIGURED_UNVERIFIED: the connection
+ * test is itself a paid call, so it is not a precondition (ADR-118).
+ */
+export function resolvePlacesProvider(input: PlacesResolveInput): Resolution<PlacesProvider> {
+  if (!modeMatches(input.mode, input.workspaceMode)) return problem('MODE_MISMATCH', 'the workspace belongs to the other mode', input.integration?.id ?? null);
+  if (input.mode === 'demo') return { ok: true, value: createDemoPlacesProvider() };
+  return livePlacesClient(input);
+}
+
+/** A Places client for the connection test (LIVE only; DEMO never contacts Google). */
+export function placesCheckClient(input: { mode: ProcessMode; integration: IntegrationUse | null; clock: Clock; seams?: PlacesSeams }): Resolution<GooglePlacesClient> {
+  if (input.mode !== 'live') return problem('MODE_MISMATCH', 'DEMO never contacts a provider', input.integration?.id ?? null);
+  return livePlacesClient(input);
+}
+
+/** LIVE only: the Places API (New) client or a typed problem. Never the simulated directory. */
+function livePlacesClient(input: { integration: IntegrationUse | null; clock: Clock; seams?: PlacesSeams }): Resolution<GooglePlacesClient> {
+  const integration = input.integration;
+  if (!integration || integration.kind !== 'GOOGLE_PLACES') return problem('INTEGRATION_NOT_CONFIGURED', 'no Google Places integration is stored', null);
+  if (integration.credentials.state === 'unreadable') return problem('CREDENTIAL_UNREADABLE', 'the stored Google Places API key does not decrypt', integration.id, integration.credentials.field);
+  if (!CHECKABLE_STATUSES.has(integration.status)) return problem('INTEGRATION_NOT_CONFIGURED', `the Google Places integration is ${integration.status}`, integration.id);
+  const apiKey = integration.credentials.state === 'ok' ? integration.credentials.values.apiKey?.trim() : undefined;
+  if (!apiKey) return problem('INTEGRATION_NOT_CONFIGURED', 'the Google Places API key is not saved', integration.id, 'apiKey');
+  return {
+    ok: true,
+    value: createGooglePlacesClient({ mode: 'live', apiKey, clock: input.clock, ...(input.seams?.http ? { http: input.seams.http } : {}), ...(input.seams?.baseUrl ? { baseUrl: input.seams.baseUrl } : {}) }),
+  };
+}
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 

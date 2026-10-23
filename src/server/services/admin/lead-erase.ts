@@ -82,7 +82,12 @@ export type EraseLeadResult = {
   importsEnded: number;
 };
 
-/** Places content and website emails of a Lead Finder result (ADR-118), cleared by an erase. */
+/**
+ * Places content and website emails of a Lead Finder result (ADR-118), cleared by an erase.
+ * `contentPurgedAt` is cleared too: the 24-hour purge only stamps rows that still hold content, so
+ * a content-less row with no stamp is how the finder recognises an erased place (ADR-128) and never
+ * fetches it again, also when the 24-hour purge had already run.
+ */
 const FINDER_RESULT_BLANK = {
   name: null,
   category: null,
@@ -100,6 +105,7 @@ const FINDER_RESULT_BLANK = {
   emailCount: 0,
   importedLeadId: null,
   importedAt: null,
+  contentPurgedAt: null,
 } satisfies Prisma.LeadFinderResultUpdateManyMutationInput;
 
 /** Maps sources whose PROVIDER key value is `<source>:<placeId>`. */

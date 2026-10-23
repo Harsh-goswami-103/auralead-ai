@@ -9,7 +9,7 @@
  */
 import { ClipboardCheck, FileSpreadsheet, MapPin, Megaphone, Plug, Users, Workflow, type LucideIcon } from 'lucide-react';
 // ---- lead-gen F1 finder ----
-
+import { ScanSearch } from 'lucide-react';
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 
@@ -36,7 +36,7 @@ export const WORKSPACE_SECTIONS: ReadonlyArray<{ segment: string; label: string;
   { segment: 'meta', label: 'Meta', icon: Megaphone },
   { segment: 'extension', label: 'Extension', icon: MapPin },
   // ---- lead-gen F1 finder ----
-
+  { segment: 'finder', label: 'Lead finder', icon: ScanSearch },
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 

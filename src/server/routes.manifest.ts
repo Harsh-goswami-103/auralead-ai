@@ -1983,6 +1983,152 @@ export const ROUTES: readonly RouteEntry[] = [
   // ---- Lead-gen suite (docs/handoff/lead-gen-suite-plan.md §5): each slice appends its entries only
   // inside its own block, with its owner (F1 T40, F2 T41, F3 T42, F4 T43, F5 T44, F6 T45) --------
   // ---- lead-gen F1 finder ----
+  {
+    path: '/dashboard/employee/[ws]/finder',
+    file: 'src/app/dashboard/employee/[ws]/finder/page.tsx',
+    kind: 'page',
+    owner: 'T40',
+    access: 'session',
+    roles: ['EMPLOYEE'],
+    capability: 'leads.read',
+    params: { ws: fixture('workspaceB.slug') },
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 200, superAdmin: 404 }, note: "workspace B's lead finder, read-only without finder.run" }],
+  },
+  {
+    path: '/api/app/finder/runs',
+    file: 'src/app/api/app/finder/runs/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'finder.run',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), requestKey: 'matrix-finder-0001', keywords: ['gym'], locations: ['Indore'], maxPerQuery: 20 },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'start a search in workspace B (finder.run)',
+      },
+      {
+        method: 'GET',
+        query: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 200, superAdmin: 404 },
+        note: "list workspace B's searches (leads.read)",
+      },
+      { method: 'GET', expect: signedIn(404, { ownerA: 200 }), note: 'the searches of the active workspace' },
+    ],
+  },
+  {
+    path: '/api/app/finder/runs/[runId]',
+    file: 'src/app/api/app/finder/runs/[runId]/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.read',
+    params: { runId: fixture('finder.unknownRunId') },
+    calls: [
+      {
+        method: 'GET',
+        query: { workspaceSlug: fixture('workspaceB.slug'), noWebsite: '1' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 404, superAdmin: 404 },
+        note: 'a run id that does not exist in workspace B',
+      },
+      { method: 'GET', expect: signedIn(404), note: 'a run id that does not exist in the active workspace' },
+    ],
+  },
+  {
+    path: '/api/app/finder/runs/[runId]/import',
+    file: 'src/app/api/app/finder/runs/[runId]/import/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.write',
+    params: { runId: fixture('finder.unknownRunId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), requestKey: 'matrix-finder-import-0001', resultIds: [fixture('finder.unknownResultId')] },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "import results of a run in workspace B (leads.write)",
+      },
+    ],
+  },
+  {
+    path: '/api/app/finder/runs/[runId]/export',
+    file: 'src/app/api/app/finder/runs/[runId]/export/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.export',
+    params: { runId: fixture('finder.unknownRunId') },
+    calls: [
+      {
+        method: 'GET',
+        query: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'the Excel file of a run in workspace B (leads.export)',
+      },
+      { method: 'GET', expect: signedIn(404), note: 'a run id that does not exist in the active workspace' },
+    ],
+  },
+  {
+    path: '/api/app/finder/runs/[runId]/cancel',
+    file: 'src/app/api/app/finder/runs/[runId]/cancel/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'finder.run',
+    params: { runId: fixture('finder.unknownRunId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'cancel a search in workspace B (finder.run)',
+      },
+    ],
+  },
+  {
+    path: '/api/app/finder/runs/[runId]/refresh',
+    file: 'src/app/api/app/finder/runs/[runId]/refresh/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'finder.run',
+    params: { runId: fixture('finder.unknownRunId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), resultIds: [fixture('finder.unknownResultId')] },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'refresh expired results of a search in workspace B (finder.run, paid in LIVE)',
+      },
+    ],
+  },
+  {
+    path: '/api/app/leads/[leadId]/confirm-contact',
+    file: 'src/app/api/app/leads/[leadId]/confirm-contact/route.ts',
+    kind: 'api',
+    owner: 'T40',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.write',
+    params: { leadId: fixture('finder.unknownLeadId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "confirm a lead's Places details in workspace B (leads.write)",
+      },
+      { method: 'POST', expect: signedIn(404), note: 'a lead id that does not exist in the active workspace' },
+    ],
+  },
 
   // ---- end F1 ----
   // ---- lead-gen F2 import ----

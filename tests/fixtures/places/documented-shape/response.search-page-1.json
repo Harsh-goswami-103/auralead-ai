@@ -1,0 +1,55 @@
+{
+  "places": [
+    {
+      "id": "ChIJF1nderFixtureSmileDental01",
+      "displayName": { "text": "Fixture Smile Dental Care", "languageCode": "en" },
+      "primaryTypeDisplayName": { "text": "Dental Clinic", "languageCode": "en-US" },
+      "nationalPhoneNumber": "098260 10001",
+      "internationalPhoneNumber": "+91 98260 10001",
+      "websiteUri": "https://smile-dental.example.in/",
+      "rating": 4.6,
+      "userRatingCount": 212,
+      "formattedAddress": "12, Vijay Nagar, Indore, Madhya Pradesh 452010, India",
+      "addressComponents": [
+        { "longText": "12", "shortText": "12", "types": ["street_number"], "languageCode": "en" },
+        { "longText": "Vijay Nagar", "shortText": "Vijay Nagar", "types": ["sublocality_level_1", "sublocality", "political"], "languageCode": "en" },
+        { "longText": "Indore", "shortText": "Indore", "types": ["locality", "political"], "languageCode": "en" },
+        { "longText": "Indore", "shortText": "Indore", "types": ["administrative_area_level_3", "political"], "languageCode": "en" },
+        { "longText": "Madhya Pradesh", "shortText": "MP", "types": ["administrative_area_level_1", "political"], "languageCode": "en" },
+        { "longText": "India", "shortText": "IN", "types": ["country", "political"], "languageCode": "en" },
+        { "longText": "452010", "shortText": "452010", "types": ["postal_code"], "languageCode": "en" }
+      ],
+      "googleMapsUri": "https://maps.google.com/?cid=1000000000000000001"
+    },
+    {
+      "id": "ChIJF1nderFixtureRoyalDental02",
+      "displayName": { "text": "Fixture Royal Dental Clinic", "languageCode": "en" },
+      "primaryTypeDisplayName": { "text": "Dentist", "languageCode": "en-US" },
+      "nationalPhoneNumber": "0731 400 2002",
+      "internationalPhoneNumber": "+91 731 400 2002",
+      "rating": 4.1,
+      "userRatingCount": 38,
+      "formattedAddress": "Shop 4, Palasia Square, Indore, Madhya Pradesh 452001, India",
+      "addressComponents": [
+        { "longText": "Palasia", "shortText": "Palasia", "types": ["sublocality_level_1", "sublocality", "political"], "languageCode": "en" },
+        { "longText": "Indore", "shortText": "Indore", "types": ["locality", "political"], "languageCode": "en" },
+        { "longText": "Madhya Pradesh", "shortText": "MP", "types": ["administrative_area_level_1", "political"], "languageCode": "en" },
+        { "longText": "India", "shortText": "IN", "types": ["country", "political"], "languageCode": "en" },
+        { "longText": "452001", "shortText": "452001", "types": ["postal_code"], "languageCode": "en" }
+      ],
+      "googleMapsUri": "https://maps.google.com/?cid=1000000000000000002",
+      "attributions": [{ "provider": "Fixture Listings Partner", "providerUri": "https://partner.example.com/" }]
+    },
+    {
+      "id": "ChIJF1nderFixtureTooth3",
+      "displayName": { "text": "Fixture Tooth Studio", "languageCode": "en" },
+      "formattedAddress": "AB Road, Indore, Madhya Pradesh, India",
+      "addressComponents": [
+        { "longText": "Indore", "shortText": "Indore", "types": ["locality", "political"], "languageCode": "en" },
+        { "longText": "Madhya Pradesh", "shortText": "MP", "types": ["administrative_area_level_1", "political"], "languageCode": "en" }
+      ],
+      "googleMapsUri": "https://maps.google.com/?cid=1000000000000000003"
+    }
+  ],
+  "nextPageToken": "AeCrKXsFixtureNextPageToken_page2"
+}

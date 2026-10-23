@@ -16,7 +16,7 @@ import { IntegrationStatus } from '@/lib/domain/enums';
 import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, sheetsReadClient, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
 // Lead-gen suite resolvers under test (docs/handoff/lead-gen-suite-plan.md §6), each in its slice's block.
 // ---- lead-gen F1 finder ----
-
+import { placesCheckClient, resolvePlacesProvider } from '@/server/adapters/registry';
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 
@@ -40,7 +40,7 @@ const DEMO_MODULES = [
   'src/server/adapters/whatsapp/demo.ts',
   'src/server/adapters/email/demo.ts',
   // ---- lead-gen F1 finder ----
-
+  'src/server/adapters/places/demo.ts',
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 
@@ -71,7 +71,7 @@ const LIVE_MODULES = [
   // T34
   'src/server/adapters/sheets/google.ts',
   // ---- lead-gen F1 finder ----
-
+  'src/server/adapters/places/google-places.ts',
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 
@@ -105,7 +105,7 @@ const LIVE_FUNCTIONS = [
   'liveSmtpOptions',
   'liveWhatsAppTransport',
   // ---- lead-gen F1 finder ----
-
+  'livePlacesClient',
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
 
@@ -311,7 +311,35 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
 
 // Lead-gen suite runtime cases (every status x credential state for a new resolver), each in its slice block.
 // ---- lead-gen F1 finder ----
+describe('Google Places (ADR-118): LIVE gets the Places client or a typed problem, never the simulated directory', () => {
+  const clock = new FixedClock('2026-10-23T06:00:00.000Z');
+  const placesCreds: CredentialState[] = [{ state: 'ok', values: { apiKey: 'AIzaSyArchTestKey000000000000000000000' } }, { state: 'ok', values: { apiKey: '  ' } }, { state: 'missing', fields: ['apiKey'] }, { state: 'unreadable', field: 'apiKey' }];
+  const use = (status: (typeof IntegrationStatus)[number], credentials: CredentialState): IntegrationUse => ({ id: 'gp_1', kind: 'GOOGLE_PLACES', status, config: {}, credentials });
 
+  it('every status x credential state', () => {
+    for (const status of IntegrationStatus) {
+      for (const credentials of placesCreds) {
+        for (const r of [resolvePlacesProvider({ mode: 'live', workspaceMode: 'LIVE', integration: use(status, credentials), clock }), placesCheckClient({ mode: 'live', integration: use(status, credentials), clock })]) {
+          if (r.ok) {
+            expect(r.value).toMatchObject({ label: 'google-places', simulated: false });
+            expect(CHECKABLE_STATUSES.has(status)).toBe(true);
+            expect(credentials.state === 'ok' && credentials.values.apiKey!.trim() !== '').toBe(true);
+          } else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
+        }
+      }
+    }
+    expect(resolvePlacesProvider({ mode: 'live', workspaceMode: 'LIVE', integration: null, clock })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+    expect(resolvePlacesProvider({ mode: 'live', workspaceMode: 'DEMO', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(resolvePlacesProvider({ mode: 'live', workspaceMode: 'LIVE', integration: { ...use('CONNECTED', placesCreds[0]!), kind: 'GOOGLE_SHEETS' }, clock })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+  });
+
+  it('DEMO gets the simulated directory and never a Places client', () => {
+    const demo = resolvePlacesProvider({ mode: 'demo', workspaceMode: 'DEMO', integration: use('CONNECTED', placesCreds[0]!), clock });
+    expect(demo.ok && demo.value).toMatchObject({ label: 'demo-places', simulated: true });
+    expect(resolvePlacesProvider({ mode: 'demo', workspaceMode: 'LIVE', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(placesCheckClient({ mode: 'demo', integration: use('CONNECTED', placesCreds[0]!), clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+  });
+});
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
 
