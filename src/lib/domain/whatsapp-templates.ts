@@ -4,7 +4,8 @@
  * the Cloud API adapter (which components a send carries) and the dispatch path (quick-reply
  * payloads set per send).
  *
- * Templates are authored in WhatsApp Manager and arrive with the provider's raw `components`
+ * Templates are authored in WhatsApp Manager or in the template studio (ADR-123) and arrive with
+ * the provider's raw `components`
  * (HEADER, BODY, FOOTER, BUTTONS with `{{n}}` positional variables). This module only reads them;
  * status and category stay raw provider strings elsewhere (never enums, plan §5.1).
  *

@@ -29,7 +29,7 @@ import { createTemplateDraft, deleteTemplate, getTemplateStudio, submitTemplate 
 import { syncWhatsAppTemplates } from '@/server/services/integrations/templates';
 import { createWorker, type Worker } from '../../../worker/worker';
 import { networkError } from '../contract/whatsapp-support';
-import { ACCESS_TOKEN, createLiveHarness, storeWhatsApp, WABA_ID, type LiveHarness } from '../integrations/live-support';
+import { ACCESS_TOKEN, createLiveHarness, liveLead, queueWhatsApp, storeWhatsApp, WABA_ID, type LiveHarness } from '../integrations/live-support';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../fixtures/whatsapp/template-admin');
 const fixture = (name: string): unknown => JSON.parse(readFileSync(path.join(FIXTURES, name), 'utf8'));
@@ -291,6 +291,37 @@ describe('sync of authored rows', () => {
     const audit = await h.db.auditEvent.findFirstOrThrow({ where: { action: 'template.delete', targetId: rejected.id } });
     expect(audit).toMatchObject({ simulated: false });
     expect(audit.summary).toMatchObject({ atProvider: true, status: 'REJECTED' });
+  });
+
+  it('a rejected template that already has messages is kept, and Meta is not asked to delete it', async () => {
+    const ctx = await h.owner();
+    const created = await createTemplateDraft(ctx, { draft: draft({ name: 'rejected_with_history' }), copyGeneratorLabel: null });
+    await h.db.whatsAppTemplate.update({ where: { id: created.template.id }, data: { status: 'APPROVED' } });
+    const lead = await liveLead(h);
+    await queueWhatsApp(h, ctx, { leadId: lead.id, sendIntent: 'MANUAL_SINGLE', templateId: created.template.id, variables: { '1': 'Ravi', '2': 'Live Dental Co' } });
+    // Meta later reports it REJECTED (a re-review): the history of the sends must stay.
+    await h.db.whatsAppTemplate.update({ where: { id: created.template.id }, data: { status: 'REJECTED' } });
+    h.graph.reset();
+    await expect(deleteTemplate(ctx, created.template.id, deps())).rejects.toMatchObject({ status: 409, code: 'TEMPLATE_NOT_DELETABLE' });
+    expect(h.graph.requests).toEqual([]);
+    expect(await h.db.whatsAppTemplate.count({ where: { id: created.template.id } })).toBe(1);
+  });
+
+  it('asks Meta for rejected_reason, and keeps the id and the reason of a rejected template that was made in WhatsApp Manager', async () => {
+    const ctx = await h.owner();
+    h.clock.advance(61_000);
+    h.graph.on('GET', CREATE_PATH, {
+      status: 200,
+      body: {
+        data: [{ id: '700100200300', name: 'manager_made_rejected', language: 'en', status: 'REJECTED', category: 'MARKETING', rejected_reason: 'ABUSIVE_CONTENT', components: [{ type: 'BODY', text: 'Hi there, a short note about our work.' }] }],
+        paging: { cursors: { before: 'QVFIUBEFORE', after: 'QVFIUAFTER' } },
+      },
+    });
+    await syncWhatsAppTemplates(ctx, { liveSync: liveAdapters(h.deps()).templateSync });
+    // The list only carries the verdict when it is asked for: it is not one of Meta's default fields.
+    expect(h.graph.requests[0]!.query.fields).toContain('rejected_reason');
+    const made = await h.db.whatsAppTemplate.findFirstOrThrow({ where: { workspaceId: h.workspaceId, name: 'manager_made_rejected' } });
+    expect(made).toMatchObject({ origin: 'SYNCED', status: 'REJECTED', providerTemplateId: '700100200300', rejectedReason: 'ABUSIVE_CONTENT' });
   });
 });
 

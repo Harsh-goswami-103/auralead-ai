@@ -224,6 +224,8 @@ export async function applyTemplateSync(
           intent: null,
           variableMap: mapping,
           categoryHistory: [{ category: t.category, at: now.toISOString() }],
+          providerTemplateId: t.providerId,
+          rejectedReason: t.status.trim().toUpperCase() === 'REJECTED' ? (t.rejectedReason ?? null) : null,
           syncedAt: now,
         },
       });

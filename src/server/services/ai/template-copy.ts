@@ -55,15 +55,18 @@ const STRIP = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩﻿]
 const ALWAYS_FORBIDDEN: ReadonlySet<PolicyRule> = new Set(['CURRENCY_AMOUNT', 'PERCENTAGE', 'URL', 'PHONE', 'EMAIL', 'PAYMENT_PHRASING', 'CONTROL_CHARACTERS']);
 const NO_POLICY_CONTEXT = { allowedEmails: [], allowedPhones: [], allowedUrls: [] } as const;
 
+/** An optional text as a union, the form both providers' structured-output schemas document (not a `type` array). */
+const NULLABLE_TEXT = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
+
 export const TEMPLATE_COPY_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: ['name', 'headerText', 'body', 'footer', 'buttons', 'exampleValues', 'variableSources'],
   properties: {
     name: { type: 'string' },
-    headerText: { type: ['string', 'null'] },
+    headerText: NULLABLE_TEXT,
     body: { type: 'string' },
-    footer: { type: ['string', 'null'] },
+    footer: NULLABLE_TEXT,
     buttons: { type: 'array', items: { type: 'string' } },
     exampleValues: { type: 'array', items: { type: 'string' } },
     variableSources: { type: 'array', items: { type: 'string', enum: [...LEAD_TEMPLATE_VARIABLE_SOURCES] } },

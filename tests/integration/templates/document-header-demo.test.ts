@@ -8,6 +8,9 @@
 // - Sending (the dispatch preflight and handler): the brochure is the document header, read and
 //   checked against its hash, never the quote PDF; a changed file fails the send, never sends
 //   something else.
+// - A quotation never goes through a template that carries its own brochure (one document header,
+//   one document): 422 TEMPLATE_HAS_OWN_DOCUMENT before anything is written, the quote untouched,
+//   and the approval queue does not offer such a template for a quotation.
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -16,9 +19,10 @@ import { outboundAttempts, resetOutboundAttempts } from '@/server/adapters/http/
 import { withTx } from '@/server/db/tx';
 import { listMediaAssets, uploadMediaAsset } from '@/server/services/integrations/media-assets';
 import { createTemplateDraft, getTemplateStudio, submitTemplate } from '@/server/services/integrations/template-authoring';
-import { queueOutboundMessage } from '@/server/services/messaging/dispatch';
+import { getApprovalItem, listApprovalQueue } from '@/server/services/approvals/queue';
+import { approveAndSendQuote, queueOutboundMessage } from '@/server/services/messaging/dispatch';
 import { userCtx } from '../quotes/support';
-import { createDispatchHarness, createLead, DEPS, grantConsent, WS_A, type DispatchHarness } from '../dispatch/support';
+import { approvedTemplate, createDispatchHarness, createLead, DEPS, eligibleLead, grantConsent, quoteWithPdf, WS_A, type DispatchHarness } from '../dispatch/support';
 import { grantCapability, NOW } from './support';
 
 let h: DispatchHarness;
@@ -151,6 +155,30 @@ describe('sending a template with its own brochure', () => {
     expect(call.request.document!.bytes.equals(PDF)).toBe(true);
     const attempt = await h.db.dispatchAttempt.findFirstOrThrow({ where: { message: { templateId } } });
     expect(attempt.state).toBe('SENT');
+  });
+
+  it('a quotation is refused through a template that carries its own brochure: nothing is written, the quote stays as it was', async () => {
+    const { templateId } = await approvedBrochureTemplate('brochure_not_for_quotes');
+    const lead = await eligibleLead(h.db);
+    const { quote } = await quoteWithPdf(h, lead.id);
+    const owner = await h.owner();
+    await expect(approveAndSendQuote(owner, { quoteId: quote.id, expectedVersion: 1, channel: 'WHATSAPP', templateId, variables: { '1': 'Asha' } }, DEPS)).rejects.toMatchObject({ status: 422, code: 'TEMPLATE_HAS_OWN_DOCUMENT' });
+    expect((await h.db.quote.findUniqueOrThrow({ where: { id: quote.id } })).status).toBe('DRAFT');
+    expect(await h.db.dispatchAttempt.count({ where: { quoteVersion: { quoteId: quote.id } } })).toBe(0);
+    expect(await h.db.message.count({ where: { templateId } })).toBe(0);
+  });
+
+  it('the approval queue offers only templates that can carry the quotation, not the brochure ones', async () => {
+    const { templateId } = await approvedBrochureTemplate('brochure_not_offered');
+    const plain = await approvedTemplate(h.db, WS_A, 'quote_ready_offered');
+    const lead = await eligibleLead(h.db);
+    const { quote } = await quoteWithPdf(h, lead.id);
+    const ctx = await operator();
+    const item = (await listApprovalQueue(ctx)).pending.find((i) => i.quote?.id === quote.id)!;
+    const detail = await getApprovalItem(ctx, item.id, { ...DEPS, externalOutboundPause: false });
+    const ids = detail.channels.find((c) => c.channel === 'WHATSAPP')!.templates.map((t) => t.id);
+    expect(ids).toContain(plain.id);
+    expect(ids).not.toContain(templateId);
   });
 
   it('a brochure changed on disk fails the send (ARTIFACT_INTEGRITY); nothing else is sent', async () => {

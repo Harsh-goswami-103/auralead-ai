@@ -202,7 +202,8 @@ export function createCloudApiClient(opts: CloudApiOptions): CloudApiClient {
     },
     listTemplates: ({ after, limit }) => {
       if (opts.wabaId === null) throw new RangeError('no WhatsApp Business Account id configured');
-      const query = `${fieldsQuery(['id', 'name', 'language', 'status', 'category', 'components'])}&limit=${Math.max(1, Math.min(limit, 100))}${after ? `&after=${encodeURIComponent(after)}` : ''}`;
+      // `rejected_reason` is not a default field of the list: it is asked for so that Meta's verdict on a rejected template reaches the template studio (ADR-123).
+      const query = `${fieldsQuery(['id', 'name', 'language', 'status', 'category', 'components', 'rejected_reason'])}&limit=${Math.max(1, Math.min(limit, 100))}${after ? `&after=${encodeURIComponent(after)}` : ''}`;
       return call('GET', `/${opts.wabaId}/message_templates${query}`, null, (json) => {
         const o = asRecord(json);
         if (!o || !Array.isArray(o.data)) return null;

@@ -31,6 +31,20 @@ const issues = (category: 'MARKETING' | 'UTILITY', value: unknown) => {
   return parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
 };
 
+describe('TEMPLATE_COPY_JSON_SCHEMA (what the providers are asked for)', () => {
+  const schema = TEMPLATE_COPY_JSON_SCHEMA as { type: string; additionalProperties: boolean; required: string[]; properties: Record<string, Record<string, unknown>> };
+
+  it('is the strict subset both providers take: every property required, no extra properties, no type arrays', () => {
+    expect(schema).toMatchObject({ type: 'object', additionalProperties: false });
+    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
+    for (const [name, property] of Object.entries(schema.properties)) expect(Array.isArray(property.type), name).toBe(false);
+  });
+
+  it('writes an optional text as anyOf [string, null] (the union form the structured-output schemas document)', () => {
+    for (const name of ['headerText', 'footer']) expect(schema.properties[name], name).toEqual({ anyOf: [{ type: 'string' }, { type: 'null' }] });
+  });
+});
+
 describe('templateCopySchema (output policy)', () => {
   it('accepts policy-safe copy', () => {
     expect(issues('MARKETING', good)).toEqual([]);

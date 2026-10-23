@@ -406,6 +406,8 @@ export async function updateTemplateDraft(ctx: AppCtx, templateId: string, input
   return { template, warnings: check.warnings };
 }
 
+const templateKept = () => new ConflictError({ code: 'TEMPLATE_NOT_DELETABLE', userMessage: 'Messages were sent with this template, so it is kept for their history.' });
+
 /** Deletes a DRAFT (local only) or an authored template Meta REJECTED (LIVE: at Meta first). */
 export async function deleteTemplate(ctx: AppCtx, templateId: string, deps: TemplateStudioDeps): Promise<{ deleted: true; templateId: string }> {
   requireCapability(ctx, 'templates.manage');
@@ -415,6 +417,8 @@ export async function deleteTemplate(ctx: AppCtx, templateId: string, deps: Temp
   if (row.origin !== 'AUTHORED' || !(draft || isStatus(row.status, 'REJECTED'))) {
     throw new ConflictError({ code: 'TEMPLATE_NOT_DELETABLE', userMessage: 'Only drafts and templates Meta rejected can be deleted here. Delete other templates in WhatsApp Manager.' });
   }
+  // Before anything is asked of Meta: a template with sends behind it stays for their history, so Meta must not lose it first.
+  if ((await ctx.db.message.count({ where: { workspaceId, templateId: row.id } })) > 0) throw templateKept();
   const atProvider = !draft && ctx.mode === 'live';
   if (atProvider) {
     const admin = await resolveAdmin(ctx, deps);
@@ -427,7 +431,7 @@ export async function deleteTemplate(ctx: AppCtx, templateId: string, deps: Temp
   await withTx(ctx.db, async (scoped) => {
     const tx = scoped as unknown as Tx;
     const messages = await tx.message.count({ where: { workspaceId, templateId: row.id } });
-    if (messages > 0) throw new ConflictError({ code: 'TEMPLATE_NOT_DELETABLE', userMessage: 'Messages were sent with this template, so it is kept for their history.' });
+    if (messages > 0) throw templateKept();
     const removed = await tx.whatsAppTemplate.deleteMany({ where: { id: row.id, workspaceId, status: row.status } });
     if (removed.count !== 1) throw new ConflictError({ code: 'TEMPLATE_NOT_DELETABLE', userMessage: 'This template changed in the meantime. Reload and try again.' });
     await recordAudit(tx, ctx, {

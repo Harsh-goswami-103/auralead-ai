@@ -366,6 +366,12 @@ export async function approveAndSendQuote(ctx: AppCtx, input: ApproveAndSendQuot
     let content: MessageContent;
     if (input.channel === 'WHATSAPP') {
       if (!input.templateId) throw new ValidationError({ code: 'TEMPLATE_REQUIRED', message: 'a WhatsApp quotation needs a template', userMessage: 'Choose the WhatsApp template that carries the quotation.' });
+      // ADR-123/131: a template with its own brochure has one document header and it holds the brochure,
+      // so the quotation could not travel with it (the quote would be marked sent without being delivered).
+      const own = await tx.whatsAppTemplate.findFirst({ where: { id: input.templateId }, select: { headerMediaId: true } });
+      if (own?.headerMediaId) {
+        throw new DomainRuleError({ code: 'TEMPLATE_HAS_OWN_DOCUMENT', userMessage: 'This template carries its own PDF brochure as its header, so it cannot carry the quotation. Choose a template without a brochure.' });
+      }
       content = { kind: 'TEMPLATE', templateId: input.templateId, variables: input.variables ?? {}, quoteVersionId: versionId };
     } else {
       const ws = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true, timezone: true } });

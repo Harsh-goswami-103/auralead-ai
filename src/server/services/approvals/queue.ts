@@ -358,8 +358,9 @@ async function channelOption(
   deps: QueueDeps,
 ): Promise<ChannelOption> {
   const templates = input.quoteTemplates
-    ? (await ctx.db.whatsAppTemplate.findMany({ orderBy: [{ name: 'asc' }, { language: 'asc' }], select: { id: true, name: true, language: true, category: true, status: true } }))
-        .filter((t) => t.status.trim().toUpperCase() === 'APPROVED')
+    ? (await ctx.db.whatsAppTemplate.findMany({ orderBy: [{ name: 'asc' }, { language: 'asc' }], select: { id: true, name: true, language: true, category: true, status: true, headerMediaId: true } }))
+        // A template with its own brochure has one document header and it holds the brochure: it cannot carry the quotation (ADR-131).
+        .filter((t) => t.status.trim().toUpperCase() === 'APPROVED' && t.headerMediaId === null)
         .map(({ id, name, language, category }) => ({ id, name, language, category }))
     : [];
   if (input.contact === null) {
