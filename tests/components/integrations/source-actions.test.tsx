@@ -96,7 +96,7 @@ describe('WorkspaceSectionNav', () => {
     render(<WorkspaceSectionNav slug="smile-avenue-dental" workspaceName="Smile Avenue Dental Clinic" />);
     const nav = screen.getByRole('navigation', { name: 'Smile Avenue Dental Clinic sections' });
     const links = nav.querySelectorAll('a');
-    expect([...links].map((a) => a.textContent)).toEqual(['Leads', 'Approvals', 'Integrations', 'Pipeline', 'Sheets', 'Meta', 'Extension', 'Lead finder']);
+    expect([...links].map((a) => a.textContent)).toEqual(['Leads', 'Approvals', 'Integrations', 'Pipeline', 'Sheets', 'Meta', 'Extension', 'Lead finder', 'Templates']);
     expect(screen.getByRole('link', { name: 'Sheets' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: 'Leads' }).getAttribute('aria-current')).toBeNull();
   });
