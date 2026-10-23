@@ -1986,7 +1986,94 @@ export const ROUTES: readonly RouteEntry[] = [
 
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
-
+  {
+    path: '/dashboard/employee/[ws]/leads/import',
+    file: 'src/app/dashboard/employee/[ws]/leads/import/page.tsx',
+    kind: 'page',
+    owner: 'T41',
+    access: 'session',
+    roles: ['EMPLOYEE'],
+    capability: 'leads.read',
+    params: { ws: fixture('workspaceB.slug') },
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 200, superAdmin: 404 }, note: "workspace B's import page, upload gated without leads.import" }],
+  },
+  {
+    path: '/api/app/leads/imports',
+    file: 'src/app/api/app/leads/imports/route.ts',
+    kind: 'api',
+    owner: 'T41',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.import',
+    calls: [
+      {
+        method: 'POST',
+        body: {
+          workspaceSlug: fixture('workspaceB.slug'),
+          requestKey: 'matrix-import-0001',
+          fileName: 'leads.csv',
+          contentType: 'text/csv',
+          dataBase64: 'TmFtZSxQaG9uZQpNYXRyaXggUHJvYmUsKzkxIDkwMDAwIDAwMDA5Cg==',
+        },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'upload a file into workspace B (leads.import)',
+      },
+      {
+        method: 'GET',
+        query: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "list workspace B's imports",
+      },
+      { method: 'GET', expect: signedIn(404, { ownerA: 200 }), note: "the caller's own imports in the active workspace" },
+    ],
+  },
+  {
+    path: '/api/app/leads/imports/[importId]',
+    file: 'src/app/api/app/leads/imports/[importId]/route.ts',
+    kind: 'api',
+    owner: 'T41',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.import',
+    params: { importId: fixture('imports.unknownImportId') },
+    calls: [
+      {
+        method: 'GET',
+        query: { workspaceSlug: fixture('workspaceB.slug') },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'an import id that does not exist in workspace B',
+      },
+      { method: 'GET', expect: signedIn(404), note: 'an import id that does not exist in the active workspace' },
+    ],
+  },
+  {
+    path: '/api/app/leads/imports/[importId]/confirm',
+    file: 'src/app/api/app/leads/imports/[importId]/confirm/route.ts',
+    kind: 'api',
+    owner: 'T41',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.import',
+    params: { importId: fixture('imports.unknownImportId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), mapping: { name: 0, phone: 1 } },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'confirm an import id that does not exist in workspace B',
+      },
+      { method: 'POST', body: { mapping: { name: 0, phone: 1 } }, expect: signedIn(404), note: 'an import id that does not exist in the active workspace' },
+    ],
+  },
+  {
+    path: '/api/app/leads/sample-workbook',
+    file: 'src/app/api/app/leads/sample-workbook/route.ts',
+    kind: 'api',
+    owner: 'T41',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    calls: [{ method: 'GET', expect: signedIn(200, { superAdmin: 404 }), note: 'the fictitious sample workbook: no workspace data' }],
+  },
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
 

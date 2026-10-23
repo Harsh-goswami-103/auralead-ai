@@ -33,7 +33,7 @@ import { sheetsSyncJob } from './handlers/sheets-sync';
 
 // ---- end F1 ----
 // ---- lead-gen F2 import ----
-
+import { leadImportJob, leadImportPurgeJob } from './handlers/lead-import';
 // ---- end F2 ----
 // ---- lead-gen F3 chat ----
 
@@ -105,7 +105,8 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
 
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
-
+  leadImportJob,
+  leadImportPurgeJob,
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
 

@@ -139,7 +139,8 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
 
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
-
+  /** T41: a well-formed lead import id that does not exist. */
+  'imports.unknownImportId': 'importmatrixprobe00000000',
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
 

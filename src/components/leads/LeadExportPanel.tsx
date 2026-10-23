@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * CSV export of the Leads area (T26, ADR-70). "Export CSV" asks the server for an export of the
+ * Export of the Leads area (T26, ADR-70) as CSV or an Excel workbook (ADR-120: the "File type"
+ * choice, CSV by default). "Export" asks the server for an export of the
  * leads matching the current search and filters (one request key per click, so a double click is
  * one export); the worker writes the file and the panel re-reads the page until it is ready. The
  * list shows the viewer's own recent exports with their status (icon + label), row count and
@@ -11,7 +12,7 @@
  * message (ADR-73).
  */
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { CircleCheck, CircleSlash, Clock3, Download, FileDown, LoaderCircle, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { newRequestKey } from '@/components/inbox/api';
@@ -20,8 +21,18 @@ import { useCsrfToken } from '@/components/patterns/csrf';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import type { StatusTone } from '@/components/patterns/status-vocabulary';
 import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
 import { formatDateTime } from '@/lib/format/date';
-import { leadExportDownloadHref, LEAD_EXPORT_TTL_HOURS, type LeadExportDto, type LeadExportStatus, type LeadFilters } from '@/lib/schemas/leads';
+import {
+  leadExportDownloadHref,
+  LEAD_EXPORT_FORMAT_LABELS,
+  LEAD_EXPORT_FORMATS,
+  LEAD_EXPORT_TTL_HOURS,
+  type LeadExportDto,
+  type LeadExportFormat,
+  type LeadExportStatus,
+  type LeadFilters,
+} from '@/lib/schemas/leads';
 import { usePolling } from './use-polling';
 import { ToneChip } from './ToneChip';
 
@@ -36,13 +47,15 @@ export function LeadExportPanel(props: { exports: LeadExportDto[]; filters: Lead
   const router = useRouter();
   const csrfToken = useCsrfToken();
   const [requestNo, setRequestNo] = useState(0);
+  const [format, setFormat] = useState<LeadExportFormat>('csv');
+  const groupId = useId();
   const preparing = props.exports.some((e) => e.effectiveStatus === 'QUEUED');
   const { exhausted } = usePolling(preparing, () => router.refresh(), undefined, requestNo);
 
   async function requestExport() {
     const res = await postJson<{ export: LeadExportDto; created: boolean }>(
       '/api/app/leads/exports',
-      { requestKey: newRequestKey(), filters: props.filters, ...(props.workspaceSlug ? { workspaceSlug: props.workspaceSlug } : {}) },
+      { requestKey: newRequestKey(), filters: props.filters, format, ...(props.workspaceSlug ? { workspaceSlug: props.workspaceSlug } : {}) },
       csrfToken,
     );
     if (!res.ok) {
@@ -58,8 +71,29 @@ export function LeadExportPanel(props: { exports: LeadExportDto[]; filters: Lead
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start gap-3">
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="sr-only">File type</legend>
+          <div className="flex flex-wrap items-center gap-2">
+            <span aria-hidden="true" className="text-xs text-fg-2">
+              File type
+            </span>
+            {LEAD_EXPORT_FORMATS.map((f) => (
+              <label
+                key={f}
+                className={cn(
+                  'flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-border-strong bg-bg-2 py-1.5 pr-3.5 pl-3 text-sm text-fg-1 transition-[border-color,background-color] duration-fast lg:min-h-9',
+                  'hover:border-aura/45 has-[:checked]:border-aura has-[:checked]:bg-aura/10',
+                  'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-aura has-[:focus-visible]:outline-solid',
+                )}
+              >
+                <input type="radio" name={`${groupId}-format`} value={f} checked={format === f} onChange={() => setFormat(f)} className="size-4 accent-[var(--accent)] focus-visible:outline-none" />
+                {f === 'xlsx' ? 'Excel (.xlsx)' : 'CSV (.csv)'}
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <GatedAction
-          label={props.filtered ? 'Export matching leads (CSV)' : 'Export all leads (CSV)'}
+          label={`${props.filtered ? 'Export matching leads' : 'Export all leads'} (${LEAD_EXPORT_FORMAT_LABELS[format]})`}
           pendingLabel="Starting..."
           variant="outline"
           icon={<FileDown aria-hidden="true" />}
@@ -96,7 +130,7 @@ export function LeadExportPanel(props: { exports: LeadExportDto[]; filters: Lead
                     ) : null}
                     <a href={leadExportDownloadHref(e.id, props.workspaceSlug)} download className={buttonVariants({ variant: 'outline', size: 'sm' })}>
                       <Download aria-hidden="true" />
-                      Download CSV
+                      Download {LEAD_EXPORT_FORMAT_LABELS[e.format]}
                     </a>
                   </span>
                 ) : null}

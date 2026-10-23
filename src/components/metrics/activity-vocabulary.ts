@@ -92,7 +92,11 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
 
   // ---- end F1 ----
   // ---- lead-gen F2 import ----
-
+  'lead.import.upload': 'Lead file uploaded for preview',
+  'lead.import.confirm': 'Lead file import started',
+  'lead.import.complete': 'Lead file import finished',
+  'lead.import.failed': 'Lead file import failed',
+  'lead.import.expire': 'Unconfirmed lead file deleted',
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
 
