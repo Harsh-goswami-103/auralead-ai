@@ -44,7 +44,8 @@ describe('live sync', () => {
     expect(result).toMatchObject({ simulated: false, created: 4, updated: 0, existing: 0, missing: 0 });
 
     const [first, second] = h.graph.requests;
-    expect(first!.query).toMatchObject({ fields: 'id,name,language,status,category,components', limit: '100' });
+    // ADR-123 (slice F4): `rejected_reason` is not a default field of the list; unless it is asked for, Meta's verdict on a rejected template is never seen.
+    expect(first!.query).toMatchObject({ fields: 'id,name,language,status,category,components,rejected_reason', limit: '100' });
     expect(first!.query.after).toBeUndefined();
     expect(second!.query.after).toBe('QVFIUAFTER1');
     expect(second!.path).toBe(`/v24.0/${WABA_ID}/message_templates`);

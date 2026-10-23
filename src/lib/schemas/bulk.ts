@@ -7,6 +7,7 @@
  * eligibility per row is the shared dispatch eligibility function with sendIntent BULK.
  */
 import { z } from 'zod';
+import { TEMPLATE_VARIABLE_MAX_LENGTH } from '@/lib/domain/whatsapp-templates';
 import { workspaceSlugField } from './lead-console';
 
 export const BULK_MAX_SELECTION = 500;
@@ -19,8 +20,12 @@ export const BulkLeadIds = z
   .max(BULK_MAX_SELECTION, `Select at most ${BULK_MAX_SELECTION} leads.`)
   .refine((ids) => new Set(ids).size === ids.length, 'Each lead can be selected once.');
 
-/** WhatsApp template body variables by position ("1", "2", ...), the same value for every row. */
-export const BulkTemplateVariables = z.record(z.string().regex(/^[1-9]\d?$/), z.string().trim().min(1).max(200));
+/**
+ * WhatsApp template body values typed by the sender, by position ("1", "2", ...): the same value
+ * for every row. Positions mapped to a lead or business source are filled per lead instead
+ * (ADR-123, services/bulk/bulk.ts), so they need no typed value.
+ */
+export const BulkTemplateVariables = z.record(z.string().regex(/^[1-9]\d?$/), z.string().trim().min(1).max(TEMPLATE_VARIABLE_MAX_LENGTH));
 
 const sendTemplate = z.object({
   action: z.literal('SEND_WHATSAPP_TEMPLATE'),

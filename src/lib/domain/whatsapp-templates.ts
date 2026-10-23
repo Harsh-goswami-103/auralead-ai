@@ -4,13 +4,15 @@
  * the Cloud API adapter (which components a send carries) and the dispatch path (quick-reply
  * payloads set per send).
  *
- * Templates are authored in WhatsApp Manager and arrive with the provider's raw `components`
+ * Templates are authored in WhatsApp Manager or in the template studio (ADR-123) and arrive with
+ * the provider's raw `components`
  * (HEADER, BODY, FOOTER, BUTTONS with `{{n}}` positional variables). This module only reads them;
  * status and category stay raw provider strings elsewhere (never enums, plan §5.1).
  *
  * What the send path supports (documented shape, UNVERIFIED until a live check, docs/integrations.md):
  *  - positional BODY variables `{{1}}..{{n}}`, filled in order from the message's variables;
- *  - a DOCUMENT header, filled with the uploaded quotation PDF (P2) when the send carries one;
+ *  - a DOCUMENT header: the template's own PDF brochure when the template has a header media asset
+ *    (ADR-123: `headerMediaId`), otherwise the quotation PDF (P2) when the send carries one;
  *  - a TEXT header without variables, a FOOTER, static URL and phone buttons (no parameters);
  *  - QUICK_REPLY buttons, each given the stable payload id of its mapped intent (ADR-62).
  * Anything else (named parameters, header variables, image/video/location headers, URL buttons
@@ -179,6 +181,11 @@ export type TemplateShape = {
   headerFormat: string | null;
   /** The header takes the attached document (P2). */
   documentHeader: boolean;
+  /**
+   * Which document fills a DOCUMENT header (ADR-123): the template's own brochure (`media`, when the
+   * template has `headerMediaId`) or the quotation PDF the send carries (`quote`); null without one.
+   */
+  documentSource: 'media' | 'quote' | null;
   /** QUICK_REPLY buttons with their index among all of the template's buttons. */
   quickReplies: Array<{ index: number; text: string }>;
   sendable: { ok: true } | { ok: false; reason: NotSendableReason };
@@ -202,8 +209,11 @@ function positional(source: string): string[] {
   return [...found].sort((a, b) => Number(a) - Number(b));
 }
 
-/** Reads a template's raw provider components (and its raw `parameter_format`, when known). */
-export function templateShape(components: unknown, parameterFormat?: string | null): TemplateShape {
+/**
+ * Reads a template's raw provider components (and its raw `parameter_format`, when known). With
+ * `headerMediaId` (an authored template's PDF brochure, ADR-123) a DOCUMENT header is the brochure.
+ */
+export function templateShape(components: unknown, parameterFormat?: string | null, opts: { headerMediaId?: string | null } = {}): TemplateShape {
   const list = Array.isArray(components) ? components.map(record) : [];
   const byType = (t: string) => list.find((c) => text(c.type).toUpperCase() === t) ?? null;
   const body = byType('BODY');
@@ -218,6 +228,7 @@ export function templateShape(components: unknown, parameterFormat?: string | nu
     bodyVariables: positional(bodyText),
     headerFormat,
     documentHeader: headerFormat === 'DOCUMENT',
+    documentSource: headerFormat !== 'DOCUMENT' ? null : opts.headerMediaId ? 'media' : 'quote',
     quickReplies,
     sendable,
   });

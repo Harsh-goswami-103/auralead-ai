@@ -18,7 +18,7 @@ import { ScanSearch } from 'lucide-react';
 
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
-
+import { MessageSquareText } from 'lucide-react';
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
 
@@ -45,7 +45,7 @@ export const WORKSPACE_SECTIONS: ReadonlyArray<{ segment: string; label: string;
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  { segment: 'templates', label: 'Templates', icon: MessageSquareText },
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
 

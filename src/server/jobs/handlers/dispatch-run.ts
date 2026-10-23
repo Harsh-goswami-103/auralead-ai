@@ -137,10 +137,12 @@ function scopedFencedTx<R>(job: JobHandlerContext, db: { $transaction: unknown }
 
 async function sendPlan(channel: Channel, plan: SendPlan, deps: DispatchRuntimeDeps, wa: WhatsAppTransport | null, email: EmailTransport | null): Promise<SendOutcome> {
   let document = null;
-  if (plan.artifact) {
+  // ADR-123: a WhatsApp template with its own brochure carries it as the header; otherwise the quote PDF.
+  const file = channel === 'WHATSAPP' && plan.headerDocument ? plan.headerDocument : plan.artifact;
+  if (file) {
     try {
-      const bytes = readArtifactFile(deps.storageDir, plan.artifact);
-      document = { filename: plan.artifact.filename, bytes, sha256: plan.artifact.sha256 };
+      const bytes = readArtifactFile(deps.storageDir, file);
+      document = { filename: file.filename, bytes, sha256: file.sha256 };
     } catch (error) {
       // Missing or altered file: definitely not sent, and retrying cannot fix it.
       return {

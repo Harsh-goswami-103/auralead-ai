@@ -2225,7 +2225,87 @@ export const ROUTES: readonly RouteEntry[] = [
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  {
+    path: '/dashboard/employee/[ws]/templates',
+    file: 'src/app/dashboard/employee/[ws]/templates/page.tsx',
+    kind: 'page',
+    owner: 'T43',
+    access: 'session',
+    roles: ['EMPLOYEE'],
+    capability: 'leads.read',
+    params: { ws: fixture('workspaceB.slug') },
+    calls: [{ method: 'GET', expect: { anonymous: 307, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 200, superAdmin: 404 }, note: "workspace B's template studio, read-only without templates.manage" }],
+  },
+  {
+    path: '/api/app/templates',
+    file: 'src/app/api/app/templates/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    calls: [{ method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug'), category: 'MARKETING', language: 'en', name: 'matrix_probe', body: 'Hello {{1}}, thanks for asking.' }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: 'save a template draft in workspace B (ADR-123)' }],
+  },
+  {
+    path: '/api/app/templates/generate',
+    file: 'src/app/api/app/templates/generate/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    calls: [{ method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug'), category: 'UTILITY', utilityTrigger: 'CUSTOMER_ASKED' }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: 'generate template copy for workspace B (DEMO: local template)' }],
+  },
+  {
+    path: '/api/app/templates/[templateId]',
+    file: 'src/app/api/app/templates/[templateId]/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    params: { templateId: fixture('templates.unknownTemplateId') },
+    calls: [{ method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug'), category: 'MARKETING', language: 'en', name: 'matrix_probe', body: 'Hello {{1}}, thanks for asking.' }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: 'save changes to a draft of workspace B (unknown id probe)' }],
+  },
+  {
+    path: '/api/app/templates/[templateId]/submit',
+    file: 'src/app/api/app/templates/[templateId]/submit/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    params: { templateId: fixture('templates.unknownTemplateId') },
+    calls: [{ method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug') }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: 'submit a draft of workspace B for approval (unknown id probe)' }],
+  },
+  {
+    path: '/api/app/templates/[templateId]/delete',
+    file: 'src/app/api/app/templates/[templateId]/delete/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    params: { templateId: fixture('templates.unknownTemplateId') },
+    calls: [{ method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug') }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: 'delete a draft of workspace B (unknown id probe)' }],
+  },
+  {
+    path: '/api/app/media',
+    file: 'src/app/api/app/media/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), fileName: 'brochure.pdf', contentType: 'application/pdf', dataBase64: 'JVBERi0xLjQK' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'upload a PDF brochure to workspace B (document header, ADR-123)',
+      },
+    ],
+  },
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
   {

@@ -111,7 +111,13 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  'template.draft.create': 'Template draft saved',
+  'template.draft.update': 'Template draft changed',
+  'template.draft.delete': 'Template draft deleted',
+  'template.delete': 'Rejected template deleted',
+  'template.submit': 'Template submitted for approval',
+  'template.review': 'Template reviewed (simulated)',
+  'media.upload': 'Brochure uploaded',
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
   'lead.handoff': 'Lead handed over to the client',

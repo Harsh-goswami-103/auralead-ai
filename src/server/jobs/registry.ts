@@ -42,7 +42,8 @@ import { leadImportJob, leadImportPurgeJob } from './handlers/lead-import';
 
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
-
+import { templateReviewJob } from './handlers/template-review';
+import { templateSubmitJob } from './handlers/template-submit';
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
 import { handoffSummaryJob } from './handlers/handoff-summary';
@@ -118,7 +119,8 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
 
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
-
+  templateSubmitJob,
+  templateReviewJob,
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
   handoffSummaryJob,

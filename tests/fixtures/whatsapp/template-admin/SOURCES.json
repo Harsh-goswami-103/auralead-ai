@@ -1,0 +1,83 @@
+{
+  "_about": "Template studio (ADR-123, slice F4) documented-shape fixtures for the template admin port: derived from Meta's published Graph API references for message templates on the WhatsApp Business Account and the Resumable Upload API, as known to the implementer on 2026-10-23 (the documentation hosts were not read first-hand). None is recorded live traffic; every shape is UNVERIFIED until a live check (docs/integrations.md).",
+  "files": {
+    "response.template-create.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "POST /<WABA_ID>/message_templates answer"
+    },
+    "response.template-create-recategorized.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "Meta may change the category it reports (UTILITY submitted, MARKETING answered)"
+    },
+    "response.template-delete.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "DELETE /<WABA_ID>/message_templates?name=<name> answer"
+    },
+    "error.template-invalid.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 400,
+      "note": "code 100 invalid parameter with a user message (subcode UNVERIFIED)"
+    },
+    "error.template-name-taken.json": {
+      "source": "https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 400,
+      "note": "content in this language already exists (subcode 2388024, UNVERIFIED)"
+    },
+    "error.template-auth.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/error-handling/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 401
+    },
+    "error.template-throttled.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/overview/rate-limiting/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 429
+    },
+    "response.templates-authored.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/message_templates/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "the template list as the sync reads it, carrying rejected_reason (field UNVERIFIED)"
+    },
+    "response.upload-session.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/upload/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "POST /<APP_ID>/uploads answer: the upload session id"
+    },
+    "response.upload-handle.json": {
+      "source": "https://developers.facebook.com/docs/graph-api/guides/upload/",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (not read first-hand)",
+      "verified": false,
+      "httpStatus": 200,
+      "note": "POST /upload:<SESSION_ID> answer: the file handle (h) used as header_handle"
+    }
+  }
+}
