@@ -18,8 +18,10 @@
  * `lead.import.failed` with the code and deletes the file.
  *
  * `leads.importPurge` (payload `{importId}`, scheduled at `expiresAt` by the upload): deletes the
- * rows file; a PREVIEW import becomes EXPIRED. A QUEUED or RUNNING import is left to finish (the
- * purge looks again an hour later); a finished one only loses a leftover file.
+ * rows file; a PREVIEW import becomes EXPIRED. A QUEUED or RUNNING import is left to finish while
+ * one of its chunk jobs is still queued or running (the purge looks again an hour later); with none
+ * left (a chunk job died without its settle) it is marked FAILED `IMPORT_STALLED`, audited, and its
+ * file deleted. A finished one only loses a leftover file.
  */
 import { z } from 'zod';
 import type { LeadImport } from '@/generated/prisma/client';
@@ -173,7 +175,7 @@ function processed(row: Pick<LeadImport, 'accepted' | 'duplicates' | 'review' | 
 }
 
 /** Ends a QUEUED or RUNNING import as FAILED (fenced settle), then deletes its rows file. */
-function failImport(job: JobHandlerContext, ctx: AppCtx, deps: ImportRunDeps, input: { importId: string; workspaceId: string; errorCode: string }) {
+function failImport(job: JobHandlerContext, ctx: AppCtx, deps: Pick<ImportRunDeps, 'storageDir'>, input: { importId: string; workspaceId: string; errorCode: string }) {
   return async (tx: TxClient) => {
     const now = job.clock.now();
     const done = await tx.leadImport.updateMany({ where: { id: input.importId, workspaceId: input.workspaceId, status: { in: ['QUEUED', 'RUNNING'] } }, data: { status: 'FAILED', storagePath: null, finishedAt: now } });
@@ -183,7 +185,7 @@ function failImport(job: JobHandlerContext, ctx: AppCtx, deps: ImportRunDeps, in
   };
 }
 
-function removeRowsFile(job: JobHandlerContext, deps: ImportRunDeps, workspaceId: string, importId: string): void {
+function removeRowsFile(job: JobHandlerContext, deps: Pick<ImportRunDeps, 'storageDir'>, workspaceId: string, importId: string): void {
   try {
     deleteImportRows(deps.storageDir, leadImportRelPath(workspaceId, importId));
   } catch (error) {
@@ -308,8 +310,14 @@ export async function runLeadImportPurge(job: JobHandlerContext, deps: Pick<Impo
   if (!row) return { outcome: 'succeeded' };
   const now = job.clock.now();
   if (now.getTime() < row.expiresAt.getTime()) return { outcome: 'deferred', runAt: row.expiresAt, reason: 'IMPORT_NOT_EXPIRED' };
-  // Confirmed in time: the import deletes its own file when it finishes; look again later.
-  if (row.status === 'QUEUED' || row.status === 'RUNNING') return { outcome: 'deferred', runAt: new Date(now.getTime() + HOUR), reason: 'IMPORT_IN_PROGRESS' };
+  const inProgress = row.status === 'QUEUED' || row.status === 'RUNNING';
+  if (inProgress) {
+    // Confirmed in time: the import deletes its own file when it finishes; look again later. But a
+    // chunk job that died without its settle (a thrown error, the reaper at max attempts) leaves
+    // nothing to finish it, and its rows would stay on disk past the 24 h (ADR-120).
+    const live = await job.db.job.count({ where: { workspaceId, type: LEAD_IMPORT_JOB, status: { in: ['QUEUED', 'RUNNING'] }, idempotencyKey: { startsWith: `${LEAD_IMPORT_JOB}:${importId}:` } } });
+    if (live > 0) return { outcome: 'deferred', runAt: new Date(now.getTime() + HOUR), reason: 'IMPORT_IN_PROGRESS' };
+  }
 
   try {
     deleteImportRows(deps.storageDir, leadImportRelPath(workspaceId, importId));
@@ -320,6 +328,7 @@ export async function runLeadImportPurge(job: JobHandlerContext, deps: Pick<Impo
     return { outcome: 'dead', reason: 'IMPORT_PURGE_FAILED', errorCode: 'IMPORT_PURGE_FAILED', error: message };
   }
   const ctx = getJobContext({ id: job.job.id, workspaceId, correlationId: job.correlationId }, { prisma: job.db, mode: deps.mode, clock: job.clock });
+  if (inProgress) return { outcome: 'succeeded', finalTx: failImport(job, ctx, deps, { importId, workspaceId, errorCode: 'IMPORT_STALLED' }) };
   return {
     outcome: 'succeeded',
     finalTx: async (tx) => {

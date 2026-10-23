@@ -4,8 +4,8 @@
  *
  * The factories take the storage directory, contact-key pepper and mode as dependency sources so
  * tests can inject them; production reads them from the boot config on first use, which fails
- * loudly (the job is retried, then DEAD) when SUPPRESSION_PEPPER is missing instead of importing
- * without consent keys.
+ * loudly (the chunk job dies; `leads.importPurge` ends the import at its expiry and deletes its rows)
+ * when SUPPRESSION_PEPPER is missing instead of importing without consent keys.
  */
 import { getConfig } from '@/lib/config';
 import { LEAD_IMPORT_JOB, LEAD_IMPORT_PURGE_JOB } from '@/server/services/leads/import';

@@ -22,7 +22,7 @@ Spec: plan §5 "F2 Import/Export", ADR-120; the edges settled here are **ADR-129
   (one job per 200-row chunk through `ingestBatch`, source FILE_IMPORT, batch `import:<id>:<chunk>`,
   record `import:<id>:row:<n>`; re-checks RUNNING + `storagePath` right before ingesting, as the
   baseline asked; counts each chunk once; last chunk SUCCEEDED + file deleted) and
-  `leads.importPurge` (PREVIEW -> EXPIRED + file deleted at expiry; QUEUED/RUNNING deferred 1 h).
+  `leads.importPurge` (PREVIEW -> EXPIRED + file deleted at expiry; QUEUED/RUNNING deferred 1 h while a chunk job is queued or running, otherwise FAILED `IMPORT_STALLED` + file deleted).
 - Routes: `POST/GET /api/app/leads/imports`, `GET /api/app/leads/imports/[importId]`,
   `POST /api/app/leads/imports/[importId]/confirm`, `GET /api/app/leads/sample-workbook`.
 - Page `/dashboard/employee/[ws]/leads/import` with `src/components/leads/import/**`: drag and drop +
@@ -106,6 +106,8 @@ Spec: plan §5 "F2 Import/Export", ADR-120; the edges settled here are **ADR-129
 
 ## Deferred / open
 
+- A chunk job that dies without its settle (a thrown error such as a missing SUPPRESSION_PEPPER, or the lease reaper at max attempts) leaves the import showing Queued or Importing until `leads.importPurge` ends it at its expiry (FAILED `IMPORT_STALLED`, rows deleted). Ingestion errors end it at once.
+- Opt-in dates are day-first, ISO or an Excel serial; month-name dates (`14 Sep 2026`) get a `CONSENT_DATE_INVALID` row note and no consent.
 - No client-panel (USER) import page; the routes accept USER (an owner's own workspace) so one can
   be added later with the same components.
 - The rows file holds every column (the mapping is chosen after upload) until it is deleted at

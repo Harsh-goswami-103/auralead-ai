@@ -128,7 +128,7 @@ describe('the leads.import job', () => {
     expect(record.attribution).toEqual({ importId: id, row: '3' });
     const lead = await h.db.lead.findUniqueOrThrow({ where: { id: record.leadId! } });
     expect(lead).toMatchObject({ displayName: 'Chunk Shop 2', firstSource: 'FILE_IMPORT', city: 'Indore', simulated: false });
-    // Imported leads have no WhatsApp opt-in (ADR-120; eligibility in tests/integration/consent/file-import-consent.test.ts).
+    // Imported leads have no WhatsApp opt-in (ADR-120; eligibility in tests/integration/import/import-consent.test.ts).
     expect(await h.db.consentRecord.count({ where: { leadId: lead.id } })).toBe(0);
 
     const audit = await h.db.auditEvent.findFirstOrThrow({ where: { action: 'lead.import.complete', targetId: id } });
@@ -230,6 +230,30 @@ describe('leads.importPurge', () => {
       h.clock.set(saved);
       await h.db.job.update({ where: { id: queuedChunk.id }, data: { runAt: h.clock.now() } });
       await h.drain();
+    }
+  });
+
+  it('ends an import whose chunk job died at its expiry and deletes its rows (nothing is left to finish it)', async () => {
+    const { owner, id } = await previewOf(businessRows(2, 'Stalled Run', 9_200), 'purge-stalled-0001');
+    await confirmLeadImport(owner, id, { mapping: MAP }, { storageDir: h.storageDir });
+    const row = await h.db.leadImport.findUniqueOrThrow({ where: { id } });
+    const full = path.join(h.storageDir, row.storagePath!);
+    // The state a thrown handler error or the lease reaper at max attempts leaves: the chunk job is
+    // DEAD without its settle, so the import stays QUEUED with its rows file.
+    const chunk = await h.db.job.findFirstOrThrow({ where: { idempotencyKey: `leads.import:${id}:0` } });
+    await h.db.job.update({ where: { id: chunk.id }, data: { status: 'DEAD', deadReason: 'MAX_ATTEMPTS', finishedAt: h.clock.now() } });
+
+    const saved = h.clock.now();
+    h.clock.set(row.expiresAt);
+    try {
+      await h.drain();
+      expect(await h.db.leadImport.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: 'FAILED', storagePath: null, accepted: 0 });
+      expect(fs.existsSync(full)).toBe(false);
+      const audit = await h.db.auditEvent.findFirstOrThrow({ where: { action: 'lead.import.failed', targetId: id } });
+      expect(audit).toMatchObject({ result: 'FAILED', summary: { errorCode: 'IMPORT_STALLED' } });
+      expect(await h.db.job.findFirstOrThrow({ where: { idempotencyKey: `leads.importPurge:${id}` } })).toMatchObject({ status: 'SUCCEEDED' });
+    } finally {
+      h.clock.set(saved);
     }
   });
 });
