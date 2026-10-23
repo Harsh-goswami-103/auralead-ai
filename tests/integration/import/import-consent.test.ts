@@ -10,6 +10,7 @@
 // attestation no consent is recorded and templates are skipped NO_WHATSAPP_OPT_IN.
 import fs from 'node:fs';
 import path from 'node:path';
+import { strToU8, zipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { consentAttestationText, type ImportMappingValue } from '@/lib/schemas/lead-import';
 import { getWebhookContext } from '@/server/auth/context';
@@ -22,7 +23,7 @@ import { checkDispatchEligibility } from '@/server/services/messaging/eligibilit
 import { clearSuppressionForConsent, recordSuppression } from '@/server/services/messaging/suppression';
 import { seedId } from '../../../prisma/seed/ids';
 import { ensureWhatsApp } from '../consent/support';
-import { createImportHarness, csvUpload, ownerOf, upload, userCtx, WS_A, type ImportHarness } from './support';
+import { b64, createImportHarness, csvUpload, ownerOf, upload, userCtx, WS_A, type ImportHarness } from './support';
 
 let h: ImportHarness;
 let journalDir: string;
@@ -201,6 +202,54 @@ describe('a consent request that cannot be honoured as sent (422, still a previe
       confirmLeadImport(ctx, id, { mapping: over.mapping ?? MAP, dataSource: 'OWN_CUSTOMERS', consent: { noticeText: over.noticeText ?? NOTICE, attestation: over.attestation ?? ATTESTATION } }, { storageDir: h.storageDir }),
     ).rejects.toMatchObject({ status: 422, code, ...(code === 'CONSENT_DATE_IN_FUTURE' ? { userMessage: expect.stringContaining('Row 3') } : {}) });
     expect(await h.db.leadImport.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: 'PREVIEW', consentAttested: false });
+  });
+});
+
+/** A workbook the way Excel writes one: shared strings, numeric phone cells, TRUE/FALSE booleans, dates as serial numbers. */
+function excelWorkbook(rowsXml: string, shared: string[]): Uint8Array {
+  return zipSync({
+    '[Content_Types].xml': strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>'),
+    'xl/workbook.xml': strToU8(
+      '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Leads" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    ),
+    'xl/_rels/workbook.xml.rels': strToU8(
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>',
+    ),
+    'xl/sharedStrings.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${shared.map((t) => `<si><t>${t}</t></si>`).join('')}</sst>`),
+    'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`),
+  });
+}
+
+describe('a workbook as Excel writes it', () => {
+  it('reads numeric phone cells, TRUE/FALSE opt-ins and serial-number dates through the whole consent path', async () => {
+    const shared = ['Name', 'Phone', 'WhatsApp opt-in', 'Opt-in date', 'Excel Shop One', 'Excel Shop Two', 'Excel Shop Three'];
+    const rowsXml = [
+      '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c></row>',
+      // 46279 is 14 Sep 2026; 46279.5 is noon that day.
+      '<row r="2"><c r="A2" t="s"><v>4</v></c><c r="B2"><v>9830055501</v></c><c r="C2" t="b"><v>1</v></c><c r="D2"><v>46279</v></c></row>',
+      '<row r="3"><c r="A3" t="s"><v>5</v></c><c r="B3"><v>9830055502</v></c><c r="C3" t="b"><v>0</v></c><c r="D3"><v>46279</v></c></row>',
+      '<row r="4"><c r="A4" t="s"><v>6</v></c><c r="B4"><v>9830055503</v></c><c r="C4" t="b"><v>1</v></c><c r="D4"><v>46279.5</v></c></row>',
+    ].join('');
+    const owner = await ownerOf(h);
+    const { import: created, preview: shown } = await upload(h, owner, {
+      requestKey: 'consent-excel-0001',
+      fileName: 'excel-list.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      dataBase64: b64(excelWorkbook(rowsXml, shared)),
+    });
+    expect(shown?.suggestedMapping).toEqual({ name: 0, phone: 1, consent: 2, consentDate: 3 });
+    expect(shown?.rows[0]).toEqual({ row: 2, cells: ['Excel Shop One', '9830055501', 'TRUE', '46279'] });
+
+    const result = await confirmLeadImport(owner, created.id, { mapping: { name: 0, phone: 1, consent: 2, consentDate: 3 }, dataSource: 'OWN_CUSTOMERS', consent: CONSENT }, { storageDir: h.storageDir });
+    expect(result.consent).toEqual({ requested: true, honoured: true, reason: null });
+    await h.drain();
+    expect(await h.db.leadImport.findUniqueOrThrow({ where: { id: created.id } })).toMatchObject({ status: 'SUCCEEDED', accepted: 3, rejected: 0, consentRecorded: 2 });
+    const one = await h.db.consentRecord.findMany({ where: { leadId: (await leadOfRow(created.id, 2)).id } });
+    expect(one).toHaveLength(1);
+    expect(one[0]!.collectedAt.toISOString()).toBe('2026-09-13T18:30:00.000Z');
+    expect(await h.db.consentRecord.count({ where: { leadId: (await leadOfRow(created.id, 3)).id } })).toBe(0);
+    const three = await h.db.consentRecord.findMany({ where: { leadId: (await leadOfRow(created.id, 4)).id } });
+    expect(three.map((c) => c.collectedAt.toISOString())).toEqual(['2026-09-14T06:30:00.000Z']);
   });
 });
 
