@@ -81,3 +81,20 @@ export function draftOf(fields: TemplateDraftFields): TemplateDraft {
     buttons: fields.buttons,
   };
 }
+
+// ---- Media library (PDF brochures for document headers, ADR-123) ---------------------------------
+
+/** The largest PDF brochure a workspace may upload (5 MB). */
+export const MEDIA_PDF_MAX_BYTES = 5 * 1024 * 1024;
+
+/** The upload body: base64 in JSON, like the logo upload (plan: mutations are JSON only). */
+export const MediaUploadBody = z.object({
+  workspaceSlug: workspaceSlugField.optional(),
+  fileName: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().max(100),
+  dataBase64: z.string().min(1),
+});
+export type MediaUploadBody = z.output<typeof MediaUploadBody>;
+
+/** The JSON body cap of the upload route: base64 of 5 MB plus the envelope. A larger body is 413. */
+export const MEDIA_UPLOAD_MAX_BODY_BYTES = Math.ceil(MEDIA_PDF_MAX_BYTES / 3) * 4 + 64 * 1024;

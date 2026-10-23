@@ -2056,6 +2056,23 @@ export const ROUTES: readonly RouteEntry[] = [
     params: { templateId: fixture('templates.unknownTemplateId') },
     calls: [{ method: 'POST', body: { workspaceSlug: fixture('workspaceB.slug') }, expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 }, note: 'delete a draft of workspace B (unknown id probe)' }],
   },
+  {
+    path: '/api/app/media',
+    file: 'src/app/api/app/media/route.ts',
+    kind: 'api',
+    owner: 'T43',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'templates.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), fileName: 'brochure.pdf', contentType: 'application/pdf', dataBase64: 'JVBERi0xLjQK' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: 'upload a PDF brochure to workspace B (document header, ADR-123)',
+      },
+    ],
+  },
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
 

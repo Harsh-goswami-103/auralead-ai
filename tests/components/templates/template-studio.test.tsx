@@ -67,6 +67,7 @@ function view(over: Partial<StudioView> = {}): StudioView {
     whatsapp: { canDraft: true, canSubmit: true, problem: null },
     ai: { local: true, available: true },
     templates: [template()],
+    media: [],
     ...over,
   };
 }

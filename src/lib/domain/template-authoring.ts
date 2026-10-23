@@ -344,6 +344,7 @@ export function checkTemplateDraft(draft: TemplateDraft, opts: { forSubmit: bool
     const all = [header.format === 'TEXT' ? header.text : '', body, footer, ...draft.buttons.map((b) => b.text)].join('\n');
     const words = promotionalWordsIn(all);
     if (words.length > 0) warn('body', 'PROMOTIONAL_WORDS', `Utility templates must not promote: remove ${words.map((w) => `“${w}”`).join(', ')} or choose Marketing. WhatsApp may recategorize or reject it.`);
+    if (header.format === 'DOCUMENT') warn('header', 'DOCUMENT_HEADER_UTILITY', 'A PDF brochure is promotion, so WhatsApp treats it as Marketing and may recategorize or reject a Utility template that carries one. Choose Marketing.');
   }
   return { ok: errors.length === 0, errors, warnings };
 }

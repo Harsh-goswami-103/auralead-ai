@@ -3,13 +3,16 @@
 // generate copy (local template), submit (simulated review), delete; a foreign workspace slug is
 // 404, a missing capability 403, an invalid draft 422 with its issues, a malformed body 400, a
 // non-id template segment 404, no CSRF 403, and the per-workspace submission limit
-// (`templateSubmit`, 20 an hour) answers 429. The tenant matrix covers the remaining actors.
+// (`templateSubmit`, 20 an hour) answers 429. P1: the PDF upload route stores a brochure and caps
+// the JSON body at the base64 size of 5 MB (413). The tenant matrix covers the remaining actors.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { POST as deleteRoute } from '@/app/api/app/templates/[templateId]/delete/route';
 import { POST as saveRoute } from '@/app/api/app/templates/[templateId]/route';
 import { POST as submitRoute } from '@/app/api/app/templates/[templateId]/submit/route';
 import { POST as generateRoute } from '@/app/api/app/templates/generate/route';
 import { POST as createRoute } from '@/app/api/app/templates/route';
+import { POST as mediaRoute } from '@/app/api/app/media/route';
+import { MEDIA_UPLOAD_MAX_BODY_BYTES } from '@/lib/schemas/templates';
 import { csrfTokenForSession } from '@/server/auth/issue';
 import { createSession, sessionCookieName } from '@/server/auth/session';
 import { createRateLimiters } from '@/server/security/rate-limit';
@@ -96,5 +99,15 @@ describe('template studio routes (DEMO)', () => {
     const res = await call(submitRoute, '/api/app/templates/templatematrixprobe0000000/submit', { templateId: 'templatematrixprobe0000000' }, { workspaceSlug: WS_A_SLUG });
     expect(res.status).toBe(429);
     expect(res.headers.get('retry-after')).not.toBeNull();
+  });
+
+  it('P1: uploads a PDF brochure; a body over the cap is 413 before anything is parsed', async () => {
+    const pdf = Buffer.from('%PDF-1.4 route brochure', 'latin1').toString('base64');
+    const ok = await call(mediaRoute, '/api/app/media', {}, { workspaceSlug: WS_A_SLUG, fileName: 'route.pdf', contentType: 'application/pdf', dataBase64: pdf });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ asset: { fileName: 'route.pdf' } });
+    const huge = 'A'.repeat(MEDIA_UPLOAD_MAX_BODY_BYTES);
+    expect((await call(mediaRoute, '/api/app/media', {}, { workspaceSlug: WS_A_SLUG, fileName: 'big.pdf', contentType: 'application/pdf', dataBase64: huge })).status).toBe(413);
+    expect((await call(mediaRoute, '/api/app/media', {}, { workspaceSlug: 'kesari-crafts', fileName: 'route.pdf', contentType: 'application/pdf', dataBase64: pdf })).status).toBe(403);
   });
 });

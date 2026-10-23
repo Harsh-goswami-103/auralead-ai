@@ -51,7 +51,7 @@ export interface TemplateAdminPort {
   uploadHeaderDocument(doc: HeaderDocument): Promise<GraphCall<{ handle: string }>>;
 }
 
-export type GraphTemplateAdmin = TemplateAdminPort & { readonly label: 'graph'; readonly simulated: false; readonly wabaId: string };
+export type GraphTemplateAdmin = TemplateAdminPort & { readonly label: 'graph'; readonly simulated: false; readonly wabaId: string; /** Null: a document header cannot be uploaded. */ readonly appId: string | null };
 
 export type GraphTemplateAdminOptions = {
   mode: OutboundMode;
@@ -137,6 +137,7 @@ export function createGraphTemplateAdmin(opts: GraphTemplateAdminOptions): Graph
     label: 'graph',
     simulated: false,
     wabaId: opts.wabaId,
+    appId: opts.appId,
     createTemplate: (req) =>
       call('POST', `/${opts.wabaId}/message_templates`, { contentType: 'application/json', payload: JSON.stringify({ name: req.name, language: req.language, category: req.category, components: req.components }) }, (json) => {
         const o = record(json);
@@ -212,5 +213,6 @@ export const TEMPLATE_SUBMIT_FAILURE_LABELS: Readonly<Record<string, string>> = 
   NOT_FOUND_AFTER_SUBMIT: 'Meta does not list this template after the submission, so it was not created. Submit again.',
   INTEGRATION_NOT_CONFIGURED: 'WhatsApp is not connected and verified, so nothing was submitted.',
   CREDENTIAL_UNREADABLE: 'The stored WhatsApp access token could not be read. Re-enter it in the WhatsApp setup.',
-  MEDIA_MISSING: 'The brochure file is missing or changed on disk. Upload it again.',
+  MEDIA_MISSING: 'The brochure file is missing or changed on disk. Upload it again and choose it for the header.',
+  MEDIA_UPLOAD_FAILED: 'The brochure could not be uploaded to Meta, so nothing was submitted. Submit again.',
 };

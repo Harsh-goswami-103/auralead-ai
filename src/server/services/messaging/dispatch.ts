@@ -33,6 +33,7 @@ import { requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { assertSameWorkspace, type ScopedTx } from '@/server/db/scoped';
 import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
+import { templateShape } from '@/lib/domain/whatsapp-templates';
 import { pdfFileName } from '@/server/pdf/artifacts';
 import { hmacSha256, safeEqual } from '@/server/security/hmac';
 import { approveQuoteVersionApproval } from '@/server/services/approvals/quote-approvals';
@@ -552,6 +553,12 @@ export type SendPlan = {
   body: string | null;
   subject: string | null;
   artifact: { path: string; sha256: string; bytes: number; filename: string } | null;
+  /**
+   * ADR-123 (slice F4): the template's own PDF brochure for its DOCUMENT header (`headerMediaId`),
+   * uploaded per send like the quote PDF; null when the template has none (a DOCUMENT header then
+   * carries the quote PDF, `artifact`).
+   */
+  headerDocument: { path: string; sha256: string; bytes: number; filename: string } | null;
   workspace: { name: string; slug: string };
 };
 
@@ -706,7 +713,17 @@ export async function preflightDispatch(tx: ScopedTx, ctx: AppCtx, ref: { messag
     await closeAttempt(tx, ctx, attempt, 'SKIPPED', ['CONTACT_MISSING']);
     return { kind: 'skipped', reasons: ['CONTACT_MISSING'], attemptId: attempt.id };
   }
-  const template = message.templateId ? await tx.whatsAppTemplate.findFirst({ where: { id: message.templateId }, select: { name: true, language: true, components: true, variableMap: true } }) : null;
+  const template = message.templateId ? await tx.whatsAppTemplate.findFirst({ where: { id: message.templateId }, select: { name: true, language: true, components: true, variableMap: true, headerMediaId: true } }) : null;
+  // ADR-123: a template with its own brochure sends that document as its header (not the quote PDF).
+  let headerDocument: SendPlan['headerDocument'] = null;
+  if (template?.headerMediaId && templateShape(template.components, null, { headerMediaId: template.headerMediaId }).documentSource === 'media') {
+    const asset = await tx.mediaAsset.findFirst({ where: { id: template.headerMediaId }, select: { storagePath: true, sha256: true, byteSize: true, fileName: true } });
+    if (!asset) {
+      await closeAttempt(tx, ctx, attempt, 'SKIPPED', ['MEDIA_MISSING']);
+      return { kind: 'skipped', reasons: ['MEDIA_MISSING'], attemptId: attempt.id };
+    }
+    headerDocument = { path: asset.storagePath, sha256: asset.sha256, bytes: asset.byteSize, filename: asset.fileName };
+  }
 
   const moved = await tx.dispatchAttempt.updateMany({ where: { id: attempt.id, state: 'QUEUED' }, data: { state: 'SENDING', updatedAt: now } });
   if (moved.count !== 1) return { kind: 'done' };
@@ -733,6 +750,7 @@ export async function preflightDispatch(tx: ScopedTx, ctx: AppCtx, ref: { messag
       body: message.body,
       subject: message.subject,
       artifact,
+      headerDocument,
       workspace: { name: workspace.name, slug: workspace.slug },
     },
   };

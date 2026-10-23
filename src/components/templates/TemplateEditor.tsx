@@ -4,7 +4,8 @@
  * The template studio form (ADR-123, slice F4). The person chooses the category first (Marketing
  * or Utility, with what each one is for); the rest of the form appears once it is chosen:
  * language and name, "Generate with AI" (the category goes to the model, which cannot change it;
- * DEMO runs the labelled local template), the header (none or text), the body with one button per
+ * DEMO runs the labelled local template), the header (none, text, or a PDF brochure from the media
+ * library, uploaded here: POST /api/app/media, 5 MB), the body with one button per
  * lead or business fact that inserts the next `{{n}}` and maps it, a source and an example for
  * every variable, the footer and the buttons (quick replies, website links, a call button; a
  * Marketing template starts with the Stop quick reply, mapped to the STOP payload). Utility
@@ -52,6 +53,8 @@ import { TemplatePreview } from './TemplatePreview';
 
 export type EditorInitial = { id: string | null; draft: TemplateDraft | null; copyGeneratorLabel: string | null };
 
+export type MediaOption = { id: string; fileName: string; byteSize: number };
+
 export type TemplateEditorProps = {
   workspaceSlug: string;
   businessName: string;
@@ -60,6 +63,8 @@ export type TemplateEditorProps = {
   /** Generate is blocked (LIVE without an AI integration): the configuration gate. */
   aiGate: Gate | null;
   initial: EditorInitial;
+  /** The workspace's PDF brochures (document headers). */
+  media: MediaOption[];
   onClose: () => void;
   /** Called after a successful save with the stored template id. */
   onSaved?: (templateId: string) => void;
@@ -68,7 +73,27 @@ export type TemplateEditorProps = {
 type SaveResponse = { template: { id: string; name: string }; warnings: DraftIssue[] };
 type GenerateResponse = { draft: TemplateDraft; generatorLabel: string; modelId: string; warnings: DraftIssue[] };
 
-const HEADER_FORMATS_OFFERED = ['NONE', 'TEXT'] as const;
+const HEADER_FORMATS_OFFERED = ['NONE', 'TEXT', 'DOCUMENT'] as const;
+const MAX_PDF_BYTES = 5 * 1024 * 1024;
+
+/** The file as base64 (the upload route takes JSON). */
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('the file could not be read'));
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.readAsDataURL(file);
+  });
+}
+
+function documentNameOf(draft: TemplateDraft, library: readonly MediaOption[]): string | null {
+  const header = draft.header;
+  return header.format === 'DOCUMENT' ? (library.find((m) => m.id === header.mediaId)?.fileName ?? null) : null;
+}
+
+function sizeLabel(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export function TemplateEditor(props: TemplateEditorProps) {
   const router = useRouter();
@@ -81,6 +106,8 @@ export function TemplateEditor(props: TemplateEditorProps) {
   const [purpose, setPurpose] = useState('');
   const [line, setLine] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [library, setLibrary] = useState<MediaOption[]>(props.media);
+  const [uploading, setUploading] = useState(false);
 
   const check = useMemo(() => (draft ? checkTemplateDraft(draft, { forSubmit: true }) : null), [draft]);
   const update = (patch: Partial<TemplateDraft>) => setDraft((d) => (d ? { ...d, ...patch } : d));
@@ -146,6 +173,34 @@ export function TemplateEditor(props: TemplateEditorProps) {
     setDraft({ ...res.data.draft, category: draft.category, language: draft.language, utilityTrigger: draft.utilityTrigger });
     setGenerator({ label: res.data.generatorLabel, modelId: res.data.modelId });
     setLine({ ok: true, text: 'Copy generated. Review every line before you save: you are responsible for what is sent.' });
+  }
+
+  async function upload(file: File | null, input: HTMLInputElement) {
+    if (!file || uploading) return;
+    setLine(null);
+    if (file.size > MAX_PDF_BYTES) {
+      setLine({ ok: false, text: 'The PDF is larger than 5 MB. Export a smaller file.' });
+      input.value = '';
+      return;
+    }
+    setUploading(true);
+    try {
+      const dataBase64 = await readAsBase64(file);
+      const res = await postJson<{ asset: MediaOption }>('/api/app/media', { workspaceSlug: props.workspaceSlug, fileName: file.name, contentType: file.type || 'application/pdf', dataBase64 }, csrf);
+      if (!res.ok) {
+        setLine({ ok: false, text: `${res.message}${res.reference ? ` Reference ${res.reference}.` : ''}` });
+        return;
+      }
+      const asset = res.data.asset;
+      setLibrary((l) => [asset, ...l.filter((m) => m.id !== asset.id)]);
+      update({ header: { format: 'DOCUMENT', mediaId: asset.id } });
+      setLine({ ok: true, text: `${asset.fileName} uploaded and chosen for the header.` });
+    } catch {
+      setLine({ ok: false, text: 'The file could not be read. Choose the PDF again.' });
+    } finally {
+      input.value = '';
+      setUploading(false);
+    }
   }
 
   async function save() {
@@ -266,13 +321,46 @@ export function TemplateEditor(props: TemplateEditorProps) {
                         name={`${id}-header`}
                         value={f}
                         checked={draft.header.format === f}
-                        onChange={() => update({ header: f === 'TEXT' ? { format: 'TEXT', text: draft.header.format === 'TEXT' ? draft.header.text : '', example: null } : { format: 'NONE' } })}
+                        onChange={() =>
+                          update({
+                            header:
+                              f === 'TEXT'
+                                ? { format: 'TEXT', text: draft.header.format === 'TEXT' ? draft.header.text : '', example: null }
+                                : f === 'DOCUMENT'
+                                  ? { format: 'DOCUMENT', mediaId: draft.header.format === 'DOCUMENT' ? draft.header.mediaId : (library[0]?.id ?? null) }
+                                  : { format: 'NONE' },
+                          })
+                        }
                         className="accent-current"
                       />
                       {HEADER_FORMAT_LABELS[f]}
                     </label>
                   ))}
                 </div>
+                {draft.header.format === 'DOCUMENT' ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`${id}-header-media`} className="text-fg-1">
+                        Brochure (PDF)
+                      </Label>
+                      <NativeSelect id={`${id}-header-media`} value={draft.header.mediaId ?? ''} onChange={(e) => update({ header: { format: 'DOCUMENT', mediaId: e.target.value === '' ? null : e.target.value } })}>
+                        <option value="">Choose a brochure</option>
+                        {library.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.fileName} ({sizeLabel(m.byteSize)})
+                          </option>
+                        ))}
+                      </NativeSelect>
+                      <span className="text-xs text-fg-2">Sent as the header document of every message of this template. A brochure is a Marketing template.</span>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`${id}-header-upload`} className="text-fg-1">
+                        Upload a PDF (up to 5 MB)
+                      </Label>
+                      <Input id={`${id}-header-upload`} type="file" accept="application/pdf,.pdf" aria-busy={uploading || undefined} onChange={(e) => void upload(e.target.files?.[0] ?? null, e.target)} />
+                    </div>
+                  </div>
+                ) : null}
                 {draft.header.format === 'TEXT' ? (
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
@@ -489,7 +577,14 @@ export function TemplateEditor(props: TemplateEditorProps) {
           ) : null}
         </div>
         <div className="min-w-0">
-          {draft ? <TemplatePreview draft={draft} businessName={props.businessName} className="lg:sticky lg:top-4" /> : null}
+          {draft ? (
+            <TemplatePreview
+              draft={draft}
+              businessName={props.businessName}
+              documentName={documentNameOf(draft, library)}
+              className="lg:sticky lg:top-4"
+            />
+          ) : null}
         </div>
       </div>
     </SectionCard>

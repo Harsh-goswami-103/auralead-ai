@@ -10,8 +10,10 @@
  *   to /api/app/templates (new) or /api/app/templates/[id], then refreshes.
  * - The WhatsApp preview follows the form, showing example values for variables.
  * - Without an AI integration in LIVE the generate control is a configuration gate.
+ * - P1: a document header picks a PDF from the media library or uploads one (base64 JSON to
+ *   /api/app/media with the CSRF header; over 5 MB refused before posting); the preview names it.
  */
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CsrfProvider } from '@/components/patterns/csrf';
 import { TemplateEditor, type TemplateEditorProps } from '@/components/templates/TemplateEditor';
@@ -36,7 +38,7 @@ function renderEditor(over: Partial<TemplateEditorProps> = {}) {
   const onClose = vi.fn();
   render(
     <CsrfProvider token="csrf-token-f4">
-      <TemplateEditor workspaceSlug="codecraft-web" businessName="Codecraft Web Studio" localGenerator aiGate={null} initial={{ id: null, draft: null, copyGeneratorLabel: null }} onClose={onClose} {...over} />
+      <TemplateEditor workspaceSlug="codecraft-web" businessName="Codecraft Web Studio" localGenerator aiGate={null} initial={{ id: null, draft: null, copyGeneratorLabel: null }} media={[]} onClose={onClose} {...over} />
     </CsrfProvider>,
   );
   return { onClose };
@@ -174,6 +176,39 @@ describe('TemplateEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove button Stop' }));
     expect(document.querySelector('[data-warning="NO_STOP_BUTTON"]')).not.toBeNull();
     expect(document.querySelectorAll('[data-preview-button]')).toHaveLength(3);
+  });
+});
+
+describe('TemplateEditor document header (P1)', () => {
+  it('picks a brochure from the library, or uploads a PDF and uses it', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ asset: { id: 'med_new', fileName: 'brochure.pdf', byteSize: 10, createdAt: '2026-10-23T06:00:00.000Z' } }), { status: 200 }));
+    renderEditor({ media: [{ id: 'med_1', fileName: 'old.pdf', byteSize: 2048 }] });
+    fireEvent.click(screen.getByRole('radio', { name: 'Marketing' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'PDF document' }));
+    expect((screen.getByLabelText('Brochure (PDF)') as HTMLSelectElement).value).toBe('med_1');
+    expect(document.querySelector('[data-preview-header]')?.textContent).toBe('old.pdf');
+    const file = new File(['%PDF-1.4 x'], 'brochure.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText('Upload a PDF (up to 5 MB)'), { target: { files: [file] } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/app/media');
+    expect((init.headers as Record<string, string>)['x-csrf-token']).toBe('csrf-token-f4');
+    expect(JSON.parse(init.body as string)).toEqual({ workspaceSlug: 'codecraft-web', fileName: 'brochure.pdf', contentType: 'application/pdf', dataBase64: Buffer.from('%PDF-1.4 x').toString('base64') });
+    await waitFor(() => expect((screen.getByLabelText('Brochure (PDF)') as HTMLSelectElement).value).toBe('med_new'));
+    expect(document.querySelector('[data-preview-header]')?.textContent).toBe('brochure.pdf');
+    expect(screen.getByRole('status').textContent).toContain('brochure.pdf uploaded');
+  });
+
+  it('refuses a PDF over 5 MB before posting', async () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole('radio', { name: 'Marketing' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'PDF document' }));
+    const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.pdf', { type: 'application/pdf' });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Upload a PDF (up to 5 MB)'), { target: { files: [big] } });
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toContain('larger than 5 MB');
   });
 });
 

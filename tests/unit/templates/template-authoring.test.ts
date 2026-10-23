@@ -151,6 +151,14 @@ describe('checkTemplateDraft: studio rules (ADR-123)', () => {
     expect(promotionalWordsIn('The project plan is attached.')).toEqual([]);
   });
 
+  it('a brochure header on a UTILITY template warns (ADR-123: a brochure is Marketing), Marketing does not', () => {
+    const utility = draft({ category: 'UTILITY', utilityTrigger: 'CUSTOMER_ASKED', buttons: [], footer: null, body: 'Hello {{1}}, here is the project update you asked for from {{2}} today.', header: { format: 'DOCUMENT', mediaId: 'm1' } });
+    const result = checkTemplateDraft(utility, { forSubmit: true });
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([expect.objectContaining({ field: 'header', code: 'DOCUMENT_HEADER_UTILITY' })]);
+    expect(checkTemplateDraft(draft({ header: { format: 'DOCUMENT', mediaId: 'm1' } }), { forSubmit: true }).warnings).toEqual([]);
+  });
+
   it('MARKETING carries the Stop quick reply (STOP payload) by default and warns without it', () => {
     expect(defaultButtons('MARKETING')).toEqual([{ type: 'QUICK_REPLY', text: 'Stop', intent: 'STOP' }]);
     expect(defaultButtons('UTILITY')).toEqual([]);

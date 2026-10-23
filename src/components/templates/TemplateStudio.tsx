@@ -60,6 +60,7 @@ export type StudioView = {
   whatsapp: { canDraft: boolean; canSubmit: boolean; problem: string | null };
   ai: { local: boolean; available: boolean };
   templates: StudioTemplate[];
+  media: Array<{ id: string; fileName: string; byteSize: number }>;
 };
 
 export const REFRESH_EVERY_MS = 5_000;
@@ -140,6 +141,7 @@ export function TemplateStudio({ workspaceSlug, view }: { workspaceSlug: string;
           localGenerator={view.ai.local}
           aiGate={aiGate}
           initial={editing}
+          media={view.media}
           onClose={() => setEditing(null)}
         />
       ) : null}

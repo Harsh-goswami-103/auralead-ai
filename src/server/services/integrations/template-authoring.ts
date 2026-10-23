@@ -29,6 +29,11 @@
  *        blind retry; a job run that finds a previous attempt (a crash during the call) does the same;
  *      - a definite refusal or a failure before the write: back to DRAFT with the reason audited
  *        (`template.submit` FAILED), so the person can fix it and submit again.
+ * A DOCUMENT header (P1) is a PDF brochure from the media library (media-assets.ts): its bytes are
+ * checked against the stored hash and uploaded for the header sample (DEMO: a simulated handle;
+ * LIVE: the resumable upload, which needs the WHATSAPP_CLOUD config `appId`, else 422 before
+ * anything changes), and the handle goes into the header's example. An upload that fails changes
+ * nothing at Meta, so the template goes back to DRAFT with the reason.
  * Consent is unchanged: every category needs OPT_IN + MARKETING to be sent (eligibility).
  */
 import type { IntegrationStatus, Prisma } from '@/generated/prisma/client';
@@ -60,6 +65,7 @@ import type { JobHandlerContext, JobResult, TxClient } from '@/server/jobs/types
 import type { KeyRing } from '@/server/security/secrets';
 import { recordAudit } from '@/server/services/audit/record';
 import { loadIntegrationForUse } from './credentials';
+import { listMediaAssets, readMediaAssetFile, type MediaAssetView, type StoredMedia } from './media-assets';
 import { INTEGRATION_SCHEDULE_PAYLOAD_VERSION, WA_TEMPLATE_SYNC_JOB } from './schedules';
 import { submitSyncJobKey, SUBMIT_SYNC_DELAY_MS, TEMPLATE_JOB_PAYLOAD_VERSION, TEMPLATE_REVIEW_JOB, TEMPLATE_SUBMIT_JOB, templateReviewJobKey, templateSubmitJobKey } from './template-jobs';
 
@@ -126,6 +132,8 @@ export type TemplateStudioView = {
   /** "Generate with AI": DEMO runs the labelled local generator; LIVE needs an AI integration. */
   ai: { local: boolean; available: boolean };
   templates: StudioTemplateView[];
+  /** PDF brochures for document headers (P1). */
+  media: MediaAssetView[];
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -272,6 +280,7 @@ export async function getTemplateStudio(ctx: AppCtx, opts: { graphVersion: strin
     whatsapp: whatsAppState(ctx.mode, integration, opts.graphVersion),
     ai: { local: ctx.mode === 'demo', available: aiAvailable },
     templates: authoredFirst.map((t) => studioTemplateView(t, { simulated, lastSubmit: submits.get(t.id) ?? null })),
+    media: await listMediaAssets(ctx),
   };
 }
 
@@ -451,6 +460,22 @@ function notConfigured(p: Extract<Resolution<unknown>, { ok: false }>): DomainRu
 
 export type SubmitResult = { template: StudioTemplateView; simulated: boolean; reviewAt: string | null };
 
+type HeaderDocument = { assetId: string; fileName: string; bytes: Buffer };
+
+/** The DOCUMENT header's brochure, read and checked against its stored hash; null without a document header. */
+async function headerDocumentOf(db: { mediaAsset: { findFirst(args: { where: { id: string; workspaceId: string }; select: { id: true; storagePath: true; sha256: true; byteSize: true; fileName: true } }): PromiseLike<(StoredMedia & { id: string }) | null> } }, workspaceId: string, row: TemplateRow, storageDir: string): Promise<HeaderDocument | null | 'MEDIA_MISSING'> {
+  if (templateShape(row.components).headerFormat !== 'DOCUMENT' || row.headerMediaId === null) return null;
+  const asset = await db.mediaAsset.findFirst({ where: { id: row.headerMediaId, workspaceId }, select: { id: true, storagePath: true, sha256: true, byteSize: true, fileName: true } });
+  if (!asset) return 'MEDIA_MISSING';
+  try {
+    return { assetId: asset.id, fileName: asset.fileName, bytes: readMediaAssetFile(storageDir, asset) };
+  } catch {
+    return 'MEDIA_MISSING';
+  }
+}
+
+const mediaMissing = () => new DomainRuleError({ code: 'MEDIA_MISSING', userMessage: TEMPLATE_SUBMIT_FAILURE_LABELS.MEDIA_MISSING! });
+
 export async function submitTemplate(ctx: AppCtx, templateId: string, deps: TemplateStudioDeps): Promise<SubmitResult> {
   requireCapability(ctx, 'templates.manage');
   const workspaceId = await assertWorkspaceMode(ctx);
@@ -470,10 +495,21 @@ export async function submitTemplate(ctx: AppCtx, templateId: string, deps: Temp
   }
   const now = ctx.clock.now();
   const actor = ctx.actor?.userId ?? `system:${ctx.kind}`;
+  const document = await headerDocumentOf(ctx.db as unknown as Tx, workspaceId, row, deps.storageDir);
+  if (document === 'MEDIA_MISSING') throw mediaMissing();
+  if (document && !admin.value.simulated && admin.value.appId === null) {
+    throw new DomainRuleError({ code: 'INTEGRATION_NOT_CONFIGURED', userMessage: TEMPLATE_SUBMIT_FAILURE_LABELS.APP_ID_MISSING!, safeDetails: { reason: 'APP_ID_MISSING' } });
+  }
 
   if (admin.value.simulated) {
     // DEMO: the simulated WhatsApp Manager accepts it (no network); the review job decides 30 s later.
-    const components = templateComponentsOf(draft);
+    let headerHandle: string | null = null;
+    if (document) {
+      const uploaded = await admin.value.uploadHeaderDocument({ fileName: document.fileName, mimeType: 'application/pdf', bytes: document.bytes });
+      if (!uploaded.ok) throw new DomainRuleError({ code: 'TEMPLATE_SUBMIT_FAILED', userMessage: 'The simulated review could not take the brochure.' });
+      headerHandle = uploaded.data.handle;
+    }
+    const components = templateComponentsOf(draft, { headerHandle });
     const created = await admin.value.createTemplate({ name: row.name, language: row.language, category: row.category, components });
     if (!created.ok) throw new DomainRuleError({ code: 'TEMPLATE_SUBMIT_FAILED', userMessage: 'The simulated review could not accept the template.' });
     const reviewAt = new Date(now.getTime() + DEMO_TEMPLATE_REVIEW_DELAY_MS);
@@ -484,6 +520,7 @@ export async function submitTemplate(ctx: AppCtx, templateId: string, deps: Temp
         data: { status: created.data.status ?? 'PENDING', providerTemplateId: created.data.id, submittedBy: actor, submittedAt: now, rejectedReason: null, components: components as Prisma.InputJsonValue },
       });
       if (moved.count !== 1) throw new ConflictError({ code: 'TEMPLATE_NOT_SUBMITTABLE', userMessage: 'This template changed in the meantime. Reload and try again.' });
+      if (document && headerHandle) await tx.mediaAsset.updateMany({ where: { id: document.assetId, workspaceId }, data: { providerHandle: headerHandle, providerHandleAt: now } });
       const { job } = await enqueueJob(tx as unknown as JobStore, ctx.clock, {
         type: TEMPLATE_REVIEW_JOB,
         payload: { templateId: row.id },
@@ -608,7 +645,21 @@ export async function runTemplateSubmit(job: JobHandlerContext, deps: TemplateJo
   }
   if (admin.value.simulated) return { outcome: 'succeeded', finalTx: (tx) => backToDraft(tx, l, { code: 'INTEGRATION_NOT_CONFIGURED', message: 'DEMO never submits to Meta' }) };
   const draft = draftFromStored(l.row);
-  const components = templateComponentsOf(draft);
+  const document = await headerDocumentOf(job.db, l.workspaceId, l.row, deps.storageDir);
+  if (document === 'MEDIA_MISSING') return { outcome: 'succeeded', finalTx: (tx) => backToDraft(tx, l, { code: 'MEDIA_MISSING', message: 'the brochure file is missing or changed' }) };
+  let headerHandle: string | null = null;
+  if (document) {
+    // The header sample: nothing exists at Meta until the template is created, so any failure here is a plain "not submitted".
+    const uploaded = await admin.value.uploadHeaderDocument({ fileName: document.fileName, mimeType: 'application/pdf', bytes: document.bytes });
+    if (job.signal.aborted) throw new LeaseLostError(job.job.id);
+    if (!uploaded.ok) {
+      const failure = classifyTemplateCreateFailure(uploaded);
+      const code = failure.kind === 'refused' || failure.kind === 'not-sent' ? failure.code : 'MEDIA_UPLOAD_FAILED';
+      return { outcome: 'succeeded', finalTx: (tx) => backToDraft(tx, l, { code, message: failure.message }) };
+    }
+    headerHandle = uploaded.data.handle;
+  }
+  const components = templateComponentsOf(draft, { headerHandle });
   const res = await admin.value.createTemplate({ name: l.row.name, language: l.row.language, category: l.row.category, components });
   if (job.signal.aborted) throw new LeaseLostError(job.job.id);
   if (res.ok) {
@@ -621,6 +672,7 @@ export async function runTemplateSubmit(job: JobHandlerContext, deps: TemplateJo
           data: { status, providerTemplateId: res.data.id, ...(res.data.category ? { category: res.data.category } : {}), components: components as Prisma.InputJsonValue },
         });
         if (moved.count !== 1) return;
+        if (document && headerHandle) await tx.mediaAsset.updateMany({ where: { id: document.assetId, workspaceId: l.workspaceId }, data: { providerHandle: headerHandle, providerHandleAt: now } });
         await enqueueSubmitSync(tx, l, job, new Date(now.getTime() + SUBMIT_SYNC_DELAY_MS));
         await recordAudit(tx, l.ctx, {
           action: 'template.submit',
