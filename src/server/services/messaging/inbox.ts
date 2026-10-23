@@ -17,7 +17,8 @@
  *  - events: takeover, resume, AI mode changes, escalations, call requests, the handoff to the
  *    client ("Handed over to <client> by <operator>", from LeadHandoff);
  *  - what needs a person: drafts to approve, failed or unknown deliveries, call requests, takeover,
- *    and an escalation (`Conversation.escalatedAt`, ADR-122) that no person has answered since;
+ *    and an escalation (`Conversation.escalatedAt`, ADR-122) that no person has answered since; a
+ *    handed-over lead's thread never needs the operator (it is the client's, read-only for them);
  *  - the handed-over state (`Lead.handedOverAt`): a badge for everyone, and a read-only thread for
  *    an operator (EMPLOYEE), whose sends and mode changes the services refuse anyway (409).
  *
@@ -168,6 +169,12 @@ export type InboxThreadRow = {
   escalated: boolean;
   /** The lead was handed over to the client (ADR-124). */
   handedOverAt: Date | null;
+  /**
+   * The thread is the client's and this person is an operator (ADR-124): read-only for them. The
+   * handoff itself turns the AI off and takes the thread over, so it neither needs the operator
+   * (`needsYou` is false) nor is the operator "handling" it; the UI says "Handed over" instead.
+   */
+  readOnly: boolean;
   needsYou: boolean;
 };
 
@@ -193,6 +200,7 @@ export async function listInboxThreads(ctx: AppCtx, input: { filter?: InboxFilte
   const workspaceId = requireWorkspace(ctx);
   const now = ctx.clock.now();
   const db = ctx.db;
+  const operator = ctx.actor?.role === 'EMPLOYEE';
   const workspace = await db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
   const conversations = await db.conversation.findMany({
     where: { closedAt: null },
@@ -227,6 +235,7 @@ export async function listInboxThreads(ctx: AppCtx, input: { filter?: InboxFilte
     const openCallRequests = callsOf.get(c.id) ?? 0;
     const answered = personSends.get(c.id);
     const escalated = c.escalatedAt !== null && !(answered && answered.getTime() >= c.escalatedAt.getTime());
+    const readOnly = c.lead.handedOverAt !== null && operator;
     return {
       conversationId: c.id,
       leadId: c.lead.id,
@@ -244,7 +253,8 @@ export async function listInboxThreads(ctx: AppCtx, input: { filter?: InboxFilte
       openCallRequests,
       escalated,
       handedOverAt: c.lead.handedOverAt,
-      needsYou: pendingApprovals > 0 || attentionDeliveries > 0 || openCallRequests > 0 || c.humanTakeover || escalated,
+      readOnly,
+      needsYou: !readOnly && (pendingApprovals > 0 || attentionDeliveries > 0 || openCallRequests > 0 || c.humanTakeover || escalated),
     };
   });
   all.sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime() || a.conversationId.localeCompare(b.conversationId));
@@ -539,7 +549,8 @@ export async function getInboxThread(ctx: AppCtx, conversationId: string, deps: 
       unansweredOutboundCount: conversation.unansweredOutboundCount,
       autoSendEnabled,
       autoAvailable: autoSendEnabled && hasCapability(ctx, 'automation.manage') && readOnly === null,
-      escalated: conversation.escalatedAt !== null && !(escalationAnswered && escalationAnswered.getTime() >= conversation.escalatedAt.getTime()),
+      // A handed-over thread is the client's: an escalation made before the handoff is not the operator's to answer.
+      escalated: readOnly === null && conversation.escalatedAt !== null && !(escalationAnswered && escalationAnswered.getTime() >= conversation.escalatedAt.getTime()),
     },
     lead: {
       id: lead.id,

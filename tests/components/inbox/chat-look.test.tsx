@@ -147,6 +147,7 @@ function row(over: Partial<InboxThreadRow>): InboxThreadRow {
     openCallRequests: 0,
     escalated: false,
     handedOverAt: null,
+    readOnly: false,
     needsYou: false,
     ...over,
   };
@@ -169,6 +170,23 @@ describe('ThreadList', () => {
     expect(threadRow('conv_esc').querySelector('[data-escalated]')?.textContent).toBe('Escalated');
     expect(threadRow('conv_ho').querySelector('[data-handed-over]')?.textContent).toBe('Handed over');
     expect(threadRow('conv_ho').querySelector('[data-needs-you]')).toBeNull();
+  });
+
+  it("a handed-over lead is the client's: the operator's row says Handed over and neither Needs you nor You are handling", () => {
+    const handedOver = { humanTakeover: true, handedOverAt: new Date('2026-10-19T10:00:00.000Z'), readOnly: true, escalated: true, needsYou: false } as const;
+    for (const compact of [false, true]) {
+      render(<ThreadList rows={[row({ conversationId: 'conv_ro', ...handedOver })]} timeZone="Asia/Kolkata" now={now} compact={compact} />);
+      const ro = threadRow('conv_ro');
+      expect(ro.querySelector('[data-handed-over]')?.textContent).toBe('Handed over');
+      expect(ro.querySelector('[data-needs-you]')).toBeNull();
+      expect(ro.querySelector('[data-escalated]')).toBeNull();
+      expect(ro.textContent).not.toContain('You are handling');
+      cleanup();
+    }
+    // The client's own row for the same lead (not read-only) keeps the takeover words.
+    render(<ThreadList rows={[row({ conversationId: 'conv_client', ...handedOver, readOnly: false, needsYou: true })]} timeZone="Asia/Kolkata" now={now} />);
+    expect(threadRow('conv_client').textContent).toContain('You are handling');
+    expect(threadRow('conv_client').querySelector('[data-needs-you]')?.textContent).toBe('Needs you');
   });
 
   it('shows the last outbound message with its tick and words, the time, and the open window in the chat accent', () => {

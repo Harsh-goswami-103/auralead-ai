@@ -18,7 +18,8 @@
  *
  * Operator inbox (ADR-121): `workspaceSlug` names the assigned workspace in every request (resolved
  * server-side). Once the lead is handed over (ADR-124), `readOnly` gates every control for the
- * operator with its reason; the server refuses them anyway (409 HANDED_OVER).
+ * operator with its reason; the server refuses them anyway (409 HANDED_OVER). The handoff takes the
+ * thread over for the client, so the operator's banner says the client is handling it, not "You".
  */
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -112,7 +113,7 @@ export function ModeControls(props: ModeControlsProps) {
             <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-full bg-info/16 text-info ring-1 ring-info/35">
               <Hand className="size-4 motion-safe:animate-reveal-focus" />
             </span>
-            You are handling this thread. AI replies paused.
+            {props.readOnly ? `${props.workspaceName} is handling this thread. AI replies paused.` : 'You are handling this thread. AI replies paused.'}
           </p>
           {canChange ? (
             <ConfirmDialog

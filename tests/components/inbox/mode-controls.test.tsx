@@ -123,4 +123,15 @@ describe('ModeControls', () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("after the handoff the banner names the client, not the operator, as handling the thread (the handoff takes the thread over)", () => {
+    const reason = 'Handed over to Alpha Dental on 21 Oct 2026. Only the client messages this lead now.';
+    renderControls({ readOnly: { reason }, humanTakeover: true, aiMode: 'OFF' });
+    const banner = document.querySelector('[data-takeover-banner]') as HTMLElement;
+    expect(banner.textContent).toContain('Alpha Dental is handling this thread. AI replies paused.');
+    expect(banner.textContent).not.toContain('You are handling');
+    // The operator cannot resume it: the control stays, gated with the reason.
+    const resume = within(banner).getByRole('button', { name: 'Resume AI' });
+    expect(resume.getAttribute('aria-disabled')).toBe('true');
+  });
 });

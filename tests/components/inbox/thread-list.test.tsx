@@ -33,6 +33,7 @@ function row(over: Partial<InboxThreadRow>): InboxThreadRow {
     openCallRequests: 0,
     escalated: false,
     handedOverAt: null,
+    readOnly: false,
     needsYou: false,
     ...over,
   };

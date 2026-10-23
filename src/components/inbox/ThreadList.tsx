@@ -6,7 +6,9 @@
  * facts the server computed: the window ("Free-form until HH:MM" in the chat accent, or "Window
  * closed"), AI mode or takeover, "Needs you" with what needs a person (drafts to approve, a call
  * request, failed deliveries, an escalation), and "Handed over" once the lead belongs to the client
- * (ADR-124). Server-rendered; status is never colour-only (icon plus words).
+ * (ADR-124). In the operator's list a handed-over lead's row is read-only: only "Handed over" says
+ * what it is (the thread is the client's, so no "Needs you", no "You are handling"). Server-rendered;
+ * status is never colour-only (icon plus words).
  *
  * The list rises in once as a whole; rows carry no entrance of their own, because the list re-reads
  * itself (every 10 s, every 3 s beside a pending send) and when a thread moves to the top React
@@ -111,6 +113,8 @@ export function ThreadList({
             </>
           );
           const hasAttention = t.needsYou || t.handedOverAt !== null;
+          // The operator's read-only row is the client's thread: nothing here asks the operator to act.
+          const youHandle = t.humanTakeover && !t.readOnly;
           return (
             <li key={t.conversationId}>
               <Link
@@ -153,7 +157,7 @@ export function ThreadList({
                             <ChannelIcon aria-hidden="true" className={channel.iconClass} />
                             {channel.label}
                           </span>
-                          {t.humanTakeover ? (
+                          {youHandle ? (
                             <span className={cn(fact, 'text-fg-1')}>
                               <Hand aria-hidden="true" className="text-info" />
                               You are handling
@@ -174,7 +178,7 @@ export function ThreadList({
                         {hasAttention ? (
                           <span className="flex flex-wrap items-center gap-1.5 text-xs">
                             {handedOver}
-                            {attention}
+                            {t.readOnly ? null : attention}
                           </span>
                         ) : null}
                       </>
@@ -183,7 +187,7 @@ export function ThreadList({
                         <SourceChip source={t.channel === 'EMAIL' ? 'EMAIL_INBOUND' : 'WHATSAPP_INBOUND'} withIcon />
                         {t.lastMessage && t.lastMessage.direction === 'OUT' ? <DeliveryStatusBadge status={t.lastMessage.status} simulated={t.lastMessage.simulated} /> : null}
                         {handedOver}
-                        {t.humanTakeover ? (
+                        {youHandle ? (
                           <span className={cn(chip, TONE_CLASSES.info)}>
                             <Hand aria-hidden="true" />
                             You are handling
@@ -205,7 +209,7 @@ export function ThreadList({
                             Window closed
                           </span>
                         ) : null}
-                        {attention}
+                        {t.readOnly ? null : attention}
                       </span>
                     )}
                   </span>

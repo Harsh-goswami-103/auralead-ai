@@ -14,12 +14,16 @@
  *  - At most 4 automated replies in a row; the next one escalates (REPLY_CAP) and waits for approval.
  *  - Closed window, a handed-over lead, a takeover or a newer message while the model works: no reply.
  *  - Without an AI integration (LIVE) the guard's own catalog answer is sent, labelled reply-guard.
+ *  - A provider outage (retryable) makes the job retry with backoff and sends nothing meanwhile; on
+ *    the job's last attempt it becomes the fixed handoff (AI_FAILED); a non-retryable refusal is the
+ *    fixed handoff at once.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AiPort, AiRequest, AiResponse } from '@/server/adapters/ai/port';
 import { CONVERSATION_HISTORY_LIMIT, CONVERSATION_REPLY_TASK } from '@/server/services/ai/conversation-reply';
 import { automatedReplyDisclosure, FIXED_REPLIES } from '@/server/services/ai/reply-guard';
 import type { WorkspaceAiSelection } from '@/server/services/ai/run-task';
+import { ProviderRejectedError, ProviderUnavailableError } from '@/lib/errors';
 import { AUTOMATED_REPLY_CAP, REPLY_INITIATOR, setConversationAiMode, setWorkspaceAutoSend, takeOverConversation } from '@/server/services/messaging/conversations';
 import { WINDOW_MS } from '@/server/services/messaging/window';
 import { createLead } from '../dispatch/support';
@@ -234,6 +238,65 @@ describe('service questions go to conversation_reply', () => {
     expect(sent.generatorLabel).toBe('reply-guard');
     expect(sent.body).toContain('Root canal treatment: Single-tooth root canal treatment, crown quoted separately.');
     expect(port.calls).toHaveLength(0);
+  }, 60_000);
+});
+
+describe('provider failures (reply.auto is an ai job with 3 attempts)', () => {
+  const outage = async (): Promise<string> => {
+    throw new ProviderUnavailableError({ message: 'model overloaded' });
+  };
+  const replyJob = (inboundId: string) => h.db.job.findFirstOrThrow({ where: { type: 'reply.auto', idempotencyKey: `reply.auto:${inboundId}` } });
+
+  it('a retryable outage sends nothing and retries after the backoff; the next attempt answers', async () => {
+    const { lead } = await autoThread();
+    port.answer(outage);
+    const wamid = await customerSays(h, lead, 'Do you do teeth whitening?');
+    await h.drain();
+    const row = await inboundMessage(h, wamid);
+    expect(port.calls).toHaveLength(1);
+    expect(await repliesTo(h, row.id)).toEqual([]);
+    expect(await auditsOf(h, 'reply.guard', row.id)).toEqual([]);
+    expect(await replyJob(row.id)).toMatchObject({ status: 'QUEUED', attempts: 1, maxAttempts: 3, lastErrorCode: 'PROVIDER_UNAVAILABLE' });
+
+    h.clock.advance(1_000);
+    await h.drain();
+    expect(port.calls).toHaveLength(2);
+    expect(await replyJob(row.id)).toMatchObject({ status: 'SUCCEEDED', attempts: 2 });
+    expect((await onlyReply(wamid)).generatorLabel).toBe('anthropic');
+  }, 60_000);
+
+  it('on the last attempt a persistent outage becomes the fixed handoff (AI_FAILED), never a silent local answer', async () => {
+    const { lead, conversationId } = await autoThread();
+    port.answer(outage, outage, outage);
+    const wamid = await customerSays(h, lead, 'Do you do teeth whitening?');
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await h.drain();
+      if (attempt < 3) {
+        expect(await repliesTo(h, (await inboundMessage(h, wamid)).id)).toEqual([]);
+        h.clock.advance(1_000);
+      }
+    }
+    expect(port.calls).toHaveLength(3);
+    const row = await inboundMessage(h, wamid);
+    expect(await replyJob(row.id)).toMatchObject({ status: 'SUCCEEDED', attempts: 3 });
+    expect(await onlyReply(wamid)).toMatchObject({ body: `${DISCLOSURE}
+
+${FIXED_REPLIES.handoff}`, generatorLabel: 'reply-guard', status: 'SENT' });
+    expect((await auditsOf(h, 'conversation.escalated', conversationId)).at(-1)?.summary).toMatchObject({ reason: 'AI_FAILED' });
+  }, 60_000);
+
+  it('a refusal that cannot be retried is the fixed handoff at once, in one attempt', async () => {
+    const { lead } = await autoThread();
+    port.answer(async () => {
+      throw new ProviderRejectedError({ message: 'request rejected' });
+    });
+    const wamid = await customerSays(h, lead, 'Do you do teeth whitening?');
+    await h.drain();
+    expect(port.calls).toHaveLength(1);
+    expect(await replyJob((await inboundMessage(h, wamid)).id)).toMatchObject({ status: 'SUCCEEDED', attempts: 1 });
+    expect((await onlyReply(wamid)).body).toBe(`${DISCLOSURE}
+
+${FIXED_REPLIES.handoff}`);
   }, 60_000);
 });
 

@@ -40,7 +40,8 @@ P0 and P1 are complete.
   `/api/app/conversations/[conversationId]/{mode,takeover,resume}`. New
   `POST /api/app/settings/auto-send` (`{ enabled, workspaceSlug? }`, `automation.manage` in the service).
 - `src/lib/schemas/inbox.ts`: `workspaceSlug` on every body, `AutoSendBody`.
-- `src/server/services/messaging/inbox.ts`: rows gain `escalated`, `handedOverAt`; filters
+- `src/server/services/messaging/inbox.ts`: rows gain `escalated`, `handedOverAt`, `readOnly` (an
+  EMPLOYEE actor on a handed-over lead: never "Needs you", no "You are handling"); filters
   `all | needs_you | handed_over` with counts; the thread gains `handoff` (LeadHandoff + operator
   name), a `HANDOFF` event "Handed over to <client> by <operator>.", `readOnly` for EMPLOYEE actors on
   a handed-over lead, `conversation.escalated`, `permissions.canManageAutomation`, template message
@@ -122,3 +123,13 @@ existing `inbox.unknownConversationId` probe serves every new entry), `registry-
   were not run (no dev servers in a slice).
 - `reply.auto` jobs already queued with kind `default` before the merge run under the new handler
   unchanged (kind only sets max attempts at enqueue).
+
+## Review pass (same slice)
+
+- Gap fixed: after a handoff every open thread is taken over (ADR-124), so the operator's inbox listed
+  it under "Needs you", marked it "You are handling" and the banner said "You are handling this thread".
+  The row and thread are now `readOnly` for operators (see ADR-130); the client's inbox is unchanged.
+- Tests added: provider outage and retry behaviour of `reply.auto`
+  (`tests/integration/ai/conversation-reply.test.ts`), and the DEMO zero-outbound tripwire for the chat
+  flow (`tests/integration/inbox/demo-chat-tripwire.test.ts`: webhook, local AI reply, production DEMO
+  transport, simulated delivered and read ticks).

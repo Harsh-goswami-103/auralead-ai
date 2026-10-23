@@ -99,21 +99,37 @@ describe('handed-over leads (ADR-124)', () => {
     const { lead, conversation } = await leadWithConversation(h, 'I would like a website');
     const at = h.clock.now();
     await h.db.lead.update({ where: { id: lead.id }, data: { handedOverAt: at } });
+    // The handoff itself turns the AI off and takes the thread over (ADR-124).
+    await h.db.conversation.update({ where: { id: conversation.id }, data: { aiMode: 'OFF', humanTakeover: true, escalatedAt: at } });
     await h.db.leadHandoff.create({ data: { workspaceId: WS_A, leadId: lead.id, fromUserId: seedId('user', 'employee'), note: 'Wants a five-page site', summaryStatus: 'NOT_CONFIGURED', createdAt: at } });
 
     const asOperator = await getInboxThread(await operator(), conversation.id, DEPS);
     expect(asOperator.readOnly?.reason).toContain('Handed over to Smile Avenue Dental Clinic');
     expect(asOperator.permissions).toMatchObject({ canSend: false, canDraft: false, canChangeMode: false });
+    // An escalation made before the handoff is the client's to answer, not the operator's.
+    expect(asOperator.conversation.escalated).toBe(false);
     expect(asOperator.handoff).toMatchObject({ clientName: 'Smile Avenue Dental Clinic', operatorName: 'Imran Qureshi', status: 'HANDED_OVER', note: 'Wants a five-page site' });
     expect(asOperator.events.find((e) => e.kind === 'HANDOFF')?.label).toBe('Handed over to Smile Avenue Dental Clinic by Imran Qureshi.');
 
     const asClient = await getInboxThread(await h.owner(), conversation.id, DEPS);
     expect(asClient.readOnly).toBeNull();
+    expect(asClient.conversation.escalated).toBe(true);
     expect(asClient.permissions.canSend).toBe(true);
     const handedOver = await listInboxThreads(await h.owner(), { filter: 'handed_over' });
     expect(handedOver.rows.map((r) => r.conversationId)).toContain(conversation.id);
     expect(handedOver.rows.find((r) => r.conversationId === conversation.id)?.handedOverAt?.toISOString()).toBe(at.toISOString());
     expect(handedOver.counts.handedOver).toBeGreaterThanOrEqual(1);
+
+    // The thread is the client's now: it needs the client (takeover), not the operator, who cannot
+    // act on it. The operator's list marks it read-only and keeps it out of "Needs you".
+    const operatorRows = await listInboxThreads(await operator(), {});
+    const operatorRow = operatorRows.rows.find((r) => r.conversationId === conversation.id)!;
+    expect(operatorRow).toMatchObject({ readOnly: true, humanTakeover: true, needsYou: false });
+    expect((await listInboxThreads(await operator(), { filter: 'needs_you' })).rows.map((r) => r.conversationId)).not.toContain(conversation.id);
+    expect((await listInboxThreads(await operator(), { filter: 'handed_over' })).rows.map((r) => r.conversationId)).toContain(conversation.id);
+    const clientRow = (await listInboxThreads(await h.owner(), {})).rows.find((r) => r.conversationId === conversation.id)!;
+    expect(clientRow).toMatchObject({ readOnly: false, needsYou: true });
+    expect((await listInboxThreads(await h.owner(), { filter: 'needs_you' })).rows.map((r) => r.conversationId)).toContain(conversation.id);
 
     // Even with the window closed, the operator is refused for the handoff (409), not the window (422).
     h.clock.set(new Date(conversation.lastInboundProviderAt!.getTime() + WINDOW_MS + 1));
