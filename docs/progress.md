@@ -224,7 +224,7 @@ Known limits (also in `/docs/limitations`):
 - `npm audit`: 9 high advisories, all in transitive dev tooling (eslint plugin `braces`, prisma's `deepmerge-ts`/`mysql2`); the only offered fix is a downgrade. Re-check at T38.
 - npm warns about peer ranges for nested ESLint plugins declaring `eslint ^9`; lint works and every lint fixture passes.
 - Preview-feature caveat (ADR-47): never call `findUnique`/`upsert` on the partial-unique keys of PricingVersion or Suppression; use `findFirst` with the predicate.
-- `tests/unit/arch/lint-rules.test.ts` can hit its 5 s timeout under heavy parallel CPU load; passes alone and in the full gate runs.
+- Load-sensitive timeouts (fixed in the lead-gen final gate): the unit project now has the same 60 s test and hook budget as integration, because `tests/unit/arch/lint-rules.test.ts` and `live-bundle.test.ts` hit the old 5 s default when the full suite ran on a loaded host. `tests/integration/jobs/heartbeat.test.ts` now starts observing the heartbeat row and the extended lease before it spawns worker B; both facts exist only while the 6 s job runs. All three passed alone and failed only under CPU oversubscription.
 
 - DEMO has no WhatsApp integration or approved template yet, so quote-over-WhatsApp cannot be shown through the UI; ADR-17 says DEMO seeds approved and rejected templates. Assigned to M4 (T28 integration center).
 - Approve-and-send (`/api/app/approvals/[id]/send`) accepts an ineligible lead and leaves the skip to dispatch preflight, while the composer refuses upfront with 422. Safe, but inconsistent; fixed in the M4 follow-up.
