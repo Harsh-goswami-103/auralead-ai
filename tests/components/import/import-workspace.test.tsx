@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { precheckImportFile } from '@/components/leads/import/FileDropZone';
 import { ImportProgress, ImportResult } from '@/components/leads/import/ImportStatus';
 import { ImportWorkspace } from '@/components/leads/import/ImportWorkspace';
-import { mappingProblems } from '@/components/leads/import/MappingStep';
+import { MappingStep, mappingProblems } from '@/components/leads/import/MappingStep';
 import { LeadExportPanel } from '@/components/leads/LeadExportPanel';
 import { CsrfProvider } from '@/components/patterns/csrf';
 import { consentAttestationText, type LeadImportDto, type LeadImportView } from '@/lib/schemas/lead-import';
@@ -205,6 +205,31 @@ describe('mapping and confirming', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]!.body).not.toHaveProperty('consent');
   });
+
+  it('tells the workspace whether an opt-in column was mapped, so the result does not mention a column that was not there', async () => {
+    const decision = { requested: false, honoured: false, reason: 'NOT_REQUESTED' };
+    stubFetch(() => json({ import: dto({ status: 'QUEUED', effectiveStatus: 'QUEUED' }), consent: decision }));
+    const confirmedOwner = vi.fn();
+    render(<MappingStep view={PREVIEW} workspaceSlug="smile-avenue-dental" csrfToken="csrf" consent={CONSENT_ON} onConfirmed={confirmedOwner} onStartOver={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Where this list came from'), { target: { value: 'OWN_CUSTOMERS' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 3 rows' }));
+    });
+    await waitFor(() => expect(confirmedOwner).toHaveBeenCalledTimes(1));
+    expect(confirmedOwner.mock.calls[0]![1]).toEqual(decision);
+    expect(confirmedOwner.mock.calls[0]![2]).toBe(true);
+    cleanup();
+
+    // Without consent.import the suggested opt-in columns are not offered, so none is mapped.
+    const confirmedMember = vi.fn();
+    render(<MappingStep view={PREVIEW} workspaceSlug="smile-avenue-dental" csrfToken="csrf" consent={CONSENT_OFF} onConfirmed={confirmedMember} onStartOver={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Where this list came from'), { target: { value: 'OWN_CUSTOMERS' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 3 rows' }));
+    });
+    await waitFor(() => expect(confirmedMember).toHaveBeenCalledTimes(1));
+    expect(confirmedMember.mock.calls[0]![2]).toBe(false);
+  });
 });
 
 describe('progress and result', () => {
@@ -248,6 +273,16 @@ describe('progress and result', () => {
   it('says why a consent column was ignored', () => {
     render(<ImportResult dto={dto({ status: 'SUCCEEDED', effectiveStatus: 'SUCCEEDED' })} consent={{ requested: true, honoured: false, reason: 'DATA_SOURCE_NOT_OWN' }} mappedConsent />);
     expect(screen.getByText(/lists the business collected itself/)).toBeTruthy();
+  });
+
+  it('an opt-in column mapped without the attestation is said to be ignored; with no opt-in column nothing is said', () => {
+    const notRequested = { requested: false, honoured: false, reason: 'NOT_REQUESTED' as const };
+    render(<ImportResult dto={dto({ status: 'SUCCEEDED', effectiveStatus: 'SUCCEEDED' })} consent={notRequested} mappedConsent />);
+    expect(screen.getByText(/the attestation was not given/)).toBeTruthy();
+    cleanup();
+    const { container } = render(<ImportResult dto={dto({ status: 'SUCCEEDED', effectiveStatus: 'SUCCEEDED' })} consent={notRequested} mappedConsent={false} />);
+    expect(container.textContent).not.toContain('No consent was imported');
+    expect(container.textContent).not.toContain('WhatsApp opt-ins recorded');
   });
 });
 

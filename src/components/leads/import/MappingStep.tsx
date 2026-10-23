@@ -174,7 +174,8 @@ export function MappingStep(props: {
   workspaceSlug: string;
   csrfToken: string | null;
   consent: ConsentProps;
-  onConfirmed: (dto: LeadImportDto, consent: ConsentDecision) => void;
+  /** `optInMapped`: an opt-in column was mapped (the result then says why no consent was recorded). */
+  onConfirmed: (dto: LeadImportDto, consent: ConsentDecision, optInMapped: boolean) => void;
   onStartOver: () => void;
 }) {
   const preview = props.view.preview!;
@@ -225,7 +226,7 @@ export function MappingStep(props: {
       setFailure({ message: res.message, reference: res.reference });
       return;
     }
-    props.onConfirmed(res.data.import, res.data.consent);
+    props.onConfirmed(res.data.import, res.data.consent, props.consent.allowed && mapping.consent !== undefined);
   }
 
   return (

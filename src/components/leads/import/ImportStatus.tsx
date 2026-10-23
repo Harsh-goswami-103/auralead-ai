@@ -71,7 +71,8 @@ export function ImportResult(props: { dto: LeadImportDto; consent: ConsentDecisi
   const status = IMPORT_STATUS[dto.effectiveStatus];
   const rejected = groupNotes(dto.notes.filter((n) => !isConsentNoteCode(n.code)));
   const consentNotes = groupNotes(dto.notes.filter((n) => isConsentNoteCode(n.code)));
-  const consentMessage = props.consent && !props.consent.honoured && props.consent.reason ? CONSENT_DECISION_LABELS[props.consent.reason] : null;
+  // Said only when an opt-in column was in play: a file without one has no column to ignore.
+  const consentMessage = props.mappedConsent && props.consent && !props.consent.honoured && props.consent.reason ? CONSENT_DECISION_LABELS[props.consent.reason] : null;
   return (
     <div className="flex flex-col gap-4" data-import-status={dto.effectiveStatus}>
       <div className="flex flex-wrap items-center gap-3">

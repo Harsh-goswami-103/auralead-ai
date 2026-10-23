@@ -65,9 +65,9 @@ export function ImportWorkspace(props: ImportWorkspaceProps) {
     router.replace(props.basePath, { scroll: false });
   }
 
-  function confirmed(dto: LeadImportDto, decision: ConsentDecision) {
+  function confirmed(dto: LeadImportDto, decision: ConsentDecision, optInMapped: boolean) {
     setConsentDecision(decision);
-    setMappedConsent(decision.requested);
+    setMappedConsent(decision.requested || optInMapped);
     setView({ import: dto, preview: null });
   }
 
