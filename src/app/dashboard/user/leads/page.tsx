@@ -2,8 +2,8 @@
  * Client panel Leads (T26, R31, plan §11 M4; 06-design "User Leads"): every lead of the workspace
  * with search on the normalized columns (any script), stage, source and score filters, sort, keyset
  * pages of 50 with a capped count, the Kanban board with its "Move to stage" menu and drag, the
- * lead detail sheet (`?lead=`: stage control, score breakdown, consent per channel, source records,
- * quotations and conversations), and the CSV export. Everything is read on the server through the
+ * lead detail sheet (`?lead=`: the handoff of a handed-over lead (lead-gen F5), stage control, score
+ * breakdown, consent per channel, source records, quotations and conversations), and the CSV export. Everything is read on the server through the
  * tenant-scoped context; every change goes through /api/app/** routes and is audited there.
  *
  * Capabilities: reading needs leads.read (owners and members), moving stages leads.write, the
@@ -12,6 +12,7 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { Users } from 'lucide-react';
+import { ClientHandoffSection } from '@/components/handoff/HandoffSection';
 import { LeadDetailBody } from '@/components/leads/LeadDetailBody';
 import { LeadSheet } from '@/components/leads/LeadSheet';
 import { LeadsTabs } from '@/components/leads/LeadsTabs';
@@ -22,6 +23,7 @@ import { NotFoundError } from '@/lib/errors';
 import { leadPageSearch, parseLeadPageParams } from '@/lib/schemas/leads';
 import { getPageContext } from '@/server/auth/page-context';
 import { getRuntime } from '@/server/boot';
+import { loadLeadHandoff, type LeadHandoffView } from '@/server/services/leads/handoff';
 import { leadProfileDeps, loadLeadProfile } from '@/server/services/leads/profile';
 import { isQuoteStatus, QuoteStatusBadge } from '../quotations/quote-status';
 import { loadLeadsArea } from './leads-data';
@@ -54,9 +56,10 @@ export default async function UserLeadsPage({ searchParams }: { searchParams: Pr
   const { access } = area;
 
   let profile = null;
+  let handoff: LeadHandoffView | null = null;
   if (params.lead && access.canRead) {
     try {
-      profile = await loadLeadProfile(ctx, params.lead, leadProfileDeps(getRuntime().config));
+      [profile, handoff] = await Promise.all([loadLeadProfile(ctx, params.lead, leadProfileDeps(getRuntime().config)), loadLeadHandoff(ctx, params.lead)]);
     } catch (error) {
       if (!(error instanceof NotFoundError)) throw error;
     }
@@ -102,6 +105,12 @@ export default async function UserLeadsPage({ searchParams }: { searchParams: Pr
           closeHref={closeHref}
           fullPageHref={`${BASE}/${encodeURIComponent(profile.lead.id)}`}
         >
+          {/* Lead-gen F5 (ADR-124): a handed-over lead opens with the operator's note, the summary and Acknowledge. */}
+          {handoff ? (
+            <div className="mb-5">
+              <ClientHandoffSection view={handoff} timeZone={profile.workspace.timezone} />
+            </div>
+          ) : null}
           <LeadDetailBody
             profile={profile}
             links={{

@@ -98,6 +98,8 @@ export function RecordOptInForm(props: { leadId: string; workspaceSlug: string; 
         aria-expanded={false}
         onClick={() => {
           setCollectedAt(localNow());
+          // The workspace notice may have been saved since this page loaded: offer it as it is now.
+          setNotice(props.noticePrefill);
           setOpen(true);
         }}
       >

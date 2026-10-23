@@ -12,6 +12,7 @@
 import { createElement, type FC, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { LeadSheet } from '@/components/leads/LeadSheet';
 import { CsrfProvider } from '@/components/patterns/csrf';
 import type { Capability } from '@/lib/domain/enums';
 import { createLogger } from '@/lib/logger';
@@ -47,6 +48,24 @@ async function signInAs(key: string) {
 const render = (el: unknown) => renderToStaticMarkup(createElement(CsrfProvider as unknown as FC<{ token: string }>, { token: 'csrf' }, el as ReactElement));
 const html = (el: unknown) => render(el).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 const operatorPage = (leadId: string, ws = 'smile-avenue-dental') => EmployeeLeadPage({ params: Promise.resolve({ ws, leadId }) });
+
+/**
+ * The first element of `type` in a React element tree (props.children walked; components are not
+ * expanded). The sheet's dialog is a portal that static rendering skips, so the test reads the
+ * children the page hands to it.
+ */
+function findElement(node: unknown, type: unknown): ReactElement<{ children?: unknown; title?: string }> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child, type);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (node === null || typeof node !== 'object') return null;
+  const element = node as ReactElement<{ children?: unknown; title?: string }>;
+  return element.type === type ? element : findElement(element.props?.children, type);
+}
 
 async function runSummaryJobs() {
   const worker = createWorker(
@@ -158,5 +177,25 @@ describe('client surfaces', () => {
     await handOverLead(employee, { leadId: openId, expectedStageVersion: lead.stageVersion, requestKey: 'pages-handoff-0002' }, { keyRing: null });
     const home = html(await UserHomePage());
     expect(home).toMatch(/Handed over to you 1 Leads your AuraLead operator handed over/);
+  });
+
+  it('the leads list opens a handed-over lead in its sheet with the handoff, so the client can acknowledge it there', async () => {
+    await signInAs('owner');
+    // openId was handed over by the previous test and nobody acknowledged it yet.
+    const sheet = findElement(await UserLeadsPage({ searchParams: Promise.resolve({ lead: openId }) }), LeadSheet);
+    expect(sheet).not.toBeNull();
+    expect(sheet!.props.title).toBe('Rao Bakery');
+    const text = html(sheet!.props.children);
+    expect(text).toContain('Handed over to you');
+    expect(text).toContain('Note from the operator');
+    expect(text).toContain('Acknowledge');
+    // The lead's own detail follows the handoff.
+    expect(text).toContain('Consent');
+
+    // A lead nobody handed over shows the detail alone.
+    const [plain] = await makeLeads(h.db, WS_A, [{ name: 'Iyer Tailors', stage: 'NEW', phone: '+919800044444' }]);
+    const plainSheet = findElement(await UserLeadsPage({ searchParams: Promise.resolve({ lead: plain!.id }) }), LeadSheet);
+    expect(plainSheet).not.toBeNull();
+    expect(html(plainSheet!.props.children)).not.toContain('Handed over to you');
   });
 });

@@ -84,6 +84,20 @@ describe('RecordOptInForm', () => {
     expect(screen.queryByRole('form', { name: 'Record WhatsApp opt-in' })).toBeNull();
   });
 
+  it('opens with the workspace notice as it is now, also when it was saved after the page loaded', () => {
+    const props = { leadId: 'lead_1', workspaceSlug: 'codecraft-web', businessName: 'Codecraft Web Studio', gate: null } as const;
+    const view = withCsrf(<RecordOptInForm {...props} noticePrefill={NOTICE} />);
+    // The workspace notice form saved a new text; the page re-read itself and passes the new prefill.
+    const saved = 'Codecraft Web Studio will send me WhatsApp offers about websites. I can reply STOP.';
+    view.rerender(
+      <CsrfProvider token="csrf-token">
+        <RecordOptInForm {...props} noticePrefill={saved} />
+      </CsrfProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Record WhatsApp opt-in' }));
+    expect((screen.getByLabelText('Notice the customer agreed to') as HTMLTextAreaElement).value).toBe(saved);
+  });
+
   it("a refusal stays on the form with the server's message and reference", async () => {
     stubFetch(() => json({ code: 'NOTICE_MISSING_BUSINESS_NAME', message: 'The notice must name the business ("Codecraft Web Studio").', reference: 'req_notice01' }, 422));
     withCsrf(<RecordOptInForm leadId="lead_1" workspaceSlug="codecraft-web" businessName="Codecraft Web Studio" noticePrefill={NOTICE} gate={null} />);

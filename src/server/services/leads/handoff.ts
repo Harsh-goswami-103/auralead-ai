@@ -16,9 +16,10 @@
  *     because the handoff guard refuses an EMPLOYEE once `handedOverAt` is set.
  *  3. The lead's PENDING outbound-message approvals: INVALIDATED (`LEAD_HANDED_OVER`), and their
  *     DRAFT messages NOT_SENT, as a rejection would do. The operator side's queued sends that have
- *     not gone out (an EMPLOYEE's or the automation's): attempts CANCELLED (`LEAD_HANDED_OVER`),
- *     jobs cancelled, messages NOT_SENT. Quotation approvals and quotation sends stay, and so do
- *     the client's own queued sends: the client carries on with the quote flow.
+ *     not gone out (an EMPLOYEE's or the automation's): attempts CANCELLED (`LEAD_HANDED_OVER`,
+ *     one `dispatch.cancelled` audit row each), jobs cancelled, messages NOT_SENT. Quotation
+ *     approvals and quotation sends stay, and so do the client's own queued sends: the client
+ *     carries on with the quote flow.
  *  4. The lead's open pipeline execution: its first unfinished stage is recorded FAILED with
  *     reason HANDED_OVER, which stops the executor (a FAILED stage ends the run; a job in flight
  *     settles with no effect).
@@ -129,10 +130,12 @@ async function withdrawMessageApprovals(tx: ScopedTx, leadId: string, now: Date)
  * quiet hours, a cap or a busy worker): started by an EMPLOYEE (composer, approval send, bulk) or
  * by the automation (`system:*`: AI replies, the pipeline). Each attempt is CANCELLED
  * (`LEAD_HANDED_OVER`), its queued job cancelled (a claimed one is asked to stop and finds its
- * attempt cancelled before any send), its message NOT_SENT. The client's own queued sends and
- * quotation sends stay: the client carries on with the quote flow (ADR-132).
+ * attempt cancelled before any send), its message NOT_SENT, and one `dispatch.cancelled` audit
+ * row per attempt (the same row the delivery checks write; the reason only, never the text). The
+ * client's own queued sends and quotation sends stay: the client carries on with the quote flow
+ * (ADR-132).
  */
-async function cancelOperatorQueuedSends(tx: ScopedTx, leadId: string, now: Date): Promise<number> {
+async function cancelOperatorQueuedSends(tx: ScopedTx, ctx: AppCtx, leadId: string, now: Date): Promise<number> {
   const queued = await tx.dispatchAttempt.findMany({
     where: { state: 'QUEUED', quoteVersionId: null, message: { direction: 'OUT', conversation: { leadId } } },
     select: { id: true, jobId: true, messageId: true, initiatedBy: true },
@@ -150,6 +153,9 @@ async function cancelOperatorQueuedSends(tx: ScopedTx, leadId: string, now: Date
   await tx.job.updateMany({ where: { id: { in: jobIds }, status: 'QUEUED' }, data: { status: 'CANCELLED', finishedAt: now, updatedAt: now } });
   await tx.job.updateMany({ where: { id: { in: jobIds }, status: 'RUNNING', cancelRequestedAt: null }, data: { cancelRequestedAt: now, updatedAt: now } });
   await tx.message.updateMany({ where: { id: { in: operatorSide.map((a) => a.messageId) }, status: 'PENDING' }, data: { status: 'NOT_SENT' } });
+  for (const attempt of operatorSide) {
+    await recordAudit(tx, ctx, { action: 'dispatch.cancelled', targetType: 'DispatchAttempt', targetId: attempt.id, simulated: ctx.mode === 'demo', summary: { reasons: [HANDOFF_CANCEL_REASON] } });
+  }
   return cancelled.count;
 }
 
@@ -222,7 +228,7 @@ export async function handOverLead(ctx: AppCtx, input: HandOverInput, deps: AiDe
 
     const conversationIds = await takeOverConversations(tx, ctx, lead.id, lead.simulated);
     const invalidatedApprovals = await withdrawMessageApprovals(tx, lead.id, now);
-    const cancelledSends = await cancelOperatorQueuedSends(tx, lead.id, now);
+    const cancelledSends = await cancelOperatorQueuedSends(tx, ctx, lead.id, now);
     const halted = await haltOpenExecution(tx, workspaceId, lead.id, now);
     const handoff = await tx.leadHandoff.create({
       data: { workspaceId, leadId: lead.id, fromUserId: actorId, note, summaryStatus, status: 'HANDED_OVER', createdAt: now },

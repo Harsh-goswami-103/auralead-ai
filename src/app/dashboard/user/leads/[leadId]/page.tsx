@@ -10,9 +10,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowLeft, Handshake, Users } from 'lucide-react';
-import { ClientHandoff } from '@/components/handoff/HandoffSection';
-import { ChipTitle } from '@/components/patterns/IconChip';
+import { ArrowLeft, Users } from 'lucide-react';
+import { ClientHandoffSection } from '@/components/handoff/HandoffSection';
 import { LeadDetailBody } from '@/components/leads/LeadDetailBody';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { PageHeader } from '@/components/patterns/PageHeader';
@@ -60,11 +59,7 @@ export default async function UserLeadPage({ params }: { params: Promise<{ leadI
         All leads
       </Link>
       <PageHeader className="-mt-3" eyebrow={profile.workspace.name} title={profile.lead.displayName} description="Score, consent, source and stage of this lead." />
-      {handoff.handoff ? (
-        <SectionCard accent title={<ChipTitle icon={<Handshake aria-hidden="true" />} hue="volt">Handed over to you</ChipTitle>} meta="From your AuraLead operator.">
-          <ClientHandoff view={handoff} timeZone={profile.workspace.timezone} />
-        </SectionCard>
-      ) : null}
+      <ClientHandoffSection view={handoff} timeZone={profile.workspace.timezone} />
       <SectionCard>
         <LeadDetailBody
           profile={profile}

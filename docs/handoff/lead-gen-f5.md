@@ -130,6 +130,27 @@ grants now carry a notice and a method).
 7. `src/components/admin/people-vocabulary.ts` `ADMIN_ACTION_LABELS`, if the admin audit search should
    name the five new actions.
 
+## Review fixes (second pass)
+- The client's Leads list opens a lead in a sheet (`?lead=`), not on `/dashboard/user/leads/[leadId]`, so the
+  Needs-you link led to a sheet with no note, summary or Acknowledge. `ClientHandoffSection`
+  (`components/handoff/HandoffSection.tsx`) is now shown in the sheet too (`dashboard/user/leads/page.tsx`,
+  a small edit outside the F5 paths, needed for the client flow) and replaces the inline block on the lead page.
+- Each send the handoff cancels now has its own `dispatch.cancelled` audit row (reason `LEAD_HANDED_OVER`, no text),
+  like a send the delivery checks cancel; before, only the `cancelledSends` count was audited.
+- `LEAD_HANDED_OVER` is worded in `dispatchReasonLabel` (`services/approvals/queue.ts`, one line outside the F5 paths):
+  the inbox thread and the approval queue showed the raw code ("Not sent: LEAD_HANDED_OVER.").
+- Known narrow race, not fixed here (executor and dispatch are not F5's): a `pipeline.advance` job that read its
+  stage run just before the handoff commits can still upsert the halted stage back to RUNNING and queue one
+  `system:pipeline` send, which the handoff guard (EMPLOYEE actors only, ADR-127) does not refuse. A fix belongs in
+  the executor (do not resurrect a FAILED stage run in the fenced transaction) or in the guard (refuse
+  `system:pipeline*` for a handed-over lead).
+- Not F5's, for F3 and the integrator: a customer who writes first on a handed-over lead with no open WhatsApp
+  conversation gets a new conversation with the default mode (DRAFT) from `inbound.ts`. The reply is a draft for
+  approval (an operator cannot approve it, the guard answers 409), never an automatic send, but "AI stops" would be
+  cleaner if `reply.auto` stopped on `Lead.handedOverAt` (ADR-122 already asks for that re-check) or the new
+  conversation were created OFF with a takeover. Stage moves and lead edits by an operator are not guarded either
+  (ADR-124 guards sends and conversation modes only).
+
 ## Open questions
 - After a handoff the operator panel hides "Record WhatsApp opt-in", but the consent route itself does
   not refuse an operator (the guard covers sends and conversation modes only). Refuse it too?

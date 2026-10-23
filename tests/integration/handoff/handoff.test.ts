@@ -9,14 +9,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AppCtx } from '@/server/auth/context';
 import type { ScopedDb } from '@/server/db/scoped';
-import { sendFromQueue } from '@/server/services/approvals/queue';
+import { dispatchReasonLabel, sendFromQueue } from '@/server/services/approvals/queue';
 import { previewBulkAction } from '@/server/services/bulk/bulk';
 import { acknowledgeHandoff, handOverLead, HANDOFF_SUMMARY_JOB, listClientHandoffs, loadLeadHandoff } from '@/server/services/leads/handoff';
 import { leadFilterWhere } from '@/server/services/leads/list';
 import { loadClientCommandCenter } from '@/server/services/metrics/command-center';
 import { resumeConversationAi, setConversationAiMode } from '@/server/services/messaging/conversations';
 import { createMessageDraft } from '@/server/services/messaging/dispatch';
-import { sendComposerMessage } from '@/server/services/messaging/inbox';
+import { getInboxThread, sendComposerMessage } from '@/server/services/messaging/inbox';
 import { createQuote } from '@/server/services/quotes/versioning';
 import { createLead, grantConsent } from '../dispatch/support';
 import { leadWithConversation } from '../messaging/conversation-support';
@@ -206,6 +206,19 @@ describe('handOverLead', () => {
     }
     const audit = await h.db.auditEvent.findFirstOrThrow({ where: { action: 'lead.handoff', targetId: lead.id } });
     expect(audit.summary).toMatchObject({ handoffId: result.handoffId, cancelledSends: 2 });
+
+    // Each cancelled send is traceable on its own, as the delivery checks trace theirs
+    // (`dispatch.cancelled`, the reason only: no message text); the sends that stay have no such row.
+    const all = [operatorSend, automated, clientSend, quoteSend];
+    const cancelledRows = await h.db.auditEvent.findMany({ where: { action: 'dispatch.cancelled', targetType: 'DispatchAttempt', targetId: { in: all.map((s) => s.attemptId) } } });
+    expect(cancelledRows.map((r) => r.targetId).sort()).toEqual([operatorSend.attemptId, automated.attemptId].sort());
+    for (const row of cancelledRows) expect(row).toMatchObject({ workspaceId: WS_A, summary: { reasons: ['LEAD_HANDED_OVER'] } });
+
+    // The person reading the thread (and the approval queue) gets words, not the code.
+    expect(dispatchReasonLabel('LEAD_HANDED_OVER')).toBe('The lead was handed over to the client');
+    const thread = await getInboxThread(owner, conversation.id, DEPS);
+    expect(thread.messages.find((m) => m.id === operatorSend.messageId)?.note).toBe('Not sent: The lead was handed over to the client.');
+    expect(thread.messages.find((m) => m.id === clientSend.messageId)?.note).toBeNull();
   });
 
   it('a stale stage version is 409 STAGE_VERSION_CONFLICT and writes nothing', async () => {

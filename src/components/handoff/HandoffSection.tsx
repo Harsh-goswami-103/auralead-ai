@@ -7,8 +7,14 @@
  *  - ClientHandoff (client lead page): the handoff card with the note, the summary and Acknowledge;
  *    while the summary is being written the page re-reads itself. Renders nothing for a lead that
  *    was never handed over.
+ *  - ClientHandoffSection: ClientHandoff in its titled "Handed over to you" card, for the client's
+ *    lead page and for the sheet the client's Leads list opens (the way most clients reach a lead),
+ *    so the note, the summary and Acknowledge are in both.
  */
+import { Handshake } from 'lucide-react';
 import type { Gate } from '@/components/patterns/GatedAction';
+import { ChipTitle } from '@/components/patterns/IconChip';
+import { SectionCard } from '@/components/patterns/SectionCard';
 import type { LeadHandoffViewDto } from '@/lib/schemas/handoff';
 import { AcknowledgeButton, SummaryPendingRefresh } from './HandoffActions';
 import { HandoffCard } from './HandoffCard';
@@ -62,5 +68,14 @@ export function ClientHandoff(props: { view: LeadHandoffViewDto; timeZone: strin
       />
       <SummaryPendingRefresh active={handoff.summaryStatus === 'PENDING'} />
     </div>
+  );
+}
+
+export function ClientHandoffSection(props: { view: LeadHandoffViewDto; timeZone: string }) {
+  if (!props.view.handoff) return null;
+  return (
+    <SectionCard accent title={<ChipTitle icon={<Handshake aria-hidden="true" />} hue="volt">Handed over to you</ChipTitle>} meta="From your AuraLead operator.">
+      <ClientHandoff view={props.view} timeZone={props.timeZone} />
+    </SectionCard>
   );
 }
