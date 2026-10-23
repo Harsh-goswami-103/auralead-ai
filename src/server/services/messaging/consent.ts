@@ -25,8 +25,10 @@
 import { createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import type { ConsentSource, LeadSource, Prisma } from '@/generated/prisma/client';
+import type { ContactConfirmedVia } from '@/lib/domain/lead-gen';
 import { DomainRuleError, NotFoundError, PermissionDeniedError, ValidationError } from '@/lib/errors';
 import { B2bAttestationBody, ManualConsentBody } from '@/lib/schemas/consent';
+import { noticeNamesBusiness } from '@/lib/schemas/reach-out';
 import type { ConsentMapping } from '@/lib/schemas/ingest';
 import type { AppCtx } from '@/server/auth/context';
 import { requireActor, requireCapability, requireWorkspace } from '@/server/auth/guards';
@@ -203,6 +205,12 @@ export type ManualGrantResult = { consentId: string; reoptIn: ReoptInOutcome; jo
  * A person records an opt-in they hold evidence for (purpose, evidence source, evidence time and a
  * note; plan §7). OPT_IN basis; it clears an active suppression only when its evidence time is
  * strictly newer than the latest Stop. Needs `leads.write`.
+ *
+ * A WhatsApp MARKETING opt-in (ADR-125) also needs the notice the person agreed to, which must name
+ * the business (422 NOTICE_REQUIRED, NOTICE_MISSING_BUSINESS_NAME), and how it was obtained
+ * (`evidence.method`, 422 EVIDENCE_METHOD_REQUIRED). The notice is kept verbatim in the evidence
+ * with its sha256, and the lead's contact counts as confirmed first-party from then on
+ * (`Lead.contactConfirmedVia` RECORDED_OPT_IN, ADR-118 (d)) unless it was confirmed before.
  */
 export async function grantManualConsent(ctx: AppCtx, raw: unknown, deps: SuppressionDeps): Promise<ManualGrantResult> {
   requireCapability(ctx, 'leads.write');
@@ -210,13 +218,17 @@ export async function grantManualConsent(ctx: AppCtx, raw: unknown, deps: Suppre
   const input = parseBody(ManualConsentBody, raw);
   const collectedAt = new Date(input.collectedAt);
   if (collectedAt.getTime() > ctx.clock.now().getTime()) throw rule('EVIDENCE_IN_FUTURE', 'The evidence time cannot be in the future.');
+  const whatsAppOptIn = input.channel === 'WHATSAPP' && input.purpose === 'MARKETING';
 
   const { value, journal } = await runSuppressionTx(ctx, deps, async (tx, batch) => {
     const lead = await loadLeadContact(tx, workspaceId, input.leadId);
+    if (whatsAppOptIn) await assertOptInNotice(tx, workspaceId, input);
     const key = leadContactKey(deps.contactKeyPepper, input.channel, lead);
     if (key === null) throw rule('NO_CONTACT_FOR_CHANNEL', `This lead has no ${input.channel === 'WHATSAPP' ? 'WhatsApp number' : 'email address'}.`);
     const evidence: Record<string, string> = { note: input.evidence.note };
     if (input.evidence.reference !== undefined) evidence.reference = input.evidence.reference;
+    if (input.evidence.method !== undefined) evidence.method = input.evidence.method;
+    if (whatsAppOptIn && input.noticeText !== undefined) evidence.noticeText = input.noticeText;
     const record = await tx.consentRecord.create({
       data: {
         workspaceId,
@@ -234,17 +246,34 @@ export async function grantManualConsent(ctx: AppCtx, raw: unknown, deps: Suppre
       },
       select: { id: true },
     });
+    // ADR-118 (d): a recorded WhatsApp opt-in makes the number the business's own data.
+    if (input.channel === 'WHATSAPP') {
+      await tx.lead.updateMany({ where: { workspaceId, id: lead.id, contactConfirmedAt: null }, data: { contactConfirmedAt: ctx.clock.now(), contactConfirmedVia: RECORDED_OPT_IN } });
+    }
+    const fields = ['evidence.note', ...(input.evidence.method !== undefined ? ['evidence.method'] : []), ...(input.noticeText !== undefined ? ['noticeText'] : [])];
     await recordAudit(tx, ctx, {
       action: 'consent.grant',
       targetType: 'ConsentRecord',
       targetId: record.id,
       simulated: lead.simulated,
-      summary: { leadId: lead.id, channel: input.channel, purpose: input.purpose, basis: 'OPT_IN', source: input.source, fields: ['evidence.note'] },
+      summary: { leadId: lead.id, channel: input.channel, purpose: input.purpose, basis: 'OPT_IN', source: input.source, method: input.evidence.method ?? null, fields },
     });
     const reoptIn = await clearSuppressionForConsent(tx, ctx, batch, { id: record.id, channel: input.channel, contactKey: key, basis: 'OPT_IN', collectedAt }, { simulated: lead.simulated });
     return { consentId: record.id, reoptIn };
   });
   return { ...value, journal };
+}
+
+const RECORDED_OPT_IN: ContactConfirmedVia = 'RECORDED_OPT_IN';
+
+/** ADR-125: a WhatsApp MARKETING opt-in names how it was obtained and the notice, which names the business. */
+async function assertOptInNotice(tx: Tx, workspaceId: string, input: ManualConsentBody): Promise<void> {
+  if (input.evidence.method === undefined) throw rule('EVIDENCE_METHOD_REQUIRED', 'Say how the customer gave this WhatsApp opt-in.');
+  if (input.noticeText === undefined) throw rule('NOTICE_REQUIRED', 'Add the notice the customer agreed to. A WhatsApp opt-in must name the business.');
+  const workspace = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true } });
+  if (!noticeNamesBusiness(input.noticeText, workspace.name)) {
+    throw rule('NOTICE_MISSING_BUSINESS_NAME', `The notice must name the business ("${workspace.name}"), so the customer knows who will message them.`);
+  }
 }
 
 /**

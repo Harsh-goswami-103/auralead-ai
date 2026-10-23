@@ -42,7 +42,7 @@ import { sheetsSyncJob } from './handlers/sheets-sync';
 
 // ---- end F4 ----
 // ---- lead-gen F5 handoff ----
-
+import { handoffSummaryJob } from './handlers/handoff-summary';
 // ---- end F5 ----
 // ---- lead-gen F6 presentation ----
 
@@ -114,7 +114,7 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
 
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
-
+  handoffSummaryJob,
   // ---- end F5 ----
   // ---- lead-gen F6 presentation ----
 

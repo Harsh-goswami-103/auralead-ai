@@ -71,7 +71,16 @@ export function confirmedRevenue(): ConfirmedRevenue {
   return { available: false, label: CONFIRMED_REVENUE.label, value: CONFIRMED_REVENUE.value, reason: CONFIRMED_REVENUE.reason };
 }
 
-export type NeedsYouId = 'quoteApprovals' | 'messageApprovals' | 'invalidatedApprovals' | 'failedDeliveries' | 'unknownDeliveries' | 'takeoverThreads' | 'openCallRequests';
+export type NeedsYouId =
+  | 'quoteApprovals'
+  | 'messageApprovals'
+  | 'invalidatedApprovals'
+  | 'failedDeliveries'
+  | 'unknownDeliveries'
+  | 'takeoverThreads'
+  | 'openCallRequests'
+  // ADR-124 (lead-gen F5): leads the operator handed over that the client has not acknowledged yet.
+  | 'handedOverLeads';
 
 export type NeedsYouDefinition = MetricDefinition & { id: NeedsYouId; href: string | null; tone: 'attention' | 'problem' | 'info' };
 
@@ -126,9 +135,25 @@ export const NEEDS_YOU_ITEMS: Readonly<Record<NeedsYouId, NeedsYouDefinition>> =
     href: '/dashboard/user/inbox',
     tone: 'attention',
   },
+  handedOverLeads: {
+    id: 'handedOverLeads',
+    label: 'Handed over to you',
+    definition: 'Leads your AuraLead operator handed over to your team that nobody has acknowledged yet. Open one to read the note and the summary, then acknowledge it.',
+    href: '/dashboard/user/leads?handedOver=1',
+    tone: 'attention',
+  },
 };
 
-export const NEEDS_YOU_ORDER: readonly NeedsYouId[] = ['quoteApprovals', 'messageApprovals', 'invalidatedApprovals', 'failedDeliveries', 'unknownDeliveries', 'takeoverThreads', 'openCallRequests'];
+export const NEEDS_YOU_ORDER: readonly NeedsYouId[] = [
+  'handedOverLeads',
+  'quoteApprovals',
+  'messageApprovals',
+  'invalidatedApprovals',
+  'failedDeliveries',
+  'unknownDeliveries',
+  'takeoverThreads',
+  'openCallRequests',
+];
 
 // ---- Filters (shared by the client and admin loaders) ---------------------------------------------
 
@@ -170,6 +195,9 @@ export function needsYouMessagesWhere(now: Date): Prisma.MessageWhereInput {
 }
 
 export const OPEN_CALL_REQUEST_WHERE = { status: 'OPEN' } as const satisfies Prisma.CallRequestWhereInput;
+
+/** ADR-124: handoffs the client has not acknowledged yet (one per lead). */
+export const OPEN_HANDOFF_WHERE = { status: 'HANDED_OVER' } as const satisfies Prisma.LeadHandoffWhereInput;
 
 export const SALES_STAGES = ['NEW', 'CONTACTED', 'REPLIED', 'QUOTE_SENT', 'CONVERTED', 'LOST'] as const;
 export type SalesStageKey = (typeof SALES_STAGES)[number];

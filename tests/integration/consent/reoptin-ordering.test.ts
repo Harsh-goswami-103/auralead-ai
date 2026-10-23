@@ -16,6 +16,9 @@ import { DEPS } from '../ingest/support';
 import { userCtx } from '../quotes/support';
 import { createConsentHarness, ensureWhatsApp, journalLines, PEPPER, suppressionRows, wsCtx, type ConsentHarness } from './support';
 
+// ADR-125: a WhatsApp MARKETING opt-in names the notice the customer agreed to and how it was given.
+const OPT_IN_NOTICE = 'I agree to receive WhatsApp messages from Smile Avenue Dental Clinic about its services. Reply STOP to stop.';
+
 let h: ConsentHarness;
 let templateId: string;
 
@@ -105,7 +108,7 @@ describe('re-opt-in ordering against the latest Stop (O2, E3)', () => {
     h.clock.set('2026-10-16T10:45:00.000Z');
     const result = await grantManualConsent(
       owner,
-      { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-16T10:00:00.000Z', evidence: { note: 'Signed form scanned at the clinic desk' } },
+      { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-16T10:00:00.000Z', evidence: { note: 'Signed form scanned at the clinic desk', method: 'WRITTEN_FORM' }, noticeText: OPT_IN_NOTICE },
       h.deps,
     );
     expect(result.reoptIn).toBe('EVIDENCE_NOT_NEWER');
@@ -138,7 +141,7 @@ describe('re-opt-in ordering against the latest Stop (O2, E3)', () => {
     const owner = await userCtx(h.db, h.clock, 'owner');
     const manual = await grantManualConsent(
       owner,
-      { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-16T11:45:00.000Z', evidence: { note: 'Paper form dated before the second stop' } },
+      { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-16T11:45:00.000Z', evidence: { note: 'Paper form dated before the second stop', method: 'WRITTEN_FORM' }, noticeText: OPT_IN_NOTICE },
       h.deps,
     );
     expect(manual.reoptIn).toBe('EVIDENCE_NOT_NEWER');
@@ -162,7 +165,7 @@ describe('re-opt-in ordering against the latest Stop (O2, E3)', () => {
     h.clock.set('2026-10-16T13:00:00.000Z');
     const manual = await grantManualConsent(
       owner,
-      { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-16T12:50:00.000Z', evidence: { note: 'Customer re-subscribed at the front desk', reference: 'desk-log-17' } },
+      { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', source: 'MANUAL_EVIDENCE', collectedAt: '2026-10-16T12:50:00.000Z', evidence: { note: 'Customer re-subscribed at the front desk', reference: 'desk-log-17', method: 'IN_PERSON' }, noticeText: OPT_IN_NOTICE },
       h.deps,
     );
     expect(manual.reoptIn).toBe('CLEARED');

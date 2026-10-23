@@ -1995,7 +1995,87 @@ export const ROUTES: readonly RouteEntry[] = [
 
   // ---- end F4 ----
   // ---- lead-gen F5 handoff ----
-
+  {
+    path: '/api/app/leads/[leadId]/handoff',
+    file: 'src/app/api/app/leads/[leadId]/handoff/route.ts',
+    kind: 'api',
+    owner: 'T44',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.handoff',
+    params: { leadId: fixture('workspaceB.leadId') },
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), expectedStageVersion: 0, requestKey: 'matrix-handoff-0001' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "hand over workspace B's lead (leads.handoff)",
+      },
+      { method: 'POST', body: { expectedStageVersion: 0, requestKey: 'matrix-handoff-0002' }, expect: signedIn(404), note: "workspace B's lead through the caller's active workspace" },
+    ],
+  },
+  {
+    path: '/api/app/handoffs',
+    file: 'src/app/api/app/handoffs/route.ts',
+    kind: 'api',
+    owner: 'T44',
+    access: 'session',
+    roles: ['USER'],
+    capability: 'leads.read',
+    calls: [{ method: 'GET', expect: signedIn(404, { ownerA: 200 }), note: "the caller's own workspace's handed-over leads" }],
+  },
+  {
+    path: '/api/app/handoffs/[handoffId]/acknowledge',
+    file: 'src/app/api/app/handoffs/[handoffId]/acknowledge/route.ts',
+    kind: 'api',
+    owner: 'T44',
+    access: 'session',
+    roles: ['USER'],
+    capability: 'leads.read',
+    params: { handoffId: fixture('handoffs.unknownId') },
+    calls: [{ method: 'POST', expect: signedIn(404), note: 'a handoff id that is not in the caller\'s workspace' }],
+  },
+  {
+    path: '/api/app/settings/reach-out',
+    file: 'src/app/api/app/settings/reach-out/route.ts',
+    kind: 'api',
+    owner: 'T44',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'automation.manage',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), whatsappOptInNotice: 'Tenant matrix probe notice', privacyContact: null },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 403, superAdmin: 404 },
+        note: "workspace B's reach-out settings (automation.manage)",
+      },
+      {
+        method: 'POST',
+        body: { whatsappOptInNotice: 'Tenant matrix probe notice', privacyContact: null },
+        expect: signedIn(404, { ownerA: 422 }),
+        note: "the caller's own workspace: a notice that does not name the business is refused, nothing is written",
+      },
+    ],
+  },
+  {
+    path: '/api/app/settings/reach-out/click-to-chat',
+    file: 'src/app/api/app/settings/reach-out/click-to-chat/route.ts',
+    kind: 'api',
+    owner: 'T44',
+    access: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    capability: 'leads.read',
+    calls: [
+      {
+        method: 'POST',
+        body: { workspaceSlug: fixture('workspaceB.slug'), prefill: 'STOP' },
+        expect: { anonymous: 401, ownerA: 404, employeeUnassigned: 404, employeeNoCapability: 422, superAdmin: 404 },
+        note: 'a STOP prefill for workspace B is refused (leads.read is enough to build a link)',
+      },
+      { method: 'POST', body: { prefill: 'STOP' }, expect: signedIn(404, { ownerA: 422 }), note: "the caller's own workspace: a STOP prefill is refused" },
+    ],
+  },
   // ---- end F5 ----
   // ---- lead-gen F6 presentation ----
 

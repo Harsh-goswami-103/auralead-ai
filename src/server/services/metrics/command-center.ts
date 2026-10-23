@@ -6,7 +6,7 @@
  * Every number is an aggregate over stored rows through the tenant-scoped client (definitions and
  * filters in ./definitions), computed at one "As of" instant from the injected clock. One
  * aggregate per widget; a widget whose query fails is returned as failed with the request
- * reference while the others still load. The whole load is a fixed set of statements (12),
+ * reference while the others still load. The whole load is a fixed set of statements (13),
  * independent of how many rows the workspace has (tests/integration/metrics/query-budget.test.ts).
  * Owner and member both read it (no capability gate: it shows counts only, never contact data).
  */
@@ -27,6 +27,7 @@ import {
   newLeadsWhere,
   OPEN_CALL_REQUEST_WHERE,
   OPEN_CONVERSATION_WHERE,
+  OPEN_HANDOFF_WHERE,
   pipelineVersionWhere,
   SALES_STAGES,
   type ConfirmedRevenue,
@@ -97,11 +98,12 @@ export async function loadClientCommandCenter(ctx: AppCtx, opts: { onWidgetError
     settle(CLIENT_METRICS.pipelineValue, async () => moneyOf(await db.quoteVersion.aggregate({ where: pipelineVersionWhere(now), _sum: { totalPaise: true }, _count: { _all: true } }))),
     settle(CLIENT_METRICS.acceptedQuoteValue, async () => moneyOf(await db.quoteVersion.aggregate({ where: ACCEPTED_VERSION_WHERE, _sum: { totalPaise: true }, _count: { _all: true } }))),
     settle(CLIENT_METRICS.needsYou, async () => {
-      const [approvals, messages, convo, callRequests] = await Promise.all([
+      const [approvals, messages, convo, callRequests, handoffs] = await Promise.all([
         db.approval.groupBy({ by: ['kind', 'status'], where: needsYouApprovalsWhere(now), _count: { _all: true } }),
         db.message.groupBy({ by: ['status'], where: needsYouMessagesWhere(now), _count: { _all: true } }),
         conversations(),
         db.callRequest.count({ where: OPEN_CALL_REQUEST_WHERE }),
+        db.leadHandoff.count({ where: OPEN_HANDOFF_WHERE }),
       ]);
       const approvalCount = (kind: string, status: string) => approvals.find((g) => g.kind === kind && g.status === status)?._count._all ?? 0;
       const messageCount = (status: string) => messages.find((g) => g.status === status)?._count._all ?? 0;
@@ -113,6 +115,7 @@ export async function loadClientCommandCenter(ctx: AppCtx, opts: { onWidgetError
         unknownDeliveries: messageCount('UNKNOWN'),
         takeoverThreads: convo.find((g) => g.humanTakeover)?._count._all ?? 0,
         openCallRequests: callRequests,
+        handedOverLeads: handoffs,
       };
       return NEEDS_YOU_ORDER.map((id) => ({ ...NEEDS_YOU_ITEMS[id], count: counts[id] }));
     }),

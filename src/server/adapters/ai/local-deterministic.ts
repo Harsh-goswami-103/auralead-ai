@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { generateLocalDraft } from './local/draft';
+import { generateLocalHandoffSummary } from './local/handoff-summary';
 import type { AiPort, AiRequest, AiResponse } from './port';
 
 export const LOCAL_GENERATOR_LABEL = 'local-deterministic' as const;
@@ -28,6 +29,7 @@ export const LOCAL_TASKS: Readonly<Record<string, LocalTaskGenerator>> = Object.
   // ---- lead-gen F3 conversation_reply ----
   // ---- lead-gen F4 template_copy ----
   // ---- lead-gen F5 handoff_summary ----
+  handoff_summary: generateLocalHandoffSummary,
 });
 
 const TASK_NAME_MAX = 64;

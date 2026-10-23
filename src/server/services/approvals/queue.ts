@@ -52,6 +52,8 @@ const EXTRA_REASON_LABELS: Readonly<Record<string, string>> = {
   CONTACT_MISSING: 'The lead has no contact on this channel',
   NEWER_INBOUND: 'Superseded by a newer customer message',
   SUPPRESSED: 'The contact opted out on this channel',
+  // Lead-gen F5 (ADR-132): a queued send the lead's handoff to the client cancelled.
+  LEAD_HANDED_OVER: 'The lead was handed over to the client',
 };
 
 export function dispatchReasonLabel(code: string | null): string | null {
