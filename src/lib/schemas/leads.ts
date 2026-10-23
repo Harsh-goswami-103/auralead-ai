@@ -322,5 +322,17 @@ export type LeadProfileDto = {
   sources: SourceRecordDto[];
   quotes: Array<{ id: string; number: string; status: string; currentVersionNo: number; totalPaise: string | null; validUntil: string | null }>;
   conversations: Array<{ id: string; channel: 'WHATSAPP' | 'EMAIL'; lastInboundProviderAt: string | null }>;
+  /**
+   * Set for a lead found through Google Places (ADR-118 (d)): when its Places-sourced fields expire,
+   * whether the business's contact details were confirmed (and how), and the attributions Google
+   * returned with the place while the finder still holds them (ADR-118 (b)).
+   */
+  places: {
+    expiresAt: string | null;
+    confirmedAt: string | null;
+    confirmedVia: string | null;
+    attributions: Array<{ provider: string; providerUri: string | null }>;
+    canConfirm: boolean;
+  } | null;
   permissions: { canMoveStage: boolean };
 };

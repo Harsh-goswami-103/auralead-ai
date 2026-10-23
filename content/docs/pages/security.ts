@@ -139,6 +139,10 @@ export const security: DocPage = {
             ['Invites and resets (`inviteReset`)', '10', '1 hour', 'Client IP'],
             ['Public quotation (`publicQuote`)', '30', '1 minute', 'Client IP'],
             ['AI drafts (`aiDraft`)', '30', '1 minute', 'Workspace'],
+            ['Lead Finder searches (`finderRun`)', '10', '1 hour', 'Workspace; only a new search counts, a repeated request does not'],
+            ['Lead file imports (`leadImport`)', '10', '1 minute', 'Person and workspace; uploads and confirmations'],
+            ['Template submissions (`templateSubmit`)', '20', '1 hour', 'Workspace'],
+            ['Lead handovers (`handoff`)', '30', '1 minute', 'Person'],
           ],
         },
         {

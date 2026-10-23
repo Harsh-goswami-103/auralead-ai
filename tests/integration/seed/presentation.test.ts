@@ -17,6 +17,7 @@ import { CAPABILITIES, isCapability } from '@/lib/domain/enums';
 import { CONTACT_CONFIRMED_VIA, HANDOFF_SUMMARY_STATUSES, FINDER_EMAIL_STATUSES } from '@/lib/domain/lead-gen';
 import { parseTemplateMapping, templateShape } from '@/lib/domain/whatsapp-templates';
 import { CONFIG_FIELD_RULES } from '@/lib/schemas/integrations';
+import { parseStoredHandoffSummary } from '@/lib/schemas/handoff';
 import { parseScoringConfig } from '@/lib/schemas/scoring';
 import { getWebhookContext } from '@/server/auth/context';
 import { DEMO_PERSONAS } from '@/server/auth/demo-personas';
@@ -189,8 +190,9 @@ describe('the finished simulated finder run', () => {
       expect(r.hasPhone).toBe(r.phoneRaw !== null);
       expect(r.ratingX10!).toBeGreaterThanOrEqual(10);
       expect(r.ratingX10!).toBeLessThanOrEqual(50);
-      expect(r.contentExpiresAt!.getTime()).toBe(r.createdAt.getTime() + DAY);
-      expect(r.contentExpiresAt!.getTime()).toBeGreaterThan(T0.getTime());
+      // The pack outlives the 24-hour rule of real runs (ADR-134): a year after the fetch.
+      expect(r.contentExpiresAt!.getTime()).toBe(r.createdAt.getTime() + 365 * DAY);
+      expect(r.contentExpiresAt!.getTime()).toBeGreaterThan(T0.getTime() + 30 * DAY);
       expect(r.contentPurgedAt).toBeNull();
     }
     expect(results.some((r) => !r.hasPhone)).toBe(true);
@@ -360,7 +362,8 @@ describe('opt-ins, chats and the handoff', () => {
     expect(handoff).toMatchObject({ status: 'HANDED_OVER', summaryStatus: 'READY', summaryGeneratorLabel: 'local-deterministic', fromUserId: seedId('user', 'employee'), acknowledgedBy: null, acknowledgedAt: null });
     expect(HANDOFF_SUMMARY_STATUSES).toContain(handoff.summaryStatus);
     expect(handoff.createdAt.getTime()).toBe(lead.handedOverAt!.getTime());
-    expect(handoff.summary).toContain(lead.displayName);
+    // The client panel reads {asked, promised, nextStep} (slice F5); presentation-alignment.test.ts recomputes it.
+    expect(parseStoredHandoffSummary(handoff.summary)).toEqual(HANDOFF_FIXTURE.summary);
     expect(handoff.note).toBeTruthy();
     const thread = await db.conversation.findFirstOrThrow({ where: { leadId } });
     expect(thread).toMatchObject({ aiMode: 'OFF', humanTakeover: true });
@@ -406,7 +409,7 @@ describe('determinism, refresh and isolation', () => {
       const lead = await client.lead.findUniqueOrThrow({ where: { id: leadIdOf(HANDOFF_FIXTURE.place) } });
       expect(lead.handedOverAt!.getTime()).toBe(T1.getTime() - 3 * HOUR);
       const results = await client.leadFinderResult.findMany({ where: { workspaceId: WS } });
-      for (const r of results) expect(r.contentExpiresAt!.getTime()).toBeGreaterThan(T1.getTime());
+      for (const r of results) expect(r.contentExpiresAt!.getTime()).toBeGreaterThan(T1.getTime() + 30 * DAY);
     } finally {
       await fresh.destroy();
     }

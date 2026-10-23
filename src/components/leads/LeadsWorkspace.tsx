@@ -101,7 +101,7 @@ export function LeadsWorkspace(props: LeadsWorkspaceProps) {
       </SectionCard>
       {props.emptyWorkspace ? null : (
         <SectionCard title={<ChipTitle icon={<FileDown aria-hidden="true" />} hue="ice">Export</ChipTitle>}>
-          <LeadExportPanel exports={props.exports} filters={{ q: params.q, stage: params.view === 'board' ? undefined : params.stage, source: params.source, score: params.score, sort: params.sort }} gate={props.exportGate} workspaceSlug={props.workspaceSlug} timeZone={props.timeZone} filtered={filtered} />
+          <LeadExportPanel exports={props.exports} filters={{ q: params.q, stage: params.view === 'board' ? undefined : params.stage, source: params.source, score: params.score, handedOver: params.handedOver, sort: params.sort }} gate={props.exportGate} workspaceSlug={props.workspaceSlug} timeZone={props.timeZone} filtered={filtered} />
         </SectionCard>
       )}
     </div>

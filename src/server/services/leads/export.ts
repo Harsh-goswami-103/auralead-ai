@@ -161,7 +161,7 @@ export function withoutSearchText(value: unknown): Prisma.InputJsonValue {
 }
 
 function sameFilters(a: LeadFiltersType, b: LeadFiltersType): boolean {
-  return (a.q ?? null) === (b.q ?? null) && (a.stage ?? null) === (b.stage ?? null) && (a.source ?? null) === (b.source ?? null) && (a.score ?? null) === (b.score ?? null) && a.sort === b.sort;
+  return (a.q ?? null) === (b.q ?? null) && (a.stage ?? null) === (b.stage ?? null) && (a.source ?? null) === (b.source ?? null) && (a.score ?? null) === (b.score ?? null) && (a.handedOver ?? false) === (b.handedOver ?? false) && a.sort === b.sort;
 }
 
 /** QUEUED, or READY and not yet expired at `now`. */
@@ -196,7 +196,7 @@ export function leadExportDto(row: LeadExport, now: Date): LeadExportDto {
 
 /** What the audit may say about the filters: their names and enum values, never the search text. */
 function auditFilters(filters: LeadFiltersType) {
-  return { stage: filters.stage ?? null, source: filters.source ?? null, score: filters.score ?? null, sort: filters.sort, search: Boolean(filters.q) };
+  return { stage: filters.stage ?? null, source: filters.source ?? null, score: filters.score ?? null, handedOver: filters.handedOver ?? false, sort: filters.sort, search: Boolean(filters.q) };
 }
 
 // ---- Request, list, download --------------------------------------------------------------------

@@ -86,8 +86,15 @@ export const FINDER_RUN_FIXTURE = {
   ] as const satisfies readonly CellFixture[],
 } as const;
 
-/** Places content is a 24-hour working copy (ADR-118 (a)); imported Places fields last 30 days (ADR-118 (d)). */
-export const FINDER_CONTENT_TTL_MINUTES = 24 * 60;
+/**
+ * Real finder results are a 24-hour working copy (ADR-118 (a)); imported Places fields last 30 days
+ * (ADR-118 (d)). The presentation pack's results are simulated and are the demo's data, so they
+ * must still show their details whenever the presenter opens the page, however long ago the
+ * database was seeded: their `contentExpiresAt` is a year after the fetch (ADR-134). Real runs keep
+ * the 24-hour rule (`FINDER_CONTENT_TTL_MS` in the finder service); `demo:refresh` moves this date with
+ * the rest (`REBASE_COLUMNS`).
+ */
+export const FINDER_PRESENTATION_CONTENT_DAYS = 365;
 export const PLACES_LEAD_TTL_DAYS = 30;
 
 const STATE = 'Madhya Pradesh';
@@ -303,6 +310,25 @@ export const AUTOMATED_DISCLOSURE = `${PRESENTATION_BUSINESS}'s automated assist
  */
 const QUOTE_REQUEST_ACK = 'Thank you. A member of our team will prepare your quotation and share it here.';
 
+/**
+ * The two catalog answers of the auto-chat are exactly what DEMO's local generator writes for these
+ * questions with this workspace's catalog and thread (slice F3: `generateLocalConversationReply`
+ * through `buildConversationReplyPrompt`), so the seeded thread shows what the product itself says.
+ * tests/integration/seed/presentation.test.ts recomputes both through the production path and fails
+ * when the generator's wording or the catalog changes: copy the new text here then.
+ */
+const ANSWER_WEBSITE = [
+  'Happy to help. This is what Codecraft Web Studio can help with:',
+  '- Business website: A responsive five-page website with a contact form, a WhatsApp chat button and your Google Maps location.',
+  '- Website maintenance: Monthly content updates, backups, security updates and uptime checks.',
+  'If you would like a quotation, reply here and our team will prepare one.',
+].join('\n');
+const ANSWER_LANDING = [
+  'Sure. Here is what Codecraft Web Studio can help with:',
+  '- Landing page: Usually completed within 5 days.',
+  'If you would like a quotation, reply here and our team will prepare one.',
+].join('\n');
+
 export const REPLY_INITIATOR = 'system:reply.auto';
 
 export const CONVERSATION_FIXTURES: readonly ConversationFixture[] = [
@@ -319,23 +345,23 @@ export const CONVERSATION_FIXTURES: readonly ConversationFixture[] = [
         key: 'answer-website',
         direction: 'OUT',
         minutesAgo: 49,
-        body: `${AUTOMATED_DISCLOSURE}\n\nOur Business website is a responsive five-page website with a contact form, a WhatsApp chat button and your Google Maps location. It usually takes 14 days.`,
+        body: `${AUTOMATED_DISCLOSURE}\n\n${ANSWER_WEBSITE}`,
         status: 'READ',
         generatorLabel: 'local-deterministic',
         sendIntent: 'AUTOMATED',
         replyTo: 'ask-website',
       },
       // Names a catalog service, so the reply guard's pre-gate classifies it service_faq (ADR-122).
-      { key: 'ask-seo', direction: 'IN', minutesAgo: 35, body: 'Do you also offer SEO setup, so that people find us on Google?', status: 'DELIVERED' },
+      { key: 'ask-landing', direction: 'IN', minutesAgo: 35, body: 'Can you build a landing page for our festival offer? How long does it take?', status: 'DELIVERED' },
       {
-        key: 'answer-seo',
+        key: 'answer-landing',
         direction: 'OUT',
         minutesAgo: 34,
-        body: 'Yes. Our SEO setup covers your Google Business Profile, on-page SEO, a sitemap and Search Console. It usually takes 10 days.',
+        body: ANSWER_LANDING,
         status: 'DELIVERED',
         generatorLabel: 'local-deterministic',
         sendIntent: 'AUTOMATED',
-        replyTo: 'ask-seo',
+        replyTo: 'ask-landing',
       },
     ],
   },
@@ -398,14 +424,24 @@ export const CONVERSATION_FIXTURES: readonly ConversationFixture[] = [
   },
 ];
 
-/** The lead handed over to the client (ADR-124): note, local summary, 3 hours before the anchor. */
+/**
+ * The lead handed over to the client (ADR-124): note, local summary, 3 hours before the anchor.
+ * `summary` is stored as JSON `{asked, promised, nextStep}` (slice F5's `HandoffSummaryContent`, which
+ * the client panel reads back) and is exactly what DEMO's local generator writes for this thread:
+ * tests/integration/seed/presentation.test.ts recomputes it through the production path (the opener
+ * depends on a hash of the thread's timestamps, so either of its two wordings passes).
+ */
 export const HANDOFF_FIXTURE = {
   place: STORY_LEADS.handedOver,
   minutesAgo: 3 * 60,
   note: 'Wants a website with online appointment booking and to be found on Google. Prefers a call after 4 pm.',
-  summary:
-    'Pearl Dental Care, a dental clinic in Bhopal, wrote in on WhatsApp through the website link. They want a business website where patients can book appointments, and help being found on Google (SEO setup). They asked for a call after 4 pm. No price has been discussed yet.',
+  summary: {
+    asked: 'The customer sent 2 messages and asked about Business website, Website maintenance and a call back.',
+    promised: 'The team sent 2 messages. No quotation was sent yet.',
+    nextStep: "Reply to the customer and offer a quotation. Read the operator's note first.",
+  },
   summaryGeneratorLabel: 'local-deterministic',
+  requestKey: 'seed-handoff-pearl-dental',
 } as const;
 
 // ---- WhatsApp templates (ADR-123) ---------------------------------------------------------------

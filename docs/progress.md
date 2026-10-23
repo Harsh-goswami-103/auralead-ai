@@ -152,6 +152,31 @@ Carried to the slices (details in `docs/handoff/lead-gen-b1.md`, `-b2.md`, `-b3.
 - **F6:** `REBASE_COLUMNS` lists only `escalatedAt` for Conversation; seeded open-window chats need Conversation `createdAt`, `lastInboundProviderAt` and Message `createdAt`, `providerTs`. The rate-limit table in `content/docs` lacks `finderRun`, `leadImport`, `templateSubmit` and `handoff`.
 - **AI tasks (F3, F4, F5):** `LOCAL_TASKS` anchors are single lines (one entry under each), not begin/end blocks; use the names in `LEAD_GEN_AI_TASKS`. Activity icons (`FAMILIES`) have no anchor, so a new action prefix falls back to the History icon. `defaultAiDeps()` duplicates `defaultDraftDeps()` (kept for existing importers).
 
+## Lead-gen suite: slices merged (2026-10-23)
+
+The six slice branches were merged into `claude/lead-gen-suite` with `git merge --no-ff` in plan order. After each merge: `prisma generate`, `npm run typecheck`, `eslint` on the files the merge changed, and vitest on `tests/unit/arch`, `tests/unit/lib`, `tests/unit/docs`, `tests/integration/authz`, `tests/integration/db` plus every test file the slices had added or changed so far.
+| Merge | Commit | Conflicts and how they were resolved |
+|---|---|---|
+| F5 handoff and reach-out | `6f79953` | none |
+| F2 import and export | `5466e7f` | `docs/decisions.md` only (both slices appended an ADR): kept both, ADRs in number order |
+| F1 Lead Finder | `7d32ac0` | `docs/decisions.md` only: same |
+| F4 template studio | `b95f901` | `docs/decisions.md` (same) and `adapters/ai/local-deterministic.ts` (the two slices' import lines at the same spot: kept both; the `LOCAL_TASKS` lines sat in their own anchors). The merge left the section-nav test without "Templates": `c4980e3` |
+| F3 chat and AI replies | `712ea5d` | `docs/decisions.md` (same) and `tests/components/integrations/source-actions.test.tsx` (F3 compares the nav with `WORKSPACE_SECTIONS`, F1 and F4 had edited the literal list: kept F3's form and listed every section) |
+| F6 presentation seed and copy | `cbc009d` | `docs/decisions.md` only: same |
+
+Every other shared file (`routes.manifest.ts`, `jobs/registry.ts`, `activity-vocabulary.ts`, `adapters/registry.ts`, `tests/support/routes.ts`, `registry-live.test.ts`, `sections.ts`, `LOCAL_TASKS`, `approvals/queue.ts`, `dispatch-run.ts`, `bulk.ts`, `leads.ts`, `consent.ts`) merged without a conflict through the anchor blocks.
+
+Integration work after the merges (ADR-134):
+- **Fix, flaky test (`59e7c30`):** `tests/integration/finder/run-flow.test.ts` ("reports how many websites are still being checked") listed the 10 newest runs, but every run of the file is created at the same fixed instant, so which runs were in the list depended on a random id order (failed about 1 run in 6). The test now creates its runs a minute later.
+- **Section order:** Lead finder, Leads, Inbox, Templates, Approvals, Integrations, Pipeline, Sheets, Meta, Extension (`SECTION_ORDER`); the nav now shows on the Leads, Import and Approvals pages as well.
+- **Lead pages:** F5's hand-over action and reach-out panel (already wired by F5), F1's Places attribution and "Confirm details" (`LeadPlacesNotice`, `LeadProfileDto.places`) on the operator lead page, the client lead page and the Leads sheet, F5's handoff card on the client lead page and in the sheet, F2's "Import leads" link in the employee Leads header.
+- **Seed alignment:** the seeded summary was plain text (the client panel reads JSON `{asked, promised, nextStep}`); the seeded AI answers, opt-in evidence and handoff audits now equal what the services write, and a test recomputes them (`presentation-alignment.test.ts`). F4's trigger `MEETING_BOOKED` already matched the seed. The operator persona already held every capability except `consent.import`, and `REBASE_COLUMNS` already listed the finder and Places lead dates.
+- **Seeded finder results survive the presentation:** their `contentExpiresAt` is the fetch time + 365 days (real runs keep 24 hours) and no purge job is queued for the seeded run. `demo:refresh` moves the date with the rest; the seeded Places leads keep the 30-day rule. A database seeded before this merge still needs `npm run db:reset` (`db:seed` leaves a seeded database alone, and the pack is new).
+- **Shared fixes from the slice notes:** the export filter `handedOver` (same-export reuse, audit, panel), `HANDED_OVER` run reason, "Needs you" icon for `handedOverLeads`, activity feed link for Lead targets, activity labels for `consent.capture` and `suppression.clear_refused`, the docs rate-limit table (`finderRun`, `leadImport`, `templateSubmit`, `handoff`), the public `/docs/bot` page the crawler's User-Agent points to.
+- **New cross-slice tests:** `tests/integration/seed/presentation-alignment.test.ts`, the wiring block of `presentation-pages.test.ts`, `tests/integration/leads/export-handed-over.test.ts`, `tests/unit/jobs/lead-gen-registry.test.ts` (every lead-gen job type registered once: the worker-boot check without a process).
+
+Left for the next stages: the full suite run alone; the walk of the DEMO story in a browser on a fresh data dir (the landing flow, the finder, the chat, both lead pages and the client panel have never been looked at in a browser); a fresh LIVE install; `content/docs` pages for the new product (getting-started personas and workspaces, data-and-privacy retention rows for finder results, Places fields and handoff data, messaging-rules for AI replies, roles-and-panels routes), README and the presenter section of `docs/runbooks.md`; `docs/integrations.md` Places terms check date; unverified provider shapes (Places, Graph template calls) stay `verified: false` until one live check.
+
 ## Unresolved / carried forward
 
 - `npm run test:e2e`: specs exist for smoke, the panel flows and `visual/webgl-fallback`; the rest of the visual projects (responsive, a11y, states) get specs in T31. In this Linux container Playwright 1.64's own browser build is not installed; the run above used the preinstalled Chromium through a throwaway config with `launchOptions.executablePath`.

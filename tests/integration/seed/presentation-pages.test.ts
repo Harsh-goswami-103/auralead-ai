@@ -27,6 +27,10 @@ import EmployeeLeadPage from '@/app/dashboard/employee/[ws]/leads/[leadId]/page'
 import IntegrationsPage from '@/app/dashboard/employee/[ws]/integrations/page';
 import IntegrationSetupPage from '@/app/dashboard/employee/[ws]/integrations/[kind]/page';
 import ApprovalsPage from '@/app/dashboard/employee/[ws]/approvals/page';
+import EmployeeFinderPage from '@/app/dashboard/employee/[ws]/finder/page';
+import EmployeeInboxPage from '@/app/dashboard/employee/[ws]/inbox/page';
+import EmployeeImportPage from '@/app/dashboard/employee/[ws]/leads/import/page';
+import EmployeeTemplatesPage from '@/app/dashboard/employee/[ws]/templates/page';
 import { outboundAttempts, resetOutboundAttempts } from '@/server/adapters/http/outbound';
 import { createSession, sessionCookieName } from '@/server/auth/session';
 import { seedId } from '../../../prisma/seed/ids';
@@ -104,7 +108,7 @@ describe('the client panel (Codecraft client persona)', () => {
     for (const place of [STORY_LEADS.autoChat, STORY_LEADS.escalated, STORY_LEADS.handedOver]) expect(inbox).toContain(nameOf(place));
     const thread = text(await ConversationPage({ params: Promise.resolve({ conversationId: seedId('conversation', `${PRESENTATION_SLUG}:auto-chat`) }) }));
     expect(thread).toContain('what do you include in a business website?');
-    expect(thread).toContain('Business website is a responsive five-page website');
+    expect(thread).toContain('Business website: A responsive five-page website');
   });
 });
 
@@ -131,6 +135,71 @@ describe('the operator panel (Employee persona)', () => {
     for (const name of ['website_intro', 'follow_up', 'meeting_confirm', 'brochure_share', 'discount_blast']) expect(setup).toContain(name);
     expect(await db.workspace.count({ where: { id: WS } })).toBe(1);
     expect(text(await ApprovalsPage(ws))).toBeTruthy();
+  });
+});
+
+/** The lead-gen suite wired together (integrator): the pages the story walks through link to each other. */
+describe('the lead-gen suite in the pages', () => {
+  const STORY_NAV = 'Lead finder Leads Inbox Templates Approvals Integrations Pipeline Sheets Meta Extension';
+  const optInLeadId = leadIdOf(STORY_LEADS.optInOnly);
+  const unconfirmed = () => {
+    const taken = new Set<string>(Object.values(STORY_LEADS));
+    return presentationPlaces().find((p) => p.imported && !taken.has(p.key))!;
+  };
+
+  it('shows the section nav in the story order on the Leads, Import, Finder, Inbox, Templates and Approvals pages', async () => {
+    await signInAs('employee');
+    const pages: Record<string, string> = {
+      leads: text(await EmployeeLeadsPage({ ...ws, ...sp() })),
+      import: text(await EmployeeImportPage({ ...ws, ...sp() })),
+      finder: text(await EmployeeFinderPage({ ...ws, ...sp() })),
+      inbox: text(await EmployeeInboxPage({ ...ws, ...sp() })),
+      templates: text(await EmployeeTemplatesPage(ws)),
+      approvals: text(await ApprovalsPage(ws)),
+    };
+    for (const [name, page] of Object.entries(pages)) expect(page, name).toContain(STORY_NAV);
+  });
+
+  it('links the import page from the employee leads toolbar', async () => {
+    await signInAs('employee');
+    const html = renderToStaticMarkup(createElement(CsrfProvider as unknown as FC<{ token: string }>, { token: 'csrf' }, (await EmployeeLeadsPage({ ...ws, ...sp() })) as ReactElement));
+    expect(html).toContain('href="/dashboard/employee/codecraft-web/leads/import"');
+    expect(html).toContain('Import leads');
+  });
+
+  it('shows the reach-out panel, the hand-over action and the Places details on the operator lead page', async () => {
+    await signInAs('employee');
+    const place = unconfirmed();
+    const page = text(await EmployeeLeadPage({ params: Promise.resolve({ ws: PRESENTATION_SLUG, leadId: leadIdOf(place.key) }) }));
+    expect(page).toContain('Reach out');
+    expect(page).toContain('Record WhatsApp opt-in');
+    expect(page).toContain('Hand over to the client');
+    expect(page).toContain('Hand over to client');
+    // Places content: the DEMO attribution and "Confirm details" with the date the details expire.
+    expect(page).toContain('Simulated listings from the DEMO directory');
+    expect(page).toContain('Confirm details');
+    expect(page).toContain('came from Google Places');
+  });
+
+  it('shows a lead with a recorded opt-in as confirmed, and the handed-over lead as read-only for the operator', async () => {
+    await signInAs('employee');
+    const optedIn = text(await EmployeeLeadPage({ params: Promise.resolve({ ws: PRESENTATION_SLUG, leadId: optInLeadId }) }));
+    expect(optedIn).toContain('Contact details confirmed on');
+    expect(optedIn).toContain('A WhatsApp opt-in was recorded');
+    const handedOver = text(await EmployeeLeadPage({ params: Promise.resolve({ ws: PRESENTATION_SLUG, leadId: leadIdOf(HANDOFF_FIXTURE.place) }) }));
+    expect(handedOver).toContain('Handed over');
+    expect(handedOver).not.toContain('Record WhatsApp opt-in');
+  });
+
+  it('shows the handoff card with the note and the summary lines on the client lead page, and the Places details of a lead', async () => {
+    await signInAs('client');
+    const leadId = leadIdOf(HANDOFF_FIXTURE.place);
+    const lead = text(await UserLeadPage({ params: Promise.resolve({ leadId }) }));
+    for (const part of ['Handed over to you', HANDOFF_FIXTURE.note, 'What they asked', HANDOFF_FIXTURE.summary.asked, HANDOFF_FIXTURE.summary.nextStep, 'Acknowledge']) expect(lead, part).toContain(part);
+    // The Places details of a lead (client side): attribution and the expiry notice sit under the contact facts.
+    const plain = text(await UserLeadPage({ params: Promise.resolve({ leadId: leadIdOf(unconfirmed().key) }) }));
+    expect(plain).toContain('Simulated listings from the DEMO directory');
+    expect(plain).toContain('Confirm details');
   });
 });
 

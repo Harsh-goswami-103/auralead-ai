@@ -7,7 +7,7 @@
  */
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { ArrowRight, CircleAlert, CircleCheck, CircleHelp, ClipboardCheck, Hand, MessageSquareDashed, PhoneCall, Undo2, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CircleAlert, CircleCheck, CircleHelp, ClipboardCheck, Hand, Handshake, MessageSquareDashed, PhoneCall, Undo2, type LucideIcon } from 'lucide-react';
 import { TONE_CLASSES, type StatusTone } from '@/components/patterns/status-vocabulary';
 import { cn } from '@/components/ui/cn';
 
@@ -28,6 +28,7 @@ const ICONS: Readonly<Record<string, LucideIcon>> = {
   unknownDeliveries: CircleHelp,
   takeoverThreads: Hand,
   openCallRequests: PhoneCall,
+  handedOverLeads: Handshake,
 };
 
 const TONES: Readonly<Record<NeedsYouLine['tone'], StatusTone>> = { attention: 'warning', problem: 'danger', info: 'info' };

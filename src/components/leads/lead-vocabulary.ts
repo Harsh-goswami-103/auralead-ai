@@ -82,6 +82,7 @@ export const RUN_REASONS: Readonly<Record<string, string>> = {
   FIRST_TOUCH_UNAVAILABLE: 'The draft has no message for the approved channel, so nothing was sent.',
   LEAD_MERGED: 'This lead was merged into another lead; the pipeline continues there.',
   PIN_MISMATCH: 'The pipeline version changed after this lead arrived, so this run stopped.',
+  HANDED_OVER: 'Stopped: the lead was handed over to the client.',
 };
 
 export function runReasonText(code: string): string {

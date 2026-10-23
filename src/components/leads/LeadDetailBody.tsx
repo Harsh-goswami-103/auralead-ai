@@ -17,6 +17,7 @@ import { formatDate, formatDateTime } from '@/lib/format/date';
 import { formatINR } from '@/lib/money';
 import type { LeadProfileDto } from '@/lib/schemas/leads';
 import { ConsentChips } from './ConsentChips';
+import { LeadPlacesNotice } from './LeadPlacesNotice';
 import { WEBSITE_LABELS } from './lead-vocabulary';
 import { ScoreBreakdown } from './ScoreBreakdown';
 import { SourceRecords } from './SourceRecords';
@@ -97,6 +98,7 @@ export function LeadDetailBody(props: {
             {lead.ratingX10 === null ? 'Unknown' : `${(lead.ratingX10 / 10).toFixed(1)} stars${lead.reviewCount === null ? '' : ` from ${lead.reviewCount} reviews`}`}
           </Fact>
         </dl>
+        <LeadPlacesNotice leadId={lead.id} places={props.profile.places} simulated={lead.simulated} timeZone={tz} workspaceSlug={props.workspaceSlug} />
       </Section>
 
       <Section title={<ChipTitle icon={<Gauge aria-hidden="true" />} hue="volt">Score</ChipTitle>}>

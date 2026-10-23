@@ -12,6 +12,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, FileDown, FileSpreadsheet, History, ListChecks, Users } from 'lucide-react';
+import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { ImportWorkspace } from '@/components/leads/import/ImportWorkspace';
 import { RecentImports } from '@/components/leads/import/RecentImports';
 import { ChipTitle } from '@/components/patterns/IconChip';
@@ -71,6 +72,7 @@ export default async function EmployeeLeadImportPage({
           </>
         }
       />
+      <WorkspaceSectionNav slug={data.workspace.slug} workspaceName={data.workspace.name} />
 
       {!data.canRead ? (
         <EmptyState

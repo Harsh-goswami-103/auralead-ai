@@ -7,6 +7,7 @@
  * helpers see every page (the content tests).
  */
 import type { DocMode, DocPage } from './format';
+import { bot } from './pages/bot';
 import { dataAndPrivacy } from './pages/data-and-privacy';
 import { gettingStarted } from './pages/getting-started';
 import { goingLive } from './pages/going-live';
@@ -25,6 +26,7 @@ export const DOC_PAGES: readonly DocPage[] = [
   messagingRules,
   security,
   dataAndPrivacy,
+  bot,
   troubleshooting,
   limitations,
 ];

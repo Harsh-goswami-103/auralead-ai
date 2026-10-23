@@ -31,7 +31,7 @@ import { scoreLead } from '../../../src/server/services/scoring/score';
 import { seedId } from '../ids';
 import {
   CONVERSATION_FIXTURES,
-  FINDER_CONTENT_TTL_MINUTES,
+  FINDER_PRESENTATION_CONTENT_DAYS,
   FINDER_RUN_FIXTURE,
   HANDOFF_FIXTURE,
   OPT_IN_FIXTURES,
@@ -185,7 +185,8 @@ export async function insertPresentation(tx: Tx, now: Date, deps: PresentationDe
         emailCount: 0,
         emailStatus: 'NOT_REQUESTED',
         simulated: true,
-        contentExpiresAt: plus(fetchedAt, FINDER_CONTENT_TTL_MINUTES * MINUTE),
+        // A year, not 24 hours: the pack must survive until the presentation (ADR-134).
+        contentExpiresAt: plus(fetchedAt, FINDER_PRESENTATION_CONTENT_DAYS * DAY),
         contentPurgedAt: null,
         importedLeadId: place.imported ? leadIdOf(place) : null,
         importedAt: place.imported ? importedAt : null,
@@ -361,7 +362,8 @@ export async function insertPresentation(tx: Tx, now: Date, deps: PresentationDe
         purpose: 'MARKETING',
         basis: 'OPT_IN',
         source: 'MANUAL_EVIDENCE',
-        evidence: { method: o.method, note: o.note },
+        // As grantManualConsent stores it (slice F5): the method, the note and the notice verbatim, with its hash.
+        evidence: { note: o.note, method: o.method, noticeText: PRESENTATION_OPT_IN_NOTICE },
         noticeTextHash,
         noticeVersion: null,
         collectedAt,
@@ -379,7 +381,7 @@ export async function insertPresentation(tx: Tx, now: Date, deps: PresentationDe
         targetType: 'ConsentRecord',
         targetId: consentId,
         result: 'SUCCESS',
-        summary: { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', basis: 'OPT_IN', source: 'MANUAL_EVIDENCE', fields: ['evidence.method', 'evidence.note'] },
+        summary: { leadId, channel: 'WHATSAPP', purpose: 'MARKETING', basis: 'OPT_IN', source: 'MANUAL_EVIDENCE', method: o.method, fields: ['evidence.note', 'evidence.method', 'noticeText'] },
         crossWorkspace: false,
         correlationId: 'seed',
         simulated: true,
@@ -506,6 +508,8 @@ export async function insertPresentation(tx: Tx, now: Date, deps: PresentationDe
   const handedOver = placeOf(HANDOFF_FIXTURE.place);
   const handedOverLeadId = leadIdOf(handedOver);
   const handedOverAt = at(HANDOFF_FIXTURE.minutesAgo);
+  const handedOverConversationIds = CONVERSATION_FIXTURES.filter((c) => c.place === HANDOFF_FIXTURE.place).map((c) => key('conversation', c.key));
+  const handedOverStageVersion = (await tx.lead.findUniqueOrThrow({ where: { id: handedOverLeadId }, select: { stageVersion: true } })).stageVersion;
   await tx.leadHandoff.create({
     data: {
       id: key('lead-handoff', HANDOFF_FIXTURE.place),
@@ -513,7 +517,7 @@ export async function insertPresentation(tx: Tx, now: Date, deps: PresentationDe
       leadId: handedOverLeadId,
       fromUserId: operatorId,
       note: HANDOFF_FIXTURE.note,
-      summary: HANDOFF_FIXTURE.summary,
+      summary: JSON.stringify(HANDOFF_FIXTURE.summary),
       summaryGeneratorLabel: HANDOFF_FIXTURE.summaryGeneratorLabel,
       summaryStatus: 'READY',
       status: 'HANDED_OVER',
@@ -532,11 +536,51 @@ export async function insertPresentation(tx: Tx, now: Date, deps: PresentationDe
       targetType: 'Lead',
       targetId: handedOverLeadId,
       result: 'SUCCESS',
-      summary: { toStage: 'CONVERTED', conversations: CONVERSATION_FIXTURES.filter((c) => c.place === HANDOFF_FIXTURE.place).length, summaryStatus: 'READY' },
+      // The shape handOverLead audits (slice F5): ids, stages and counts, never the note.
+      summary: {
+        handoffId: key('lead-handoff', HANDOFF_FIXTURE.place),
+        from: 'REPLIED',
+        to: 'CONVERTED',
+        stageVersion: handedOverStageVersion,
+        conversationIds: handedOverConversationIds,
+        conversations: handedOverConversationIds.length,
+        invalidatedApprovals: 0,
+        cancelledSends: 0,
+        pipelineHalted: null,
+        summaryStatus: 'PENDING',
+        summaryJobId: null,
+        hasNote: true,
+        requestKey: HANDOFF_FIXTURE.requestKey,
+      },
       crossWorkspace: false,
       correlationId: 'seed',
       simulated: true,
       createdAt: handedOverAt,
+    },
+  });
+  await tx.auditEvent.create({
+    data: {
+      id: seedId('audit', `lead.handoff.summary:${PRESENTATION_SLUG}:${HANDOFF_FIXTURE.place}`),
+      workspaceId: wsId,
+      actorUserId: null,
+      actorKind: 'WORKER',
+      action: 'lead.handoff.summary',
+      targetType: 'Lead',
+      targetId: handedOverLeadId,
+      result: 'SUCCESS',
+      summary: {
+        handoffId: key('lead-handoff', HANDOFF_FIXTURE.place),
+        status: 'READY',
+        generatorLabel: HANDOFF_FIXTURE.summaryGeneratorLabel,
+        modelId: 'local-deterministic-v1',
+        errorCode: null,
+        violationRules: [],
+        fields: ['summary'],
+      },
+      crossWorkspace: false,
+      correlationId: 'seed',
+      simulated: true,
+      createdAt: plus(handedOverAt, 30_000),
     },
   });
 }

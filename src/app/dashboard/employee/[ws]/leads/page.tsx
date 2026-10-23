@@ -12,11 +12,15 @@
  * small tiles with the shared source chip, outcome chip and per-record counts, and the leads table
  * (neutral, one table) with source chips, the score as "NN / 100" beside a fit meter, and a stage
  * chip.
+ *
+ * Lead-gen suite: the section nav (Lead finder, Leads, Inbox, Templates, ...) sits under the header,
+ * and "Import leads" opens the Excel/CSV import (F2, ADR-120).
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { Activity, CheckCircle2, ClipboardCheck, Clock3, HelpCircle, Inbox, Users, XCircle } from 'lucide-react';
+import { Activity, CheckCircle2, ClipboardCheck, Clock3, FileUp, HelpCircle, Inbox, Users, XCircle } from 'lucide-react';
+import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { LeadsTabs } from '@/components/leads/LeadsTabs';
 import { LeadsWorkspace } from '@/components/leads/LeadsWorkspace';
 import { ChipTitle } from '@/components/patterns/IconChip';
@@ -129,12 +133,19 @@ export default async function EmployeeLeadConsolePage({
         title="Lead console"
         description="New leads from every source land here after normalization and duplicate checks."
         actions={
-          <Link href={`/dashboard/employee/${data.workspace.slug}/approvals`} className={buttonVariants({ variant: 'secondary' })}>
-            <ClipboardCheck aria-hidden="true" />
-            Approval queue
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`${base}/import`} className={buttonVariants({ variant: 'secondary' })}>
+              <FileUp aria-hidden="true" />
+              Import leads
+            </Link>
+            <Link href={`/dashboard/employee/${data.workspace.slug}/approvals`} className={buttonVariants({ variant: 'secondary' })}>
+              <ClipboardCheck aria-hidden="true" />
+              Approval queue
+            </Link>
+          </div>
         }
       />
+      <WorkspaceSectionNav slug={data.workspace.slug} workspaceName={data.workspace.name} />
       <LeadsTabs current="leads" leadsHref={base} scoringHref={`${base}/scoring`} />
 
       {!data.canReadLeads || area?.workspace == null ? (

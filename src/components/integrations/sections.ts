@@ -5,7 +5,10 @@
  *
  * Lead-gen suite (docs/handoff/lead-gen-suite-plan.md §6): a slice adds its section together with
  * its page, inside its own block (a nav target must exist: tests/unit/arch/route-manifest.test.ts),
- * and imports its icon inside its own block above.
+ * and imports its icon inside its own block above. The blocks sit in slice order only so that the
+ * merges never meet; what the operator sees is `WORKSPACE_SECTIONS`, which puts the entries in the
+ * order of the story (SECTION_ORDER below): Lead finder, Leads, Inbox, Templates, Approvals, then
+ * the setup sections.
  */
 import { ClipboardCheck, FileSpreadsheet, MapPin, Megaphone, Plug, Users, Workflow, type LucideIcon } from 'lucide-react';
 // ---- lead-gen F1 finder ----
@@ -27,7 +30,9 @@ import { MessageSquareText } from 'lucide-react';
 
 // ---- end F6 ----
 
-export const WORKSPACE_SECTIONS: ReadonlyArray<{ segment: string; label: string; icon: LucideIcon }> = [
+type WorkspaceSection = { segment: string; label: string; icon: LucideIcon };
+
+const SECTION_ENTRIES: ReadonlyArray<WorkspaceSection> = [
   { segment: 'leads', label: 'Leads', icon: Users },
   { segment: 'approvals', label: 'Approvals', icon: ClipboardCheck },
   { segment: 'integrations', label: 'Integrations', icon: Plug },
@@ -54,6 +59,24 @@ export const WORKSPACE_SECTIONS: ReadonlyArray<{ segment: string; label: string;
 
   // ---- end F6 ----
 ];
+
+/**
+ * The order the operator walks the product in (the presentation story): find businesses, work the
+ * leads, talk to them, send templates, approve, then the setup sections. A section that is not
+ * listed here keeps its place after the listed ones, in the order of SECTION_ENTRIES.
+ */
+export const SECTION_ORDER: ReadonlyArray<string> = ['finder', 'leads', 'inbox', 'templates', 'approvals', 'integrations', 'pipeline', 'sheets', 'meta', 'extension'];
+
+function inStoryOrder(entries: ReadonlyArray<WorkspaceSection>): ReadonlyArray<WorkspaceSection> {
+  const rank = (segment: string) => {
+    const i = SECTION_ORDER.indexOf(segment);
+    return i === -1 ? SECTION_ORDER.length : i;
+  };
+  // Array.prototype.sort is stable: unlisted sections keep their relative order.
+  return [...entries].sort((a, b) => rank(a.segment) - rank(b.segment));
+}
+
+export const WORKSPACE_SECTIONS: ReadonlyArray<WorkspaceSection> = inStoryOrder(SECTION_ENTRIES);
 
 export function workspaceSectionHref(slug: string, segment: string): string {
   return `/dashboard/employee/${encodeURIComponent(slug)}/${segment}`;

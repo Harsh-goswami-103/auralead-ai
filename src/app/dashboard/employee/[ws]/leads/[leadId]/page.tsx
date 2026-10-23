@@ -9,6 +9,9 @@
  * T26 completes it with the lead's stage control ("Move to stage", compare-and-set on the version
  * shown), consent per channel (matched by the contact HMAC, as eligibility) and the source records.
  *
+ * Lead-gen F1 (ADR-118): a lead found through Google Places shows the Places attribution and "Confirm
+ * details" (which keeps the Places-sourced fields past their 30-day expiry) under its contact facts.
+ *
  * Lead-gen F5 (ADR-124, ADR-125): "Hand over to client" (the dialog says what will happen; gated on
  * leads.handoff) or, once handed over, the handoff card and the read-only state; and the reach-out
  * panel (WhatsApp consent state, record an opt-in with its notice and method, the click-to-chat link,
@@ -28,6 +31,7 @@ import { HANDOFF_STATUS_CHIPS } from '@/components/handoff/handoff-vocabulary';
 import { ReachOutPanel } from '@/components/reach-out/ReachOutPanel';
 import { ToneChip } from '@/components/leads/ToneChip';
 import { ConsentChips } from '@/components/leads/ConsentChips';
+import { LeadPlacesNotice } from '@/components/leads/LeadPlacesNotice';
 import { SourceRecords } from '@/components/leads/SourceRecords';
 import { StageMoveMenu } from '@/components/leads/StageMoveMenu';
 import { GatedAction } from '@/components/patterns/GatedAction';
@@ -399,6 +403,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
                 )}
               </Fact>
             </dl>
+            <LeadPlacesNotice leadId={lead.id} places={profile.places} simulated={lead.simulated} timeZone={tz} workspaceSlug={workspace.slug} />
           </SectionCard>
         </StaggerItem>
       </Stagger>
