@@ -1,22 +1,24 @@
 /**
- * Inbox thread list (T22; 06-design §11.2 "User Inbox" first fold): channel, lead, last message,
- * its delivery state, AI mode or takeover, the window state the server computed, and what needs a
- * person. Server-rendered; status is never colour-only (icon plus words).
+ * Inbox thread list (T22; 06-design §11.2 "User Inbox" first fold; ADR-121 WhatsApp-like look),
+ * shared by the client inbox and the operator's `[ws]` inbox (`basePath`). Each row: the initials
+ * avatar tinted by its channel, the lead's name and the time of the last activity, the last
+ * message's preview (with the delivery tick and its label when the business wrote last), and the
+ * facts the server computed: the window ("Free-form until HH:MM" in the chat accent, or "Window
+ * closed"), AI mode or takeover, "Needs you" with what needs a person (drafts to approve, a call
+ * request, failed deliveries, an escalation), and "Handed over" once the lead belongs to the client
+ * (ADR-124). In the operator's list a handed-over lead's row is read-only: only "Handed over" says
+ * what it is (the thread is the client's, so no "Needs you", no "You are handling"). Server-rendered;
+ * status is never colour-only (icon plus words).
  *
- * Aurora look (design spec §6): each row has an initials avatar tinted by its channel and a channel
- * chip with the channel's name (WhatsApp and Email threads of one lead are told apart in words), a
- * warning bar when the thread needs a person (the chips say why), a panel-hue dot when the customer
- * wrote last, and the panel bar on the open thread. The list rises in once as a whole; rows carry no
- * entrance of their own, because the list re-reads itself (every 10 s, every 3 s beside a pending
- * send) and when a thread moves to the top React re-inserts the unchanged rows above it, which would
- * restart a CSS entrance on exactly the rows that did not change. In the
- * conversation's narrow side column (`compact`) the channel and window read as quiet icon + text
- * facts and only what needs a person stays a chip, so a row no longer stacks four chip lines. In
- * both layouts tinted chips are kept for what needs a person (approve, call, failed delivery,
- * takeover); routine state (window open, AI mode) is a neutral chip with a toned icon.
+ * The list rises in once as a whole; rows carry no entrance of their own, because the list re-reads
+ * itself (every 10 s, every 3 s beside a pending send) and when a thread moves to the top React
+ * re-inserts the unchanged rows above it, which would restart a CSS entrance on exactly the rows
+ * that did not change. In the conversation's narrow side column (`compact`) the channel and window
+ * read as quiet icon + text facts and only what needs a person stays a chip; the full list keeps the
+ * channel chip, the delivery badge and the AI-mode chip.
  */
 import Link from 'next/link';
-import { Bot, Hand, PhoneCall, ShieldAlert, TimerOff, Timer } from 'lucide-react';
+import { Bot, Hand, Handshake, PhoneCall, ShieldAlert, Timer, TimerOff, UserRoundCheck } from 'lucide-react';
 import { InitialsAvatar } from '@/components/client/InitialsAvatar';
 import { SourceChip } from '@/components/patterns/SourceChip';
 import { sourceStyle } from '@/components/patterns/source-style';
@@ -25,20 +27,39 @@ import { TONE_CLASSES } from '@/components/patterns/status-vocabulary';
 import { cn } from '@/components/ui/cn';
 import { Reveal } from '@/components/visual/Reveal';
 import type { InboxThreadRow } from '@/server/services/messaging/inbox';
-import { ageHint, formatClockTime, formatDayMonth } from './format';
+import { DeliveryTick } from './DeliveryTick';
+import { formatClockTime, formatDayMonth } from './format';
+
+export const USER_INBOX_PATH = '/dashboard/user/inbox';
 
 const MODE_LABELS = { OFF: 'AI off', DRAFT: 'AI drafts', AUTO: 'AI auto' } as const;
+const STATUS_WORDS: Readonly<Record<string, string>> = { PENDING: 'Queued', SENT: 'Sent', DELIVERED: 'Delivered', READ: 'Read', FAILED: 'Failed', UNKNOWN: 'Delivery unknown', NOT_SENT: 'Not sent' };
 
 const chip = 'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 [&>svg]:size-3 [&>svg]:shrink-0';
 /** Compact facts: icon + words without a chip border (the side column is too narrow for chips). */
 const fact = 'inline-flex items-center gap-1 whitespace-nowrap [&>svg]:size-3.5 [&>svg]:shrink-0';
 
-/**
- * `compact` is the conversation page's side column (about 18rem): a one-line preview, the channel
- * and the window (or takeover) as quiet icon + text facts, and chips only for what needs a person.
- * It leaves out the delivery badge and the AI-mode chip. The full list keeps every chip.
- */
-export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: InboxThreadRow[]; activeId?: string; timeZone: string; now: Date; compact?: boolean }) {
+/** "05:30 IST" today, otherwise "21 Oct". */
+function rowTime(at: Date, now: Date, timeZone: string): string {
+  return formatDayMonth(at, timeZone) === formatDayMonth(now, timeZone) ? formatClockTime(at, timeZone) : formatDayMonth(at, timeZone);
+}
+
+export function ThreadList({
+  rows,
+  activeId,
+  timeZone,
+  now,
+  compact,
+  basePath = USER_INBOX_PATH,
+}: {
+  rows: InboxThreadRow[];
+  activeId?: string;
+  timeZone: string;
+  now: Date;
+  compact?: boolean;
+  /** The inbox the rows link into: the client's (default) or `/dashboard/employee/<ws>/inbox`. */
+  basePath?: string;
+}) {
   return (
     <Reveal className="min-w-0">
       <ul className="flex flex-col divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-subtle bg-bg-1/80" data-thread-list>
@@ -51,8 +72,20 @@ export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: I
             t.channel === 'WHATSAPP' && t.windowOpen && t.windowEndsAt
               ? `Free-form until ${formatClockTime(t.windowEndsAt, timeZone)}${formatDayMonth(t.windowEndsAt, timeZone) === formatDayMonth(now, timeZone) ? '' : `, ${formatDayMonth(t.windowEndsAt, timeZone)}`}`
               : null;
+          const handedOver = t.handedOverAt !== null ? (
+            <span className={cn(chip, TONE_CLASSES.info)} data-handed-over>
+              <Handshake aria-hidden="true" />
+              Handed over
+            </span>
+          ) : null;
           const attention = (
             <>
+              {t.needsYou ? (
+                <span className={cn(chip, TONE_CLASSES.warning)} data-needs-you>
+                  <UserRoundCheck aria-hidden="true" />
+                  Needs you
+                </span>
+              ) : null}
               {t.pendingApprovals > 0 ? (
                 <span className={cn(chip, TONE_CLASSES.warning)}>
                   <ShieldAlert aria-hidden="true" />
@@ -71,37 +104,51 @@ export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: I
                   {t.attentionDeliveries} failed or unknown
                 </span>
               ) : null}
+              {t.escalated ? (
+                <span className={cn(chip, TONE_CLASSES.warning)} data-escalated>
+                  <ShieldAlert aria-hidden="true" />
+                  Escalated
+                </span>
+              ) : null}
             </>
           );
+          const hasAttention = t.needsYou || t.handedOverAt !== null;
+          // The operator's read-only row is the client's thread: nothing here asks the operator to act.
+          const youHandle = t.humanTakeover && !t.readOnly;
           return (
             <li key={t.conversationId}>
               <Link
-                href={`/dashboard/user/inbox/${t.conversationId}`}
+                href={`${basePath}/${t.conversationId}`}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'group relative flex gap-3 transition-colors duration-fast hover:bg-bg-2/70 focus-visible:-outline-offset-2',
                   compact ? 'px-3.5 py-3' : 'px-4 py-3',
-                  active && 'bg-[linear-gradient(90deg,color-mix(in_oklab,var(--panel-hue)_12%,transparent),transparent_75%)] hover:bg-bg-2/40',
+                  active && 'bg-bg-2/80 hover:bg-bg-2/80',
                 )}
                 data-thread={t.conversationId}
                 data-channel={t.channel}
               >
-                {active ? <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-panel" /> : t.needsYou ? <span aria-hidden="true" className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-warning" /> : null}
+                {active ? <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-chat-accent" /> : t.needsYou ? <span aria-hidden="true" className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-warning" /> : null}
                 <span className={cn('flex min-w-0 flex-1', compact ? 'gap-2.5' : 'gap-3')}>
                   <InitialsAvatar name={t.leadName} tone={t.channel === 'EMAIL' ? 'email' : 'whatsapp'} size={compact ? 'sm' : 'md'} className="mt-0.5" />
                   <span className={cn('flex min-w-0 flex-1 flex-col', compact ? 'gap-1' : 'gap-1.5')}>
                     <span className="flex items-center gap-2">
                       <span className={cn('min-w-0 flex-1 truncate text-sm text-fg-1', theyWroteLast ? 'font-semibold' : 'font-medium')}>{t.leadName}</span>
+                      <span className={cn('shrink-0 text-xs tabular', theyWroteLast ? 'font-medium text-chat-accent' : 'text-chat-meta')} data-thread-time>
+                        {rowTime(t.lastActivityAt, now, timeZone)}
+                      </span>
+                    </span>
+                    <span className={cn('flex min-w-0 items-center gap-1.5 text-sm', theyWroteLast ? 'text-fg-1' : 'text-fg-2')}>
+                      {t.lastMessage && t.lastMessage.direction === 'OUT' && t.lastMessage.status !== 'DRAFT' ? (
+                        <DeliveryTick status={t.lastMessage.status} label={STATUS_WORDS[t.lastMessage.status] ?? t.lastMessage.status} className="shrink-0 text-xs" />
+                      ) : null}
+                      <span className={cn('min-w-0', compact ? 'line-clamp-1' : 'line-clamp-2')}>{t.lastMessage ? t.lastMessage.preview : 'No messages yet'}</span>
                       {theyWroteLast ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-fg-2">
-                          <span aria-hidden="true" className="size-1.5 rounded-full bg-panel" />
-                          <span className="sr-only">The customer wrote last,</span>
+                        <span className="ml-auto inline-flex shrink-0 items-center">
+                          <span aria-hidden="true" className="size-2 rounded-full bg-chat-accent" />
+                          <span className="sr-only">The customer wrote last</span>
                         </span>
                       ) : null}
-                      <span className="shrink-0 text-xs text-fg-3 tabular">{ageHint(now.getTime() - t.lastActivityAt.getTime())}</span>
-                    </span>
-                    <span className={cn('text-sm', compact ? 'line-clamp-1' : 'line-clamp-2', theyWroteLast ? 'text-fg-1' : 'text-fg-2')}>
-                      {t.lastMessage ? `${t.lastMessage.direction === 'OUT' ? 'You: ' : ''}${t.lastMessage.preview}` : 'No messages yet'}
                     </span>
                     {compact ? (
                       <>
@@ -110,15 +157,15 @@ export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: I
                             <ChannelIcon aria-hidden="true" className={channel.iconClass} />
                             {channel.label}
                           </span>
-                          {t.humanTakeover ? (
+                          {youHandle ? (
                             <span className={cn(fact, 'text-fg-1')}>
                               <Hand aria-hidden="true" className="text-info" />
                               You are handling
                             </span>
                           ) : null}
                           {windowEnd ? (
-                            <span className={fact}>
-                              <Timer aria-hidden="true" className="text-success" />
+                            <span className={cn(fact, 'text-chat-accent')} data-window-open>
+                              <Timer aria-hidden="true" />
                               {windowEnd}
                             </span>
                           ) : t.channel === 'WHATSAPP' ? (
@@ -128,13 +175,19 @@ export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: I
                             </span>
                           ) : null}
                         </span>
-                        {t.pendingApprovals > 0 || t.openCallRequests > 0 || t.attentionDeliveries > 0 ? <span className="flex flex-wrap items-center gap-1.5 text-xs">{attention}</span> : null}
+                        {hasAttention ? (
+                          <span className="flex flex-wrap items-center gap-1.5 text-xs">
+                            {handedOver}
+                            {t.readOnly ? null : attention}
+                          </span>
+                        ) : null}
                       </>
                     ) : (
                       <span className="flex flex-wrap items-center gap-1.5 text-xs">
                         <SourceChip source={t.channel === 'EMAIL' ? 'EMAIL_INBOUND' : 'WHATSAPP_INBOUND'} withIcon />
                         {t.lastMessage && t.lastMessage.direction === 'OUT' ? <DeliveryStatusBadge status={t.lastMessage.status} simulated={t.lastMessage.simulated} /> : null}
-                        {t.humanTakeover ? (
+                        {handedOver}
+                        {youHandle ? (
                           <span className={cn(chip, TONE_CLASSES.info)}>
                             <Hand aria-hidden="true" />
                             You are handling
@@ -146,8 +199,8 @@ export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: I
                           </span>
                         )}
                         {windowEnd ? (
-                          <span className={cn(chip, 'border-border-strong bg-bg-2 text-fg-1')}>
-                            <Timer aria-hidden="true" className="text-success" />
+                          <span className={cn(chip, 'border-chat-accent/40 bg-bg-2 text-chat-accent')} data-window-open>
+                            <Timer aria-hidden="true" />
                             {windowEnd}
                           </span>
                         ) : t.channel === 'WHATSAPP' ? (
@@ -156,7 +209,7 @@ export function ThreadList({ rows, activeId, timeZone, now, compact }: { rows: I
                             Window closed
                           </span>
                         ) : null}
-                        {attention}
+                        {t.readOnly ? null : attention}
                       </span>
                     )}
                   </span>

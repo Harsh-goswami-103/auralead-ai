@@ -5,15 +5,17 @@
  *  - complaint, human request, out of scope (incl. a prompt injection): the only outbound text is
  *    the fixed deflection, never model or customer text; the thread escalates (AUTO drops to DRAFT
  *    with a new mode version, audited) so the next message waits for a person;
- *  - an in-scope FAQ is answered from the catalog and goes through the same preflight as every
- *    send (AUTOMATED intent, persisted mode version; auto-send turned off at P1 skips it);
+ *  - an in-scope FAQ is answered from the catalog (ADR-122: in DEMO by the labelled local
+ *    generator of the conversation_reply task) and goes through the same preflight as every send
+ *    (AUTOMATED intent, persisted mode version; auto-send turned off at P1 skips it);
+ *  - the first automated reply of the window opens with the disclosure line (ADR-122);
  *  - in DRAFT mode (the default) the reply is a draft waiting for approval, sent only by a person;
  *  - catalog text that breaks the output policy is never sent;
  *  - `unansweredOutboundCount` counts sent business messages and resets on the next inbound.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { setPauseHandler } from '@/server/testing/pause';
-import { FIXED_REPLIES } from '@/server/services/ai/reply-guard';
+import { automatedReplyDisclosure, FIXED_REPLIES } from '@/server/services/ai/reply-guard';
 import { approveAndSendMessage } from '@/server/services/messaging/dispatch';
 import { REPLY_INITIATOR, takeOverConversation } from '@/server/services/messaging/conversations';
 import { DEPS } from '../dispatch/support';
@@ -26,6 +28,9 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(async () => h?.destroy());
 afterEach(() => setPauseHandler('dispatch.p1', null));
+
+/** The first automated reply of a window opens with the disclosure (ADR-122). */
+const firstAutomated = (text: string) => `${automatedReplyDisclosure('Smile Avenue Dental Clinic')}\n\n${text}`;
 
 async function lastWaBody(): Promise<string | null> {
   return h.wa.calls.at(-1)?.request.body ?? null;
@@ -45,9 +50,9 @@ describe('escalating intents never get free text', () => {
     const inboundRow = await inboundMessage(h, wamid);
     const replies = await repliesTo(h, inboundRow.id);
     expect(replies).toHaveLength(1);
-    expect(replies[0]).toMatchObject({ body: FIXED_REPLIES[intent], status: 'SENT', sendIntent: 'AUTOMATED', initiatedBy: REPLY_INITIATOR, generatorLabel: 'reply-guard' });
+    expect(replies[0]).toMatchObject({ body: firstAutomated(FIXED_REPLIES[intent]), status: 'SENT', sendIntent: 'AUTOMATED', initiatedBy: REPLY_INITIATOR, generatorLabel: 'reply-guard' });
     expect(h.wa.calls.length).toBe(calls0 + 1);
-    expect(await lastWaBody()).toBe(FIXED_REPLIES[intent]);
+    expect(await lastWaBody()).toBe(firstAutomated(FIXED_REPLIES[intent]));
     expect(await lastWaBody()).not.toContain(text.slice(0, 12));
 
     const conversation = await h.db.conversation.findUniqueOrThrow({ where: { id: conversationId } });
@@ -90,7 +95,8 @@ describe('in-scope FAQ answers', () => {
 
     const inboundRow = await inboundMessage(h, wamid);
     const [reply] = await repliesTo(h, inboundRow.id);
-    expect(reply).toMatchObject({ status: 'SENT', sendIntent: 'AUTOMATED', initiatedBy: REPLY_INITIATOR, modeVersionAtCreate: modeVersion, kind: 'TEXT' });
+    expect(reply).toMatchObject({ status: 'SENT', sendIntent: 'AUTOMATED', initiatedBy: REPLY_INITIATOR, modeVersionAtCreate: modeVersion, kind: 'TEXT', generatorLabel: 'local-deterministic' });
+    expect(reply!.body!.startsWith(automatedReplyDisclosure('Smile Avenue Dental Clinic'))).toBe(true);
     expect(reply!.body).toContain('Root canal treatment: Single-tooth root canal treatment, crown quoted separately.');
     expect(h.wa.calls.length).toBe(calls0 + 1);
     expect(h.wa.calls.at(-1)!.request).toMatchObject({ kind: 'freeform', body: reply!.body, to: lead.phoneE164 });
@@ -133,8 +139,11 @@ describe('in-scope FAQ answers', () => {
     expect(h.wa.calls.length).toBe(calls0);
 
     const [draft] = await repliesTo(h, (await inboundMessage(h, wamid)).id);
-    expect(draft).toMatchObject({ status: 'DRAFT', sendIntent: null, generatorLabel: 'reply-guard' });
-    expect(draft!.body).toContain('Teeth whitening (in-clinic): One 60-minute in-clinic whitening session.');
+    expect(draft).toMatchObject({ status: 'DRAFT', sendIntent: null, generatorLabel: 'local-deterministic' });
+    // A draft is not an automated reply: no disclosure line.
+    expect(draft!.body).not.toContain('automated assistant');
+    // The local generator is keyword-aware: a timeline question gets the service's typical timeline.
+    expect(draft!.body).toContain('Teeth whitening (in-clinic): Usually completed within a day.');
     expect(await h.db.dispatchAttempt.count({ where: { messageId: draft!.id } })).toBe(0);
 
     const sent = await approveAndSendMessage(await h.owner(), { messageId: draft!.id }, DEPS);
@@ -151,8 +160,8 @@ describe('in-scope FAQ answers', () => {
     const wamid = await customerSays(h, lead, 'Tell me about the smile makeover');
     await h.drain();
     const [reply] = await repliesTo(h, (await inboundMessage(h, wamid)).id);
-    expect(reply).toMatchObject({ body: FIXED_REPLIES.handoff, status: 'SENT' });
-    expect(await lastWaBody()).toBe(FIXED_REPLIES.handoff);
+    expect(reply).toMatchObject({ body: firstAutomated(FIXED_REPLIES.handoff), status: 'SENT', generatorLabel: 'reply-guard' });
+    expect(await lastWaBody()).toBe(firstAutomated(FIXED_REPLIES.handoff));
     const [escalation] = await auditsOf(h, 'conversation.escalated', conversationId);
     expect(escalation?.summary).toMatchObject({ intent: 'service_faq', reason: 'OUTPUT_POLICY' });
     await h.db.service.updateMany({ where: { workspaceId: WS_A, code: 'SMILE' }, data: { archivedAt: h.clock.now() } });

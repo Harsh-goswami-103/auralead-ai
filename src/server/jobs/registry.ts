@@ -39,7 +39,7 @@ import { leadsPlacesExpireJob } from './handlers/leads-places-expire';
 import { leadImportJob, leadImportPurgeJob } from './handlers/lead-import';
 // ---- end F2 ----
 // ---- lead-gen F3 chat ----
-
+import { waDemoStatusJob } from './handlers/wa-demo-status';
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
 import { templateReviewJob } from './handlers/template-review';
@@ -116,7 +116,7 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   leadImportPurgeJob,
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
-
+  waDemoStatusJob,
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
   templateSubmitJob,

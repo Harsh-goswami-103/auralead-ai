@@ -15,7 +15,7 @@ import { ScanSearch } from 'lucide-react';
 
 // ---- end F2 ----
 // ---- lead-gen F3 chat ----
-
+import { MessageCircle } from 'lucide-react';
 // ---- end F3 ----
 // ---- lead-gen F4 templates ----
 import { MessageSquareText } from 'lucide-react';
@@ -42,7 +42,7 @@ export const WORKSPACE_SECTIONS: ReadonlyArray<{ segment: string; label: string;
 
   // ---- end F2 ----
   // ---- lead-gen F3 chat ----
-
+  { segment: 'inbox', label: 'Inbox', icon: MessageCircle },
   // ---- end F3 ----
   // ---- lead-gen F4 templates ----
   { segment: 'templates', label: 'Templates', icon: MessageSquareText },

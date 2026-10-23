@@ -52,6 +52,7 @@ import {
 } from '@/server/services/messaging/dispatch';
 import { pausePoint } from '@/server/testing/pause';
 import type { JobDefinition, JobHandlerContext, JobResult } from '../types';
+import { queueDemoStatus } from './wa-demo-status';
 import { jobCtx, parseWorkspacePayload } from './lead-job-support';
 
 const payloadSchema = z.object({ messageId: z.string().min(1).max(64) });
@@ -260,7 +261,8 @@ export function createDispatchJob(channel: Channel, options: DispatchJobOptions 
 
       switch (outcome.status) {
         case 'sent':
-          return { outcome: 'succeeded', finalTx: (tx) => settleSent(tx, ctx, plan, outcome) };
+          // lead-gen F3 (ADR-121): a DEMO WhatsApp send queues its simulated delivered/read statuses.
+          return { outcome: 'succeeded', finalTx: (tx) => settleSent(tx, ctx, plan, outcome).then(() => queueDemoStatus(tx, { mode: m, clock: job.clock, correlationId: job.correlationId }, plan, outcome)) };
         case 'ambiguous':
           return {
             outcome: 'dead',
