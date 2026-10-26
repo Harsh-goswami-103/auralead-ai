@@ -10,7 +10,7 @@ The plan is locked: [`docs/implementation-plan.md`](docs/implementation-plan.md)
 ## Commands (verified in T01)
 | Command | What it does |
 |---|---|
-| `npm run setup` | Writes `.env` from `.env.example`, generating demo secrets; never overwrites existing keys |
+| `npm run setup` | Writes a LIVE `.env` from `.env.example` (ADR-116; set `APP_MODE=demo` for the development seed), generating secrets; never overwrites existing keys |
 | `npm run db:path` | Prints the resolved SQLite file (`--url` for the `file:` URL, `--json` for all paths) |
 | `npm run db:migrate` / `db:deploy` | `prisma migrate dev` / `prisma migrate deploy` (T02) |
 | `npm run db:seed` / `db:reset` / `demo:refresh` | Deterministic DEMO seed; reset wipes app tables and reseeds (refuses LIVE); refresh re-bases time fixtures without changing ids (T09) |

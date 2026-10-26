@@ -9,12 +9,16 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { BookOpen } from 'lucide-react';
-import { DOC_PAGES } from '@content/docs/index';
+import type { DocMode } from '@content/docs/format';
+import { docPagesFor } from '@content/docs/index';
 import { PrimaryCta, type LandingMode } from '@/components/landing/cta';
 import { Wordmark } from '@/components/landing/LandingNav';
 import { ModeBanner } from '@/components/patterns/ModeBanner';
 import { ProductMark } from '@/components/patterns/ProductMark';
 import { cn } from '@/components/ui/cn';
+
+/** The docs mode a process shows: its own (ADR-116). */
+export const docModeOf = (mode: LandingMode): DocMode => (mode === 'demo' ? 'DEMO' : 'LIVE');
 
 /** null on the index, the page slug elsewhere. */
 export type DocsLocation = string | null;
@@ -49,7 +53,7 @@ function DocsHeader({ mode, current }: { mode: LandingMode; current: DocsLocatio
   );
 }
 
-export function DocsSidebar({ current }: { current: DocsLocation }) {
+export function DocsSidebar({ mode, current }: { mode: LandingMode; current: DocsLocation }) {
   const item = (href: string, label: string, active: boolean) => (
     <Link
       href={href}
@@ -68,7 +72,7 @@ export function DocsSidebar({ current }: { current: DocsLocation }) {
       <p className="px-3 pb-1 text-xs font-medium tracking-[0.14em] text-fg-2 uppercase">Documentation</p>
       <ul className="flex flex-col gap-0.5">
         <li>{item('/docs', 'Overview', current === null)}</li>
-        {DOC_PAGES.map((p) => (
+        {docPagesFor(docModeOf(mode)).map((p) => (
           <li key={p.slug}>{item(`/docs/${p.slug}`, p.title, current === p.slug)}</li>
         ))}
       </ul>
@@ -82,8 +86,9 @@ function DocsFooter({ mode }: { mode: LandingMode }) {
       <div aria-hidden="true" className="hairline-panel absolute inset-x-0 top-0" />
       <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <p className="max-w-prose text-sm text-fg-2">
-          {mode === 'demo' ? 'This instance runs in DEMO mode with simulated providers.' : 'This instance runs in LIVE mode.'} Each page says which mode it applies to and
-          when it was last checked against the code.
+          {mode === 'demo'
+            ? 'This instance runs in DEMO mode with simulated providers. Each page says which mode it applies to and when it was last checked against the code.'
+            : 'Each page says when it was last checked against the code.'}
         </p>
         <nav aria-label="Footer">
           <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
@@ -122,7 +127,7 @@ export function DocsShell({ mode, current, children }: { mode: LandingMode; curr
       <DocsHeader mode={mode} current={current} />
       <div className="mx-auto flex w-full max-w-[1280px] flex-1 gap-8 px-4 pt-6 pb-4 sm:px-6 sm:pt-8 lg:px-8">
         <aside className="hidden w-60 shrink-0 lg:block">
-          <DocsSidebar current={current} />
+          <DocsSidebar mode={mode} current={current} />
         </aside>
         <main id="main" tabIndex={-1} className="min-w-0 flex-1 scroll-mt-20 focus:outline-none">
           {children}

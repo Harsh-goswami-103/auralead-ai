@@ -15,6 +15,7 @@ import { BadgeCheck, Check, Cpu, FileText, Gauge, Inbox, Send, type LucideIcon }
 import { useRef, type ReactNode, type RefObject } from 'react';
 import { ProductMark } from '@/components/patterns/ProductMark';
 import { SourceChip } from '@/components/patterns/SourceChip';
+import type { LandingMode } from './cta';
 import { cn } from '@/components/ui/cn';
 import { AnimatedBeam } from '@/components/visual/AnimatedBeam';
 import { ChromaBorder } from '@/components/visual/ChromaBorder';
@@ -22,7 +23,18 @@ import { GridPattern } from '@/components/visual/Patterns';
 import { Reveal, Stagger, StaggerItem } from '@/components/visual/Reveal';
 import { SectionIntro } from './SectionIntro';
 
-type Stage = { key: string; title: string; icon: LucideIcon; lead: string; facts: readonly string[]; tint: string; hairline: string; chip: string };
+/** `modeFact` closes the facts list with the line that differs by mode (ADR-116: LIVE never mentions the demo). */
+type Stage = {
+  key: string;
+  title: string;
+  icon: LucideIcon;
+  lead: string;
+  facts: readonly string[];
+  modeFact?: Record<LandingMode, string>;
+  tint: string;
+  hairline: string;
+  chip: string;
+};
 
 const PIPELINE_STAGES: readonly Stage[] = [
   {
@@ -30,7 +42,8 @@ const PIPELINE_STAGES: readonly Stage[] = [
     title: 'Capture',
     icon: Inbox,
     lead: 'Leads arrive from Google Sheets (an Apps Script you paste in), Meta Lead Ads and the Maps extension.',
-    facts: ['Every payload is authenticated, size-checked and replay-protected', 'DEMO simulates each source end to end'],
+    facts: ['Every payload is authenticated, size-checked and replay-protected'],
+    modeFact: { demo: 'DEMO simulates each source end to end', live: 'Every delivery is recorded per source in the lead console' },
     tint: 'text-zest',
     hairline: 'bg-zest',
     chip: 'border-zest/30 bg-zest/10',
@@ -197,7 +210,7 @@ function PipelineRail() {
   );
 }
 
-export function HowItWorks() {
+export function HowItWorks({ mode }: { mode: LandingMode }) {
   return (
     <section id="how-it-works" aria-labelledby="how-title" data-landing-section="how-it-works" className="relative isolate scroll-mt-20 pt-20 pb-10 sm:pt-24 sm:pb-12">
       <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-10 px-4 sm:px-6 lg:gap-12 lg:px-8">
@@ -215,7 +228,7 @@ export function HowItWorks() {
         <Stagger as="ol" className="relative grid gap-4 lg:grid-cols-5 lg:gap-x-4 lg:gap-y-3">
           {PIPELINE_STAGES.map((stage, index) => (
             <StaggerItem key={stage.key} as="li" inView className="relative min-w-0 lg:row-span-4 lg:grid lg:grid-rows-subgrid">
-              <StageCard stage={stage} index={index} last={index === PIPELINE_STAGES.length - 1} />
+              <StageCard stage={stage} mode={mode} index={index} last={index === PIPELINE_STAGES.length - 1} />
             </StaggerItem>
           ))}
         </Stagger>
@@ -224,8 +237,9 @@ export function HowItWorks() {
   );
 }
 
-function StageCard({ stage, index, last }: { stage: Stage; index: number; last: boolean }) {
+function StageCard({ stage, mode, index, last }: { stage: Stage; mode: LandingMode; index: number; last: boolean }) {
   const Icon = stage.icon;
+  const facts = stage.modeFact ? [...stage.facts, stage.modeFact[mode]] : stage.facts;
   const step = String(index + 1).padStart(2, '0');
   return (
     <div data-stage={stage.key} className="flex h-full gap-4 lg:row-span-4 lg:grid lg:grid-rows-subgrid">
@@ -253,7 +267,7 @@ function StageCard({ stage, index, last }: { stage: Stage; index: number; last: 
         </div>
         <p className="text-sm text-fg-1">{stage.lead}</p>
         <ul className="flex flex-col gap-2 border-t border-border-subtle pt-3">
-          {stage.facts.map((fact) => (
+          {facts.map((fact) => (
             <li key={fact} className="flex gap-2 text-sm text-fg-2">
               <Check aria-hidden="true" className={cn('mt-0.5 size-4 shrink-0', stage.tint)} />
               <span>{fact}</span>

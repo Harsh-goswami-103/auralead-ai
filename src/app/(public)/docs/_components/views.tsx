@@ -6,20 +6,20 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
-import { DOC_PAGES, docNeighbours, getDocPage } from '@content/docs/index';
+import { docNeighbours, docPagesFor, getDocPage } from '@content/docs/index';
 import type { LandingMode } from '@/components/landing/cta';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { AppliesTo, CheckedDate } from './AppliesTo';
 import { DocArticle } from './DocArticle';
-import { DocsShell } from './DocsShell';
+import { docModeOf, DocsShell } from './DocsShell';
 
 export function DocsPageView({ mode, slug }: { mode: LandingMode; slug: string }) {
-  const page = getDocPage(slug);
+  const page = getDocPage(slug, docModeOf(mode));
   if (!page) notFound();
-  const { previous, next } = docNeighbours(page.slug);
+  const { previous, next } = docNeighbours(page.slug, docModeOf(mode));
   return (
     <DocsShell mode={mode} current={page.slug}>
-      <DocArticle page={page} previous={previous} next={next} />
+      <DocArticle page={page} previous={previous} next={next} showModes={mode === 'demo'} />
     </DocsShell>
   );
 }
@@ -34,11 +34,11 @@ export function DocsIndexView({ mode }: { mode: LandingMode }) {
           description={
             mode === 'demo'
               ? 'How to run the demo, how leads become quotes, the messaging rules, security, data handling and the known limits. This instance runs in DEMO mode: pages marked LIVE describe a real deployment.'
-              : 'How to deploy and run AuraLead AI, how leads become quotes, the messaging rules, security, data handling and the known limits. Pages marked DEMO describe the local demo.'
+              : 'How to deploy and run AuraLead AI, how leads become quotes, the messaging rules, security, data handling and the known limits.'
           }
         />
         <ul className="grid gap-4 md:grid-cols-2">
-          {DOC_PAGES.map((p) => (
+          {docPagesFor(docModeOf(mode)).map((p) => (
             <li key={p.slug} className="group relative flex min-w-0 flex-col gap-3 rounded-xl border border-border-subtle bg-bg-1/80 p-4 transition-colors duration-fast focus-within:border-aura/40 hover:border-aura/40 sm:p-5">
               <h2 className="font-display text-lg font-semibold text-fg-1">
                 <Link href={`/docs/${p.slug}`} className="inline-flex items-center gap-1.5 after:absolute after:inset-0 after:rounded-xl group-hover:text-aura">
@@ -48,7 +48,7 @@ export function DocsIndexView({ mode }: { mode: LandingMode }) {
               </h2>
               <p className="text-sm text-fg-2">{p.summary}</p>
               <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2">
-                <AppliesTo modes={p.appliesTo} />
+                {mode === 'demo' ? <AppliesTo modes={p.appliesTo} /> : null}
                 <CheckedDate iso={p.checked} />
               </div>
             </li>

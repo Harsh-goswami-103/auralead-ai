@@ -51,7 +51,7 @@ export function spawnDispatchWorker(h: ProcessHarness, opts: { name: string; pau
     env: {
       DATABASE_URL: h.testDb.url,
       APP_MODE: 'demo',
-      NEXT_PUBLIC_APP_MODE: undefined,
+      NEXT_PUBLIC_APP_MODE: 'demo',
       STORAGE_DIR: h.storageDir,
       AURALEAD_DATA_DIR: path.join(h.base, 'data'),
       SUPPRESSION_PEPPER: PEPPER,

@@ -63,7 +63,8 @@ function Pager({ previous, next }: { previous: Neighbour; next: Neighbour }) {
   );
 }
 
-export function DocArticle({ page, previous, next }: { page: DocPage; previous: Neighbour; next: Neighbour }) {
+/** `showModes`: the Applies to tags, shown only in DEMO (a LIVE process shows only LIVE content, ADR-116). */
+export function DocArticle({ page, previous, next, showModes }: { page: DocPage; previous: Neighbour; next: Neighbour; showModes: boolean }) {
   return (
     <article data-doc-page={page.slug} className="flex min-w-0 flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_14rem] xl:items-start xl:gap-x-10">
       <PageHeader
@@ -73,7 +74,7 @@ export function DocArticle({ page, previous, next }: { page: DocPage; previous: 
         description={page.summary}
         meta={
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
-            <AppliesTo modes={page.appliesTo} />
+            {showModes ? <AppliesTo modes={page.appliesTo} /> : null}
             <CheckedDate iso={page.checked} />
           </div>
         }
@@ -83,7 +84,7 @@ export function DocArticle({ page, previous, next }: { page: DocPage; previous: 
       </div>
       <div className="flex min-w-0 flex-col gap-6 xl:col-start-1">
         {page.sections.map((s) => (
-          <SectionCard key={s.id} id={s.id} title={s.title} meta={s.appliesTo ? <AppliesTo modes={s.appliesTo} /> : undefined} className="scroll-mt-20">
+          <SectionCard key={s.id} id={s.id} title={s.title} meta={showModes && s.appliesTo ? <AppliesTo modes={s.appliesTo} /> : undefined} className="scroll-mt-20">
             <DocBlocks blocks={s.blocks} />
           </SectionCard>
         ))}

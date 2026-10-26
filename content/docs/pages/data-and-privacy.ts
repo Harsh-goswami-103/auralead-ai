@@ -14,7 +14,12 @@ export const dataAndPrivacy: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Each mode has its own data folder, outside the project: `%LOCALAPPDATA%\\auralead\\<mode>\\` on Windows, `~/.local/share/auralead/<mode>/` (or under `$XDG_DATA_HOME`) elsewhere, or the mode folder under `AURALEAD_DATA_DIR`. DEMO and LIVE never share a database. `npm run db:path -- --json` prints every resolved path.',
+          text: 'Each mode has its own data folder, outside the project: `%LOCALAPPDATA%\\auralead\\<mode>\\` on Windows, `~/.local/share/auralead/<mode>/` (or under `$XDG_DATA_HOME`) elsewhere, or the mode folder under `AURALEAD_DATA_DIR`. `npm run db:path -- --json` prints every resolved path.',
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'DEMO and LIVE never share a database.',
         },
         {
           kind: 'table',

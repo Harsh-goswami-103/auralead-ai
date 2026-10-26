@@ -18,8 +18,16 @@ export const security: DocPage = {
             'LIVE accounts sign in with an email address and a password. Passwords are hashed with argon2id (memory 19456 KiB, 2 passes, parallelism 1) and must be 12 to 256 characters long.',
             'Every failed sign-in gets the same answer, "Email or password is incorrect.", and every attempt runs exactly one password verification (against a dummy hash when the email is unknown), so neither the answer nor its timing reveals whether an account exists.',
             '5 failed sign-ins in a row lock the account for 15 minutes. The lock is stored on the account, so a restart does not lift it; while it holds, even the right password fails, and the lock is not extended. After it ends, counting starts again. A password reset also lifts it.',
-            'Disabled accounts cannot sign in. A LIVE process never accepts a demo identity or a session created in DEMO.',
+            'Disabled accounts cannot sign in.',
+          ],
+        },
+        {
+          kind: 'list',
+          appliesTo: ['DEMO'],
+          items: [
             'In DEMO the seeded identities have no password: the persona sign-in (`/api/demo/session`) creates an ordinary DEMO session, and that route answers 404 in LIVE.',
+            'A LIVE process never accepts a demo identity or a session created in DEMO.',
+            'Switching demo identity replaces the session as a sign-in does.',
           ],
         },
       ],
@@ -33,7 +41,7 @@ export const security: DocPage = {
           items: [
             'The session cookie `__Host-aura_session` is HttpOnly, Secure, SameSite=Lax and limited to the whole site path. It holds 32 random bytes; the database keeps only their sha256.',
             'A session has an idle timeout of 7 days (renewed while you use it) and an absolute limit of 30 days; super admin sessions end after 12 hours.',
-            'Signing in, re-entering your password or switching demo identity replaces the session (the old one is revoked). Signing out revokes it on the server.',
+            'Signing in or re-entering your password replaces the session (the old one is revoked). Signing out revokes it on the server.',
             'Changing a person\'s role or account status revokes all of their sessions.',
             '`AUTH_COOKIE_INSECURE_DEV=1` drops the `__Host-` prefix and the Secure flag for a plain-HTTP development host; LIVE logs a warning when it is set.',
           ],
@@ -46,7 +54,12 @@ export const security: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Pausing or resuming all outbound delivery and every action in the job inspector (cancel, retry, resolving "Delivery unknown") need a password entry or a sign-in within the last 15 minutes. Otherwise the request answers 401 `REAUTH_REQUIRED` and the dialog asks for the password, then retries. In DEMO, where personas have no password, the persona sign-in counts.',
+          text: 'Pausing or resuming all outbound delivery and every action in the job inspector (cancel, retry, resolving "Delivery unknown") need a password entry or a sign-in within the last 15 minutes. Otherwise the request answers 401 `REAUTH_REQUIRED` and the dialog asks for the password, then retries.',
+        },
+        {
+          kind: 'paragraph',
+          appliesTo: ['DEMO'],
+          text: 'In DEMO, where personas have no password, the persona sign-in counts.',
         },
       ],
     },

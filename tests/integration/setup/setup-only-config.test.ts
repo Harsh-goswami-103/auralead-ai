@@ -4,7 +4,8 @@
  * environment) migrate with the real Prisma config, boot the web runtime and serve /api/health,
  * boot the worker until it writes a heartbeat, and print `db:path`: all of them must resolve the
  * same SQLite file. Every child runs with the temp dir as its working directory, so the only
- * configuration is the `.env` that setup wrote.
+ * configuration is the `.env` that setup wrote. That `.env` is a LIVE install (ADR-116): LIVE
+ * boots on the generated secrets, with no seed and no DEMO setting.
  *
  * The OS data-dir variable (LOCALAPPDATA, or XDG_DATA_HOME off Windows) is pointed into the temp
  * dir so the test never touches the developer's real %LOCALAPPDATA%\auralead. It is the
@@ -90,9 +91,10 @@ describe('setup-only configuration (E12)', () => {
     for (const key of ['SESSION_SECRET', 'SHARE_NONCE_KEY', 'SUPPRESSION_PEPPER', 'CREDENTIALS_KEYRING', 'TEST_CONTROL_TOKEN']) {
       expect(env[key], key).toBeTruthy();
     }
-    expect(env.APP_MODE).toBe('demo');
+    expect(env.APP_MODE).toBe('live');
+    expect(env.NEXT_PUBLIC_APP_MODE).toBe('live');
 
-    const expectedFile = path.join(dataHome, 'auralead', 'demo', 'app.db');
+    const expectedFile = path.join(dataHome, 'auralead', 'live', 'app.db');
     const expectedUrl = toSqliteFileUrl(expectedFile);
 
     const dbPath = await tsx('scripts/db-path.ts', ['--url']);
@@ -106,12 +108,12 @@ describe('setup-only configuration (E12)', () => {
     const app = await tsx('tests/integration/setup/fixtures/app-boot.ts');
     expect(app.code, app.stderr).toBe(0);
     const appOut = result(app.stdout);
-    expect(appOut).toMatchObject({ databaseUrl: expectedUrl, mode: 'demo', healthStatus: 200, health: { status: 'ok', mode: 'demo' } });
+    expect(appOut).toMatchObject({ databaseUrl: expectedUrl, mode: 'live', healthStatus: 200, health: { status: 'ok', mode: 'live' } });
 
     const worker = await tsx('tests/integration/setup/fixtures/worker-boot.ts', [], { AURALEAD_REPO_ROOT: REPO_ROOT });
     expect(worker.code, worker.stderr).toBe(0);
     const workerOut = result(worker.stdout);
-    expect(workerOut).toMatchObject({ databaseUrl: expectedUrl, heartbeatMode: 'DEMO' });
+    expect(workerOut).toMatchObject({ databaseUrl: expectedUrl, heartbeatMode: 'LIVE' });
     expect(typeof workerOut.workerId).toBe('string');
   });
 });
