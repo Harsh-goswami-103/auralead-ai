@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AppCtx } from '@/server/auth/context';
 import { NotFoundError } from '@/lib/errors';
+import { parseTemplateMapping, type TemplateVariableSource } from '@/lib/domain/whatsapp-templates';
 import type { OutputPolicyContext } from './output-policy';
 import { LEAD_DRAFT_JSON_SCHEMA } from './proposal';
 
@@ -51,7 +52,16 @@ export type DraftFacts = {
   };
   catalog: CatalogEntry[];
   /** The approved FIRST_TOUCH WhatsApp template whose body variables the draft fills, if any. */
-  template: { templateId: string | null; variableCount: number };
+  template: {
+    templateId: string | null;
+    variableCount: number;
+    /**
+     * The template's mapped body sources by position (`parseTemplateMapping`). Server side only: the
+     * prompt names just `variableCount`, and `applyMappedTemplateSources` overrides the positions that
+     * map to a lead or workspace fact once the generator has answered.
+     */
+    variableSources?: Readonly<Record<string, TemplateVariableSource>>;
+  };
 };
 
 export type UntrustedInput = { websiteText?: string | null; inboundText?: string | null };
@@ -187,7 +197,7 @@ export async function loadDraftContext(ctx: AppCtx, leadId: string, untrusted: U
       hasEmail: lead.emailNormalized !== null,
     },
     catalog,
-    template: { templateId: template?.id ?? null, variableCount },
+    template: { templateId: template?.id ?? null, variableCount, variableSources: template ? parseTemplateMapping(template.variableMap).body : {} },
   };
 
   const phones = [lead.phoneE164, ...(Array.isArray(lead.alternatePhones) ? lead.alternatePhones : [])].filter((p): p is string => typeof p === 'string');

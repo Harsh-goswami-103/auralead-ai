@@ -38,7 +38,8 @@ import { enqueueJob } from '@/server/jobs/queue';
 import type { TxClient } from '@/server/jobs/types';
 import { recordAudit } from '@/server/services/audit/record';
 import { computeQuoteTotals, type ComputedQuote, type ReviewReason as PricingReviewReason } from '@/server/services/pricing/compute-totals';
-import { buildDraftPrompt, loadDraftContext, type UntrustedInput } from './context-builder';
+import { buildDraftPrompt, loadDraftContext, type DraftFacts, type UntrustedInput } from './context-builder';
+import { isLeadTemplateVariableSource, resolveLeadTemplateVariables } from '@/lib/domain/whatsapp-templates';
 import { evaluateDraftOutput, type DraftEvaluation, type DraftReviewReason, type PolicyFlag, type ProposalItem } from './proposal';
 import type { PolicyViolation } from './output-policy';
 import { runStructuredTask, selectWorkspaceAi, type AiDeps } from './run-task';
@@ -124,6 +125,20 @@ function previewOf(q: ComputedQuote): PricingPreview {
     taxLabel: q.tax.label,
     taxBps: q.tax.bps,
   };
+}
+
+/**
+ * The generator only knows how many body variables the template has, so its values are positional
+ * guesses (first name, then the service). A position the template maps to a lead or workspace fact
+ * (customer name, business name, city, category) gets that fact; manual and unmapped positions, and
+ * facts the lead does not have, keep the generator's value. Never an empty string.
+ */
+export function applyMappedTemplateSources(values: readonly string[], facts: Pick<DraftFacts, 'lead' | 'workspace' | 'template'>): string[] {
+  const sources = facts.template.variableSources ?? {};
+  const positions = values.map((_, i) => String(i + 1)).filter((p) => sources[p] !== undefined && isLeadTemplateVariableSource(sources[p]!));
+  if (positions.length === 0) return [...values];
+  const resolved = resolveLeadTemplateVariables({ positions, sources }, { displayName: facts.lead.displayName, city: facts.lead.city, category: facts.lead.category }, { name: facts.workspace.name });
+  return values.map((value, i) => resolved.values[String(i + 1)] ?? value);
 }
 
 export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps: DraftDeps): Promise<GeneratedDraft> {
@@ -214,7 +229,7 @@ export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps
     status,
     generatorLabel: port.label,
     modelId: port.modelId,
-    templateVariables: { templateId: context.facts.template.templateId, values: evaluation.draft.templateVariables },
+    templateVariables: { templateId: context.facts.template.templateId, values: applyMappedTemplateSources(evaluation.draft.templateVariables, context.facts) },
     followUpText: evaluation.draft.followUpText,
     emailSubject: evaluation.draft.emailSubject,
     emailBody: evaluation.draft.emailBody,

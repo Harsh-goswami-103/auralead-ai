@@ -212,7 +212,13 @@ export function TemplateStudio({ workspaceSlug, view }: { workspaceSlug: string;
                     </p>
                   ) : null}
                   {status === 'SUBMITTING' ? <p className="text-xs text-fg-2">{exhausted ? 'Still waiting for Meta’s answer.' : 'Waiting for Meta’s answer. This page updates by itself.'}</p> : null}
-                  {status === 'PENDING' && t.simulated ? <p className="text-xs text-fg-2">Simulated review in progress: the demo answers about 30 seconds after the submission.{exhausted ? '' : ' This page updates by itself.'}</p> : null}
+                  {status === 'PENDING' && t.simulated ? (
+                    <p className="text-xs text-fg-2">
+                      {exhausted
+                        ? 'The simulated review has not answered yet. The worker answers about 30 seconds after a submission, so check that the worker is running, or submit again.'
+                        : 'Simulated review in progress: the demo answers about 30 seconds after the submission. This page updates by itself.'}
+                    </p>
+                  ) : null}
                   {failed?.message ? (
                     <p role="note" className="flex items-start gap-2 text-xs text-fg-1">
                       <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0 text-danger" />

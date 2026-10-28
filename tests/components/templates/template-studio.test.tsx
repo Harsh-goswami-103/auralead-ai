@@ -213,6 +213,17 @@ describe('TemplateStudio', () => {
     hidden.mockRestore();
   });
 
+  it('says the simulated review is still running while polling, and that the worker may be down once polling gives up', () => {
+    vi.useFakeTimers();
+    renderStudio(view({ templates: [template({ status: 'PENDING', simulated: true, editable: false, submittable: false, deletable: false })] }));
+    expect(screen.getByText(/Simulated review in progress/)).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(20 * 60_000);
+    });
+    expect(screen.queryByText(/Simulated review in progress/)).toBeNull();
+    expect(screen.getByText(/has not answered yet.*worker is running/)).toBeTruthy();
+  });
+
   it('opening the editor moves focus to it and scrolls it into view', () => {
     const scroll = vi.fn();
     Element.prototype.scrollIntoView = scroll;
