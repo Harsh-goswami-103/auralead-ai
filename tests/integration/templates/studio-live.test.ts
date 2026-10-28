@@ -124,6 +124,9 @@ describe('configuration gates', () => {
 });
 
 describe('submission', () => {
+  // The WhatsApp setup these tests need is made here, not left by the gates test above.
+  beforeEach(async () => void (await storeWhatsApp(h, { status: 'CONNECTED' })));
+
   it('creates the template at Meta, stores the provider id and status, and the follow-up sync (60 s later) records the review', async () => {
     const id = await submitted();
     const stored = await row(id);
@@ -251,6 +254,8 @@ describe('submission', () => {
 });
 
 describe('sync of authored rows', () => {
+  beforeEach(async () => void (await storeWhatsApp(h, { status: 'CONNECTED' })));
+
   it('stores the rejection reason, never touches a local draft of the same name, never counts drafts or submissions missing', async () => {
     const ctx = await h.owner();
     // An authored template that Meta will report REJECTED, a local draft whose name Meta also lists,
@@ -282,15 +287,37 @@ describe('sync of authored rows', () => {
 
   it('deletes a rejected authored template at Meta by name, then here', async () => {
     const ctx = await h.owner();
-    const rejected = await h.db.whatsAppTemplate.findFirstOrThrow({ where: { workspaceId: h.workspaceId, name: 'festive_launch' } });
+    // Its own rejected template (as Meta's sync leaves one), not the row another test left behind.
+    const made = await createTemplateDraft(ctx, { draft: draft({ name: 'festive_delete' }), copyGeneratorLabel: null });
+    await h.db.whatsAppTemplate.update({ where: { id: made.template.id }, data: { status: 'REJECTED', rejectedReason: 'INVALID_FORMAT', providerTemplateId: '594425479261598' } });
+    const rejected = await h.db.whatsAppTemplate.findUniqueOrThrow({ where: { id: made.template.id } });
+    h.graph.reset();
     h.graph.on('DELETE', CREATE_PATH, answer('response.template-delete.json'));
     await deleteTemplate(ctx, rejected.id, deps());
     expect(h.graph.requests).toHaveLength(1);
-    expect(h.graph.requests[0]).toMatchObject({ method: 'DELETE', path: `/v24.0/${WABA_ID}/message_templates`, query: { name: 'festive_launch' } });
+    expect(h.graph.requests[0]).toMatchObject({ method: 'DELETE', path: `/v24.0/${WABA_ID}/message_templates`, query: { name: 'festive_delete', hsm_id: '594425479261598' } });
     expect(await h.db.whatsAppTemplate.count({ where: { id: rejected.id } })).toBe(0);
     const audit = await h.db.auditEvent.findFirstOrThrow({ where: { action: 'template.delete', targetId: rejected.id } });
     expect(audit).toMatchObject({ simulated: false });
     expect(audit.summary).toMatchObject({ atProvider: true, status: 'REJECTED' });
+  });
+
+  it('never deletes a sibling language at Meta: without a template id a same-named template here blocks the delete', async () => {
+    const ctx = await h.owner();
+    const en = await createTemplateDraft(ctx, { draft: draft({ name: 'intro_offer', language: 'en' }), copyGeneratorLabel: null });
+    await h.db.whatsAppTemplate.update({ where: { id: en.template.id }, data: { status: 'APPROVED', providerTemplateId: '111' } });
+    const hi = await createTemplateDraft(ctx, { draft: draft({ name: 'intro_offer', language: 'hi' }), copyGeneratorLabel: null });
+    await h.db.whatsAppTemplate.update({ where: { id: hi.template.id }, data: { status: 'REJECTED', providerTemplateId: null } });
+    h.graph.reset();
+    await expect(deleteTemplate(ctx, hi.template.id, deps())).rejects.toMatchObject({ status: 409, code: 'TEMPLATE_NOT_DELETABLE' });
+    expect(h.graph.requests).toEqual([]);
+    expect(await h.db.whatsAppTemplate.count({ where: { id: hi.template.id } })).toBe(1);
+    // With its own template id Meta is told which one: only the Hindi template goes.
+    await h.db.whatsAppTemplate.update({ where: { id: hi.template.id }, data: { providerTemplateId: '222' } });
+    h.graph.on('DELETE', CREATE_PATH, answer('response.template-delete.json'));
+    await deleteTemplate(ctx, hi.template.id, deps());
+    expect(h.graph.requests[0]).toMatchObject({ method: 'DELETE', query: { name: 'intro_offer', hsm_id: '222' } });
+    expect(await h.db.whatsAppTemplate.count({ where: { id: en.template.id } })).toBe(1);
   });
 
   it('a rejected template that already has messages is kept, and Meta is not asked to delete it', async () => {

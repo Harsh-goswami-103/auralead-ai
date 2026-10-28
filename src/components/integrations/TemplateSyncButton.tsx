@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * "Sync templates" (T28, ADR-17): templates come from WhatsApp Manager, never authored here. In
+ * "Sync templates" (T28, ADR-17): templates are synced from the WhatsApp account (those written in the template studio included), never edited here. In
  * DEMO the demo adapter plays WhatsApp Manager and adds the demo templates that are absent
  * (approved and rejected), labelled Simulated; in LIVE the button is gated until WhatsApp is
  * connected and verified. The result line says how many were added and that nothing was contacted.

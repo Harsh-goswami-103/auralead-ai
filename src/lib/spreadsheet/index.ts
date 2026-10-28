@@ -13,15 +13,29 @@ const EXPORT_GUARD = /^'(?=[=+\-@\t\r])/;
 
 /** RFC 4180 CSV (comma separated, double-quote escaping), with a tolerated BOM and LF or CRLF. */
 export function parseCsv(input: string): string[][] {
+  return parseCsvRecords(input).rows;
+}
+
+/**
+ * Like {@link parseCsv}, also giving each kept record's physical line (1-based, where the record
+ * starts), so a blank line or a multi-line cell does not shift the row numbers shown to people.
+ */
+export function parseCsvRecords(input: string): { rows: string[][]; lines: number[] } {
   const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
   const rows: string[][] = [];
+  const lines: number[] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
   let i = 0;
+  let line = 1;
+  let recordLine = 1;
   const pushRow = () => {
     row.push(field);
-    if (row.some((c) => c !== '')) rows.push(row.map((c) => c.replace(EXPORT_GUARD, '')));
+    if (row.some((c) => c !== '')) {
+      rows.push(row.map((c) => c.replace(EXPORT_GUARD, '')));
+      lines.push(recordLine);
+    }
     if (rows.length > SPREADSHEET_LIMITS.maxRows) throw new SpreadsheetError('TOO_MANY_ROWS', `A file can hold at most ${SPREADSHEET_LIMITS.maxRows} rows.`);
     row = [];
     field = '';
@@ -29,6 +43,7 @@ export function parseCsv(input: string): string[][] {
   while (i < text.length) {
     const ch = text[i]!;
     if (quoted) {
+      if (ch === '\n') line += 1;
       if (ch === '"') {
         if (text[i + 1] === '"') {
           field += '"';
@@ -53,6 +68,8 @@ export function parseCsv(input: string): string[][] {
     } else if (ch === '\r' || ch === '\n') {
       pushRow();
       i += ch === '\r' && text[i + 1] === '\n' ? 2 : 1;
+      line += 1;
+      recordLine = line;
     } else {
       field += ch;
       i += 1;
@@ -60,7 +77,7 @@ export function parseCsv(input: string): string[][] {
   }
   if (quoted) throw new SpreadsheetError('MALFORMED_CSV', 'The CSV file has an unterminated quoted field.');
   if (field !== '' || row.length > 0) pushRow();
-  return rows;
+  return { rows, lines };
 }
 
 /** Drops trailing empty cells and trailing empty rows, keeping the table rectangular. */
@@ -88,5 +105,7 @@ export function readTable(bytes: Uint8Array, fileName: string): Table {
     return { sheetName: table.sheetName, rows: trimTable(table.rows) };
   }
   const base = fileName.replace(/\.[^.]*$/, '') || 'Sheet1';
-  return { sheetName: base, rows: trimTable(parseCsv(new TextDecoder('utf-8').decode(bytes))) };
+  const csv = parseCsvRecords(new TextDecoder('utf-8').decode(bytes));
+  const rows = trimTable(csv.rows);
+  return { sheetName: base, rows, rowNumbers: csv.lines.slice(0, rows.length) };
 }

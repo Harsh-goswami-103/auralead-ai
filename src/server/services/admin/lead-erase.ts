@@ -103,6 +103,8 @@ const FINDER_RESULT_BLANK = {
   attributions: Prisma.DbNull,
   emails: [],
   emailCount: 0,
+  // A crawl already running writes only rows still PENDING (applyEmailOutcomes): not requested ends it.
+  emailStatus: 'NOT_REQUESTED',
   importedLeadId: null,
   importedAt: null,
   contentPurgedAt: null,

@@ -199,6 +199,15 @@ describe('the lead page blocks', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it('after acknowledging, keyboard focus moves to the handover the button belonged to (the button goes away)', async () => {
+    stubFetch(() => json({ handoffId: 'h1', status: 'ACKNOWLEDGED', changed: true }));
+    withCsrf(<ClientHandoff view={VIEW} timeZone="Asia/Kolkata" />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    });
+    expect(document.activeElement).toBe(document.querySelector('[data-handoff-id="h1"]'));
+  });
+
   it('a failed acknowledge says so with its reference', async () => {
     stubFetch(() => json({ code: 'NOT_FOUND', message: 'Not found.', reference: 'req_ack_404' }, 404));
     withCsrf(<AcknowledgeButton handoffId="h9" leadName="Rao Bakery" />);

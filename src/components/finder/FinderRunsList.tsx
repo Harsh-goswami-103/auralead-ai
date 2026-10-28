@@ -18,6 +18,7 @@ import { postJson } from '@/components/patterns/api-client';
 import { useCsrfToken } from '@/components/patterns/csrf';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { ModeChip } from '@/components/patterns/StatusBadge';
+import { touchTarget } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import { formatDateTime } from '@/lib/format/date';
 import type { FinderRunDto } from '@/server/services/lead-finder/runs';
@@ -51,7 +52,7 @@ export function FinderRunsList(props: { runs: FinderRunDto[]; selectedId: string
           return (
             <li key={run.id} data-run-id={run.id} data-run-status={run.status} className={cn('flex flex-col gap-2 px-3 py-3 text-sm', selected && 'bg-panel/8')}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Link href={finderHref(props.workspaceSlug, { run: run.id })} aria-current={selected ? 'true' : undefined} className="min-w-0 font-medium text-fg-1 underline-offset-4 hover:underline">
+                <Link href={finderHref(props.workspaceSlug, { run: run.id })} aria-current={selected ? 'true' : undefined} className={cn('relative min-w-0 font-medium text-fg-1 underline-offset-4 hover:underline', touchTarget)}>
                   {run.keywords.join(', ')} <span className="font-normal text-fg-2">in</span> {run.locations.join(', ')}
                 </Link>
                 <span className="flex flex-wrap items-center gap-2">

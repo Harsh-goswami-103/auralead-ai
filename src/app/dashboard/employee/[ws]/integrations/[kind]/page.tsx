@@ -260,7 +260,7 @@ export default async function IntegrationSetupPage({ params }: { params: Promise
                   Message templates
                 </ChipTitle>
               }
-              meta="Authored and approved in WhatsApp Manager, synced here with their status and category exactly as Meta reports them."
+              meta="Written in the template studio or in WhatsApp Manager, synced here with their status and category exactly as Meta reports them."
               actions={<TemplateSyncButton workspaceSlug={ws} gate={templateSyncGate({ mode: setup.mode, canManage: setup.canManage, status: setup.card.status, setupHref: setupHref(ws, entry.slug) })} />}
             >
               {setup.templates.length === 0 ? (

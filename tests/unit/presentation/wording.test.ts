@@ -31,3 +31,26 @@ describe('no "scraped" wording on screen', () => {
     expect(extension).toMatch(/collected with the Google Maps extension/);
   });
 });
+
+/**
+ * Adversarial review: since the template studio (ADR-123) templates are also written and submitted
+ * in the app. Screens must not say they come only from WhatsApp Manager.
+ */
+describe('template wording after the studio (ADR-123)', () => {
+  const STALE = [/Templates come from WhatsApp Manager/i, /Authored and approved in WhatsApp Manager/i, /synced from WhatsApp Manager once/i, /templates come from WhatsApp Manager, never authored here/i];
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(rel);
+      else if (/\.tsx?$/.test(entry.name)) files.push(rel);
+    }
+  };
+  walk('src/components');
+  walk('src/server/services');
+  walk('src/app/dashboard');
+  it('no screen string says templates come only from WhatsApp Manager', () => {
+    const hits = files.filter((f) => STALE.some((re) => re.test(readFileSync(path.join(ROOT, f), 'utf8'))));
+    expect(hits).toEqual([]);
+  });
+});

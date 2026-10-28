@@ -12,7 +12,7 @@
  *    START or STOP keyword.
  *  - ReachOutSettingsForm: the workspace's own opt-in notice and privacy contact.
  */
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { CircleAlert, Link2, Save, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -87,15 +87,29 @@ export function RecordOptInForm(props: { leadId: string; workspaceSlug: string; 
   const [reference, setReference] = useState('');
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<Failure>(null);
+  const formId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const wasOpen = useRef(false);
+
+  // Keyboard users: opening moves focus into the form; closing it (Cancel or a recorded opt-in) puts
+  // focus back on the button that opened it, instead of letting it fall to the page.
+  useEffect(() => {
+    if (open) formRef.current?.querySelector<HTMLElement>('textarea, input, select')?.focus();
+    else if (wasOpen.current) triggerRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
 
   if (props.gate) return <GatedAction label={RECORD_OPT_IN_LABEL} icon={<ShieldCheck aria-hidden="true" />} gate={props.gate} />;
 
   if (!open) {
     return (
       <Button
+        ref={triggerRef}
         type="button"
         variant="secondary"
         aria-expanded={false}
+        aria-controls={formId}
         onClick={() => {
           setCollectedAt(localNow());
           // The workspace notice may have been saved since this page loaded: offer it as it is now.
@@ -150,7 +164,7 @@ export function RecordOptInForm(props: { leadId: string; workspaceSlug: string; 
   }
 
   return (
-    <form aria-label={RECORD_OPT_IN_LABEL} onSubmit={(e) => void submit(e)} className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-2/40 p-3.5">
+    <form id={formId} ref={formRef} aria-label={RECORD_OPT_IN_LABEL} onSubmit={(e) => void submit(e)} className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-2/40 p-3.5">
       <Field label="Notice the customer agreed to" hint={`It must name ${props.businessName}. It is kept with the opt-in as evidence.`}>
         {({ id, hintId }) => (
           <Textarea id={id} name="noticeText" required rows={4} maxLength={OPT_IN_NOTICE_MAX} aria-describedby={hintId} value={notice} onChange={(e) => setNotice(e.target.value)} />

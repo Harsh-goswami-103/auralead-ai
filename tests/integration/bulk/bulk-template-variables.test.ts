@@ -42,10 +42,13 @@ async function lead(db: PrismaClient, displayName: string, extra: { city?: strin
   return row;
 }
 
+/** The approved template of these tests: made on first use, found afterwards (each test asks for it, none depends on another). */
 async function template(db: PrismaClient) {
   const integration =
     (await db.integration.findFirst({ where: { workspaceId: WS_A, kind: 'WHATSAPP_CLOUD' } })) ??
     (await db.integration.create({ data: { workspaceId: WS_A, kind: 'WHATSAPP_CLOUD', status: 'SIMULATED', config: {} } }));
+  const existing = await db.whatsAppTemplate.findFirst({ where: { workspaceId: WS_A, integrationId: integration.id, name: 'website_intro_bulk', language: 'en' } });
+  if (existing) return existing;
   return db.whatsAppTemplate.create({
     data: {
       workspaceId: WS_A,
@@ -100,7 +103,7 @@ describe('bulk template send with per-lead variables (ADR-123)', () => {
   });
 
   it('a typed value missing for a manual position fails every row (nothing queued)', async () => {
-    const t = await h.db.whatsAppTemplate.findFirstOrThrow({ where: { workspaceId: WS_A, name: 'website_intro_bulk' } });
+    const t = await template(h.db);
     const one = await lead(h.db, 'Kabir Rao', { city: 'Indore' });
     const preview = await previewBulkAction(await h.owner(), { action: 'SEND_WHATSAPP_TEMPLATE', templateId: t.id, variables: {}, leadIds: [one.id] }, DEPS);
     expect(preview).toMatchObject({ eligible: 0, failed: 1, rows: [{ outcome: 'FAILED', reasons: ['TEMPLATE_VARIABLE_MISSING'] }] });

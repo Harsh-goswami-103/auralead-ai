@@ -136,7 +136,7 @@ export function templateSyncGate(input: { mode: 'demo' | 'live'; canManage: bool
   const permission = manageGate(input.canManage);
   if (permission) return permission;
   if (input.mode === 'demo' || LIVE_SYNCABLE.has(input.status)) return null;
-  return { category: 'configuration', reason: 'Templates are synced from WhatsApp Manager once WhatsApp is connected and verified.', fix: { href: input.setupHref, label: 'Open WhatsApp setup' } };
+  return { category: 'configuration', reason: 'Syncing templates needs WhatsApp to be connected and verified first.', fix: { href: input.setupHref, label: 'Open WhatsApp setup' } };
 }
 
 /** A simulation gate from the server (mode or permission), as a GatedAction gate. */

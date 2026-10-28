@@ -115,7 +115,7 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'template.draft.update': 'Template draft changed',
   'template.draft.delete': 'Template draft deleted',
   'template.delete': 'Rejected template deleted',
-  'template.submit': 'Template submitted for approval',
+  'template.submit': 'Template submission started',
   'template.review': 'Template reviewed (simulated)',
   'media.upload': 'Brochure uploaded',
   // ---- end F4 ----

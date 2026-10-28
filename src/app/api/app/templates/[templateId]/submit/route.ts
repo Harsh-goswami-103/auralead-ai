@@ -8,6 +8,7 @@
  * `templates.manage` (in the service); CSRF.
  */
 import { RateLimitedError } from '@/lib/errors';
+import { requireCapability } from '@/server/auth/guards';
 import { TemplateActionBody } from '@/lib/schemas/templates';
 import { submitTemplate } from '@/server/services/integrations/template-authoring';
 import { withRoute } from '../../../../_lib/with-route';
@@ -19,6 +20,8 @@ export const dynamic = 'force-dynamic';
 export const POST = withRoute({ auth: 'session', roles: ['USER', 'EMPLOYEE'], body: TemplateActionBody }, async ({ ctx, session, runtime, body, params }) => {
   const templateId = templateIdParam(params.templateId);
   const target = await studioContext({ ctx, session, runtime }, body.workspaceSlug);
+  // Authorised before the shared budget is touched: a person who may not submit cannot spend it.
+  requireCapability(target, 'templates.manage');
   const decision = runtime.limiters.templateSubmit.take(`workspace:${target.workspaceId}`);
   if (!decision.allowed) throw new RateLimitedError({ retryAfterSeconds: decision.retryAfterSeconds });
   return submitTemplate(target, templateId, studioDeps(runtime));

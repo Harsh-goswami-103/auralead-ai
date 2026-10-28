@@ -107,4 +107,24 @@ describe('CustomerPhone', () => {
     ]);
     expect(screen.getByRole('status').textContent).toContain('Simulated.');
   });
+
+  it('pressing Enter in the message box sends it (it is a form), with phone-sized text and targets', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { messageId: 'wamid.z', events: [] }));
+    render(
+      <CsrfProvider token="csrf-phone">
+        <CustomerPhone leadId="lead_1" leadName="Priya Sharma" businessName="Codecraft Web Studio" messages={messages} canSimulate />
+      </CsrfProvider>,
+    );
+    const input = screen.getByLabelText('Customer text');
+    fireEvent.change(input, { target: { value: 'Can you call me?' } });
+    // 16 px (text-md) below md so iOS does not zoom; 44 px below lg; the global focus outline is not removed.
+    expect(input.className).toContain('text-md');
+    expect(input.className).toContain('min-h-11');
+    expect(input.className).not.toContain('outline-none');
+    expect(screen.getByRole('button', { name: 'Simulate customer message' }).className).toContain('size-11');
+    await act(async () => {
+      fireEvent.submit(input.closest('form')!);
+    });
+    expect(calls()).toEqual([{ url: '/api/webhooks/whatsapp/simulate', body: { leadId: 'lead_1', event: 'text', text: 'Can you call me?' } }]);
+  });
 });

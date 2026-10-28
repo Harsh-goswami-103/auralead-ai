@@ -84,6 +84,19 @@ describe('RecordOptInForm', () => {
     expect(screen.queryByRole('form', { name: 'Record WhatsApp opt-in' })).toBeNull();
   });
 
+  it('keeps keyboard focus: into the form when it opens, back on the button when it is cancelled', () => {
+    withCsrf(<RecordOptInForm leadId="lead_1" workspaceSlug="codecraft-web" businessName="Codecraft Web Studio" noticePrefill={NOTICE} gate={null} />);
+    const open = screen.getByRole('button', { name: 'Record WhatsApp opt-in' });
+    expect(open.getAttribute('aria-expanded')).toBe('false');
+    expect(open.getAttribute('aria-controls')).toBeTruthy();
+    fireEvent.click(open);
+    const form = screen.getByRole('form', { name: 'Record WhatsApp opt-in' });
+    expect(form.id).toBe(open.getAttribute('aria-controls'));
+    expect(form.contains(document.activeElement)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Record WhatsApp opt-in' }));
+  });
+
   it('opens with the workspace notice as it is now, also when it was saved after the page loaded', () => {
     const props = { leadId: 'lead_1', workspaceSlug: 'codecraft-web', businessName: 'Codecraft Web Studio', gate: null } as const;
     const view = withCsrf(<RecordOptInForm {...props} noticePrefill={NOTICE} />);

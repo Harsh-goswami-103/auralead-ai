@@ -3,7 +3,8 @@
  *
  * - `expirePlacesDetails` (the `leads.placesExpire` sweep, in its fenced transaction): for every
  *   lead of the workspace whose `placesContentExpiresAt` has passed and whose contact was not
- *   confirmed first-party, it nulls the Places-sourced fields (phone and alternate phones, rating,
+ *   confirmed first-party (an inbound WhatsApp confirms it; a handed-over lead, a lead with a quote
+ *   or one whose customer has written is left alone too), it nulls the Places-sourced fields (phone and alternate phones, rating,
  *   review count, address, PIN code, category), removes the lead's phone contact keys (they hold
  *   the same number), and clears `placesContentExpiresAt`. The place ID, the name and the
  *   workspace's own data stay. Audited `lead.places_expire` with the count; re-armed for the next
@@ -21,22 +22,40 @@ import { withTx } from '@/server/db/tx';
 import type { JobStore } from '@/server/jobs/queue';
 import type { TxClient } from '@/server/jobs/types';
 import { recordAudit } from '@/server/services/audit/record';
+import { loadActiveScoringConfig } from '@/server/services/scoring/config';
+import { scoreData, scoreInputOf } from '@/server/services/scoring/record';
+import { scoreLead } from '@/server/services/scoring/score';
 import { enqueuePlacesExpire } from './jobs';
 
 const BATCH = 200;
+
+/**
+ * Leads the sweep leaves alone besides the confirmed ones: a lead that was handed over, that has a
+ * quote, or whose customer has written in. Their number is in live use (sends, quote delivery, the
+ * thread's contact key), so clearing it would break the conversation and split the thread.
+ */
+const IN_RELATIONSHIP = { handedOverAt: null, quotes: { none: {} }, conversations: { none: { lastInboundProviderAt: { not: null } } } } as const;
 
 export async function expirePlacesDetails(tx: TxClient, ctx: AppCtx & { workspaceId: string }, input: { jobId: string }): Promise<{ expired: number; nextExpiry: Date | null }> {
   const now = ctx.clock.now();
   let expired = 0;
   for (;;) {
-    const due = await tx.lead.findMany({ where: { workspaceId: ctx.workspaceId, placesContentExpiresAt: { lte: now }, contactConfirmedAt: null }, select: { id: true }, take: BATCH, orderBy: { id: 'asc' } });
+    const due = await tx.lead.findMany({ where: { workspaceId: ctx.workspaceId, placesContentExpiresAt: { lte: now }, contactConfirmedAt: null, ...IN_RELATIONSHIP }, select: { id: true }, take: BATCH, orderBy: { id: 'asc' } });
     if (due.length === 0) break;
     const ids = due.map((l) => l.id);
     await tx.lead.updateMany({
-      where: { workspaceId: ctx.workspaceId, id: { in: ids }, contactConfirmedAt: null },
+      where: { workspaceId: ctx.workspaceId, id: { in: ids }, contactConfirmedAt: null, ...IN_RELATIONSHIP },
       data: { phoneE164: null, phoneRaw: null, alternatePhones: [], rating: null, reviewCount: null, address: null, pincode: null, category: null, placesContentExpiresAt: null },
     });
     await tx.leadContactKey.deleteMany({ where: { workspaceId: ctx.workspaceId, leadId: { in: ids }, kind: 'PHONE' } });
+    // The persisted score reasons quote the rating and review count ("Rated 4.5 of 5"): rescore from
+    // the fields that are left so no Places-sourced value survives the expiry as text.
+    const scoring = await loadActiveScoringConfig(tx, ctx.workspaceId);
+    if (scoring !== null) {
+      for (const lead of await tx.lead.findMany({ where: { workspaceId: ctx.workspaceId, id: { in: ids } } })) {
+        await tx.lead.updateMany({ where: { id: lead.id, workspaceId: ctx.workspaceId }, data: scoreData(scoreLead(scoreInputOf(lead), scoring)) });
+      }
+    }
     expired += ids.length;
     if (due.length < BATCH) break;
   }

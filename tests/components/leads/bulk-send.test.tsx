@@ -167,7 +167,9 @@ describe('bulk selection and send', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bulk send' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('Channel'), { target: { value: 'SEND_WHATSAPP_TEMPLATE' } });
-    expect(dialog.textContent).toContain('No approved WhatsApp template is synced for this workspace');
+    expect(dialog.textContent).toContain('No approved WhatsApp template is available for this workspace');
+    // The gate points at the template studio, where a template can be written and submitted.
+    expect(within(dialog).getByRole('link', { name: /Open templates/ }).getAttribute('href')).toMatch(/^\/dashboard\/employee\/[^/]+\/templates$/);
     expect((within(dialog).getByRole('button', { name: 'Check eligibility' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

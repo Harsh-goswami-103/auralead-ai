@@ -8,7 +8,7 @@
  *  - SummaryPendingRefresh: while the summary job is still writing, the page re-reads itself
  *    (backing off, never in a hidden tab, capped) and says so when the worker is late.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CircleAlert, CircleCheck, Clock } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ export function AcknowledgeButton(props: { handoffId: string; leadName: string }
   const router = useRouter();
   const csrfToken = useCsrfToken();
   const [failure, setFailure] = useState<{ message: string; reference: string | null } | null>(null);
+  const root = useRef<HTMLSpanElement>(null);
 
   async function acknowledge() {
     setFailure(null);
@@ -31,11 +32,13 @@ export function AcknowledgeButton(props: { handoffId: string; leadName: string }
       return;
     }
     toast.success(`You acknowledged ${props.leadName}.`);
+    // This button goes away with the refresh: keep keyboard focus on the handover it belonged to.
+    root.current?.closest<HTMLElement>('[data-handoff-id]')?.focus();
     router.refresh();
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1.5">
+    <span ref={root} className="inline-flex flex-col items-start gap-1.5">
       <GatedAction label="Acknowledge" pendingLabel="Acknowledging..." icon={<CircleCheck aria-hidden="true" />} gate={null} onAction={acknowledge} />
       {failure ? (
         <span role="alert" className="flex items-start gap-1.5 text-sm text-fg-1">

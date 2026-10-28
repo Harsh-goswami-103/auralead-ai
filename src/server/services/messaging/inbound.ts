@@ -573,6 +573,11 @@ export async function processWhatsAppInbound(job: JobHandlerContext, deps: Inbou
       data: { lastInboundProviderAt: last, ...(advanced ? { lastInboundMessageId: inbound.id } : {}), unansweredOutboundCount: 0 },
     });
     await tx.lead.updateMany({ where: { id: leadId, salesStage: { in: [...LEAD_STAGES_BEFORE_REPLIED] } }, data: { salesStage: 'REPLIED', stageVersion: { increment: 1 } } });
+    if (classification.intent !== 'STOP') {
+      // ADR-118 (d): a message from the number is a first-party confirmation of a Places contact, so
+      // the 30-day sweep keeps the phone and its contact key (and the thread stays on this lead).
+      await tx.lead.updateMany({ where: { id: leadId, placesContentExpiresAt: { not: null }, contactConfirmedAt: null }, data: { contactConfirmedAt: now, contactConfirmedVia: 'INBOUND_WHATSAPP' } });
+    }
 
     const txAny = tx as unknown as Tx;
     const consentInput = { leadId, phoneE164: phone, providerTs, messageId: inbound.id, simulated: event.simulated };

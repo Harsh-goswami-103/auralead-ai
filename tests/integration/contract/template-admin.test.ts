@@ -90,10 +90,14 @@ describe('createTemplate', () => {
 });
 
 describe('deleteTemplate', () => {
-  it('DELETEs by name on the WABA', async () => {
+  it('DELETEs by name on the WABA, and by hsm_id as well when the template id is known (one language only)', async () => {
     const graph = new FakeGraph().on('DELETE', new RegExp(`^/v24\\.0/${WABA}/message_templates$`), answer('response.template-delete.json'));
-    await expect(admin(graph).deleteTemplate('festive_launch')).resolves.toEqual({ ok: true, status: 200, data: { deleted: true } });
+    await expect(admin(graph).deleteTemplate('festive_launch', null)).resolves.toEqual({ ok: true, status: 200, data: { deleted: true } });
     expect(graph.requests[0]).toMatchObject({ method: 'DELETE', query: { name: 'festive_launch' } });
+    expect(graph.requests[0]!.query).not.toHaveProperty('hsm_id');
+    const byId = new FakeGraph().on('DELETE', new RegExp(`^/v24\\.0/${WABA}/message_templates$`), answer('response.template-delete.json'));
+    await admin(byId).deleteTemplate('festive_launch', '594425479261598');
+    expect(byId.requests[0]).toMatchObject({ method: 'DELETE', query: { name: 'festive_launch', hsm_id: '594425479261598' } });
   });
 });
 
@@ -138,7 +142,7 @@ describe('DEMO admin', () => {
     expect(demoTemplateReview({ name: 'please_REJECT_me' })).toEqual({ status: 'REJECTED', rejectedReason: DEMO_REJECTION_REASON });
     const handle = await demo.uploadHeaderDocument({ fileName: 'b.pdf', mimeType: 'application/pdf', bytes: Buffer.from('%PDF-1.4') });
     expect(handle.ok && handle.data.handle).toMatch(/^demo-handle-[0-9a-f]{16}$/);
-    expect(await demo.deleteTemplate('x')).toMatchObject({ ok: true });
+    expect(await demo.deleteTemplate('x', null)).toMatchObject({ ok: true });
     expect(outboundAttempts()).toHaveLength(0);
   });
 });

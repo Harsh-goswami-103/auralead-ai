@@ -371,7 +371,7 @@ async function channelOption(
   if (input.quoteTemplates && templates.length === 0) {
     return {
       channel: input.channel,
-      gate: { category: 'configuration', reason: 'No approved WhatsApp template is synced for this workspace. Templates come from WhatsApp Manager once WhatsApp is connected.' },
+      gate: { category: 'configuration', reason: 'No approved WhatsApp template is available for this workspace. Ask your operator to write and submit one in the template studio, or sync one from WhatsApp Manager.' },
       eligibility: null,
       templates,
     };

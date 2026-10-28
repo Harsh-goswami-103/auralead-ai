@@ -21,6 +21,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   refresh.mockReset();
   vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => {
@@ -133,5 +134,30 @@ describe('FinderRunsList', () => {
     cleanup();
     renderList([run({})], { category: 'permission', reason: 'Your assignment here does not include “Run lead finder”.' });
     expect(screen.getByRole('button', { name: 'Cancel' }).getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+describe('touch targets (adversarial review)', () => {
+  it('the run link keeps a 44 px touch area on phones', () => {
+    renderList([run({})]);
+    expect(screen.getByRole('link', { name: /restaurants, dental clinic/ }).className).toContain('max-lg:before:min-h-11');
+  });
+});
+
+describe('Cancel failures (adversarial review)', () => {
+  it('a refused or unreachable Cancel shows why and does not claim the search was cancelled', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'CONFLICT', message: 'The search already finished.', reference: 'req_can_1' }), { status: 409 }))
+      .mockRejectedValueOnce(new TypeError('down'));
+    renderList([run({})]);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith('The search already finished.', { description: 'Reference: req_can_1' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith(expect.stringContaining('could not be reached'), { description: undefined });
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

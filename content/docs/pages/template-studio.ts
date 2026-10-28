@@ -127,6 +127,7 @@ export const templateStudio: DocPage = {
             'A brochure is promotion, so it belongs in a Marketing template. A Utility template with one gets a warning, not a block.',
             'To submit a template with a document header in LIVE, the WhatsApp integration needs the Meta app ID (the `appId` setting): Meta takes a sample of the document through a resumable upload on the app. Without it the submission is refused with `INTEGRATION_NOT_CONFIGURED` before anything changes. A failed sample upload creates nothing at Meta and returns the template to Draft.',
             'When the template is sent, the brochure is uploaded per send, like a quotation PDF. A template with its own brochure cannot also carry a quotation (`TEMPLATE_HAS_OWN_DOCUMENT`), and the quotation approval does not offer it. A file that changed or went missing fails the send (`ARTIFACT_INTEGRITY`, `MEDIA_MISSING`).',
+            'Each workspace library holds at most 50 brochures and 100 MB in all (`MEDIA_QUOTA_REACHED` beyond that), and uploading the same file again reuses the one already there.',
             'There is no way yet to delete a brochure from the library, and `npm run db:backup` does not include the storage folder, so copy `media/` with your other files.',
           ],
         },

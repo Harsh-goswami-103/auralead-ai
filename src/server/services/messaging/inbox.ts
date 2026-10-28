@@ -202,40 +202,53 @@ export async function listInboxThreads(ctx: AppCtx, input: { filter?: InboxFilte
   const db = ctx.db;
   const operator = ctx.actor?.role === 'EMPLOYEE';
   const workspace = await db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
-  const conversations = await db.conversation.findMany({
-    where: { closedAt: null },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: INBOX_THREAD_LIMIT,
-    include: { lead: { select: { id: true, displayName: true, simulated: true, handedOverAt: true } } },
-  });
-  const ids = conversations.map((c) => c.id);
-  const escalatedIds = conversations.filter((c) => c.escalatedAt !== null).map((c) => c.id);
-  const [latest, pending, attention, calls, personSends] = await Promise.all([
-    db.message.findMany({ where: { conversationId: { in: ids }, status: { not: 'NOT_SENT' } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], distinct: ['conversationId'], include: { template: { select: { name: true } } } }),
-    db.approval.findMany({ where: { status: 'PENDING', kind: 'OUTBOUND_MESSAGE', message: { conversationId: { in: ids } } }, select: { message: { select: { conversationId: true } } } }),
-    db.message.findMany({ where: { conversationId: { in: ids }, direction: 'OUT', status: { in: ['FAILED', 'UNKNOWN'] } }, select: { conversationId: true } }),
-    db.callRequest.findMany({ where: { conversationId: { in: ids }, status: 'OPEN' }, select: { conversationId: true } }),
-    lastPersonSendAt(db, escalatedIds),
+  // Counts and the Needs-you / Handed-over filters are computed over every open thread, not over the
+  // newest window: a thread must not drop out of "Needs you" because newer ones were created after it.
+  // The relation filters keep these reads independent of how many threads there are.
+  const openWhere = { closedAt: null } as const;
+  const [open, activity, pending, attention, calls] = await Promise.all([
+    db.conversation.findMany({ where: openWhere, select: { id: true, createdAt: true, humanTakeover: true, escalatedAt: true, lead: { select: { handedOverAt: true } } } }),
+    db.message.groupBy({ by: ['conversationId'], where: { status: { not: 'NOT_SENT' }, conversation: openWhere }, _max: { createdAt: true } }),
+    db.approval.findMany({ where: { status: 'PENDING', kind: 'OUTBOUND_MESSAGE', message: { conversation: openWhere } }, select: { message: { select: { conversationId: true } } } }),
+    db.message.findMany({ where: { direction: 'OUT', status: { in: ['FAILED', 'UNKNOWN'] }, conversation: openWhere }, select: { conversationId: true } }),
+    db.callRequest.findMany({ where: { status: 'OPEN', conversation: openWhere }, select: { conversationId: true } }),
   ]);
   const count = (list: Array<string | null | undefined>) => {
     const m = new Map<string, number>();
     for (const id of list) if (id) m.set(id, (m.get(id) ?? 0) + 1);
     return m;
   };
-  const latestOf = new Map(latest.map((m) => [m.conversationId, m]));
   const pendingOf = count(pending.map((p) => p.message?.conversationId));
   const attentionOf = count(attention.map((a) => a.conversationId));
   const callsOf = count(calls.map((c) => c.conversationId));
+  const lastMessageAt = new Map(activity.map((a) => [a.conversationId, a._max.createdAt]));
+  const personSends = await lastPersonSendAt(db, open.filter((c) => c.escalatedAt !== null).map((c) => c.id));
 
-  const all: InboxThreadRow[] = conversations.map((c) => {
-    const last = latestOf.get(c.id);
-    const open = c.channel === 'WHATSAPP' && isWindowOpen(c.lastInboundProviderAt, now);
-    const pendingApprovals = pendingOf.get(c.id) ?? 0;
-    const attentionDeliveries = attentionOf.get(c.id) ?? 0;
-    const openCallRequests = callsOf.get(c.id) ?? 0;
+  const summary = open.map((c) => {
     const answered = personSends.get(c.id);
     const escalated = c.escalatedAt !== null && !(answered && answered.getTime() >= c.escalatedAt.getTime());
     const readOnly = c.lead.handedOverAt !== null && operator;
+    const needsYou = !readOnly && ((pendingOf.get(c.id) ?? 0) > 0 || (attentionOf.get(c.id) ?? 0) > 0 || (callsOf.get(c.id) ?? 0) > 0 || c.humanTakeover || escalated);
+    const at = lastMessageAt.get(c.id) ?? c.createdAt;
+    return { id: c.id, at: at.getTime() > c.createdAt.getTime() ? at : c.createdAt, escalated, readOnly, needsYou, handedOver: c.lead.handedOverAt !== null };
+  });
+  const counts = { all: summary.length, needsYou: summary.filter((s) => s.needsYou).length, handedOver: summary.filter((s) => s.handedOver).length };
+  const wanted = summary.filter((s) => (input.filter === 'needs_you' ? s.needsYou : input.filter === 'handed_over' ? s.handedOver : true));
+  wanted.sort((a, b) => b.at.getTime() - a.at.getTime() || b.id.localeCompare(a.id));
+  const shown = new Map(wanted.slice(0, INBOX_THREAD_LIMIT).map((s) => [s.id, s]));
+
+  const conversations = await db.conversation.findMany({
+    where: { id: { in: [...shown.keys()] } },
+    include: { lead: { select: { id: true, displayName: true, simulated: true, handedOverAt: true } } },
+  });
+  const ids = conversations.map((c) => c.id);
+  const latest = await db.message.findMany({ where: { conversationId: { in: ids }, status: { not: 'NOT_SENT' } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], distinct: ['conversationId'], include: { template: { select: { name: true } } } });
+  const latestOf = new Map(latest.map((m) => [m.conversationId, m]));
+
+  const rows: InboxThreadRow[] = conversations.map((c) => {
+    const last = latestOf.get(c.id);
+    const s = shown.get(c.id)!;
+    const open = c.channel === 'WHATSAPP' && isWindowOpen(c.lastInboundProviderAt, now);
     return {
       conversationId: c.id,
       leadId: c.lead.id,
@@ -248,20 +261,17 @@ export async function listInboxThreads(ctx: AppCtx, input: { filter?: InboxFilte
       lastActivityAt: last ? (last.providerTs ?? last.createdAt) : c.createdAt,
       windowOpen: open,
       windowEndsAt: open ? windowEndsAt(c.lastInboundProviderAt) : null,
-      pendingApprovals,
-      attentionDeliveries,
-      openCallRequests,
-      escalated,
+      pendingApprovals: pendingOf.get(c.id) ?? 0,
+      attentionDeliveries: attentionOf.get(c.id) ?? 0,
+      openCallRequests: callsOf.get(c.id) ?? 0,
+      escalated: s.escalated,
       handedOverAt: c.lead.handedOverAt,
-      readOnly,
-      needsYou: !readOnly && (pendingApprovals > 0 || attentionDeliveries > 0 || openCallRequests > 0 || c.humanTakeover || escalated),
+      readOnly: s.readOnly,
+      needsYou: s.needsYou,
     };
   });
-  all.sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime() || a.conversationId.localeCompare(b.conversationId));
-  const needsYou = all.filter((r) => r.needsYou);
-  const handedOver = all.filter((r) => r.handedOverAt !== null);
-  const rows = input.filter === 'needs_you' ? needsYou : input.filter === 'handed_over' ? handedOver : all;
-  return { rows, counts: { all: all.length, needsYou: needsYou.length, handedOver: handedOver.length }, serverNow: now, timezone: workspace.timezone };
+  rows.sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime() || a.conversationId.localeCompare(b.conversationId));
+  return { rows, counts, serverNow: now, timezone: workspace.timezone };
 }
 
 // ---- One thread ------------------------------------------------------------------------------------

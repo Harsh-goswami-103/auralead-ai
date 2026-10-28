@@ -203,7 +203,7 @@ export function parseImportUpload(input: { fileName: string; contentType: string
     const cells = table.rows[i]!;
     if (blank(cells)) continue;
     if (rows.length === LEAD_IMPORT_MAX_ROWS) throw fileError('TOO_MANY_ROWS');
-    rows.push({ row: i + 1, cells: Array.from({ length: width }, (_, c) => cells[c] ?? '') });
+    rows.push({ row: table.rowNumbers?.[i] ?? i + 1, cells: Array.from({ length: width }, (_, c) => cells[c] ?? '') });
   }
   if (rows.length === 0) throw fileError('NO_DATA_ROWS');
   return { file: { version: 1, header, rows }, sheetName: table.sheetName.slice(0, 100), kind: zip ? 'xlsx' : 'csv' };

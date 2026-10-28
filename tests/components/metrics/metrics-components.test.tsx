@@ -131,3 +131,9 @@ describe('activity vocabulary', () => {
     expect(activityLabel('some.new_action')).toBe('Some new action');
   });
 });
+
+describe('activity labels that must not overstate an outcome (adversarial review)', () => {
+  it('a template submission that is only queued or being confirmed is not "submitted for approval"', () => {
+    expect(activityLabel('template.submit')).toBe('Template submission started');
+  });
+});

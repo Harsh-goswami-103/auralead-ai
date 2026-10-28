@@ -12,7 +12,7 @@
  * and any reply, and the page re-reads itself. The page renders this only in a DEMO process (the
  * route does not exist in LIVE). `workspaceSlug` names the operator's assigned workspace.
  */
-import { useId, useRef, useState } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { CircleAlert, CircleCheck, SendHorizontal, Smartphone } from 'lucide-react';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
@@ -107,7 +107,13 @@ export function CustomerPhone(props: { leadId: string; leadName: string; busines
               <GatedAction key={q.event} label={q.label} size="xs" variant="outline" gate={gate} onAction={() => simulate(q.event)} className="rounded-full" />
             ))}
           </div>
-          <div className="flex items-center gap-2">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              if (!gate) void simulate('text');
+            }}
+          >
             <Label htmlFor={`${id}-text`} className="sr-only">
               Customer text
             </Label>
@@ -117,21 +123,21 @@ export function CustomerPhone(props: { leadId: string; leadName: string; busines
               maxLength={1000}
               placeholder="Message"
               onChange={(e) => setText(e.target.value)}
-              className="min-h-10 min-w-0 flex-1 rounded-full border border-border-input bg-bg-1 px-3 text-sm text-fg-1 placeholder:text-fg-3 focus-visible:border-chat-accent focus-visible:outline-none"
+              // 16 px below md so iOS does not zoom on focus (the shared fieldSurface rule); 44 px below lg; the global focus outline stays.
+              className="min-h-11 min-w-0 flex-1 rounded-full border border-border-input bg-bg-1 px-3 text-md text-fg-1 placeholder:text-fg-3 focus-visible:border-chat-accent md:text-sm lg:min-h-10"
             />
             {gate ? (
               <GatedAction label="Simulate customer message" size="sm" variant="outline" gate={gate} />
             ) : (
               <button
-                type="button"
+                type="submit"
                 aria-label="Simulate customer message"
-                onClick={() => void simulate('text')}
-                className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-chat-accent text-cyan-fg transition-opacity duration-fast hover:opacity-90"
+                className="inline-flex size-11 shrink-0 lg:size-10 items-center justify-center rounded-full bg-chat-accent text-cyan-fg transition-opacity duration-fast hover:opacity-90"
               >
                 <SendHorizontal aria-hidden="true" className="size-4" />
               </button>
             )}
-          </div>
+          </form>
         </div>
       </div>
       <p className="text-xs text-fg-2">Demo only: these messages go through the same WhatsApp receive path as a real one. Nothing leaves this app.</p>

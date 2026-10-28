@@ -15,7 +15,7 @@
  * through the resumable upload for the header sample (template-admin.ts), at send time through the
  * per-send media upload exactly as the quote PDF (dispatch-run.ts).
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DomainRuleError, PayloadTooLargeError, ValidationError } from '@/lib/errors';
@@ -28,6 +28,10 @@ import { readArtifactFile, writeArtifactFile } from '@/server/pdf/artifacts';
 import { recordAudit } from '@/server/services/audit/record';
 
 export const PDF_MAGIC = Buffer.from('%PDF-', 'latin1');
+
+/** What one workspace's library may hold (the studio lists 50). */
+export const MEDIA_LIBRARY_MAX_FILES = 50;
+export const MEDIA_LIBRARY_MAX_BYTES = 100 * 1024 * 1024;
 
 export type MediaAssetView = { id: string; fileName: string; byteSize: number; createdAt: string };
 
@@ -68,6 +72,14 @@ export async function uploadMediaAsset(ctx: AppCtx, input: MediaUploadBody, deps
   requireCapability(ctx, 'templates.manage');
   const workspaceId = requireWorkspace(ctx);
   const bytes = checkPdfUpload(input);
+  // The same file again is the file already there; nothing new is written.
+  const sha = createHash('sha256').update(bytes).digest('hex');
+  const same = await ctx.db.mediaAsset.findFirst({ where: { kind: 'DOCUMENT', sha256: sha }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true, fileName: true, byteSize: true, createdAt: true } });
+  if (same) return { id: same.id, fileName: same.fileName, byteSize: same.byteSize, createdAt: same.createdAt.toISOString() };
+  const held = await ctx.db.mediaAsset.aggregate({ where: { kind: 'DOCUMENT' }, _count: { _all: true }, _sum: { byteSize: true } });
+  if (held._count._all >= MEDIA_LIBRARY_MAX_FILES || (held._sum.byteSize ?? 0) + bytes.length > MEDIA_LIBRARY_MAX_BYTES) {
+    throw new DomainRuleError({ code: 'MEDIA_QUOTA_REACHED', userMessage: `The media library is full (${MEDIA_LIBRARY_MAX_FILES} PDFs or ${MEDIA_LIBRARY_MAX_BYTES / (1024 * 1024)} MB). Use a brochure that is already there.` });
+  }
   const id = `med${randomBytes(11).toString('hex')}`;
   const rel = mediaRelPath(workspaceId, id);
   const written = writeArtifactFile(deps.storageDir, rel, bytes);

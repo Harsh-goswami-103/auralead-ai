@@ -101,6 +101,17 @@ describe('template studio routes (DEMO)', () => {
     expect(res.headers.get('retry-after')).not.toBeNull();
   });
 
+  it('a person without templates.manage cannot use up the workspace budget: 403 before the limiter is touched (submit and generate)', async () => {
+    runtime.limiters = createRateLimiters(runtime.clock);
+    const kesari = seedId('workspace', 'kesari-crafts');
+    for (let i = 0; i < 25; i += 1) {
+      expect((await call(submitRoute, '/api/app/templates/templatematrixprobe0000000/submit', { templateId: 'templatematrixprobe0000000' }, { workspaceSlug: 'kesari-crafts' })).status).toBe(403);
+    }
+    for (let i = 0; i < 35; i += 1) expect((await call(generateRoute, '/api/app/templates/generate', {}, { workspaceSlug: 'kesari-crafts', category: 'MARKETING', local: true })).status).toBe(403);
+    expect(runtime.limiters.templateSubmit.take(`workspace:${kesari}`).allowed).toBe(true);
+    expect(runtime.limiters.aiDraft.take(`workspace:${kesari}`).allowed).toBe(true);
+  });
+
   it('P1: uploads a PDF brochure; a body over the cap is 413 before anything is parsed', async () => {
     const pdf = Buffer.from('%PDF-1.4 route brochure', 'latin1').toString('base64');
     const ok = await call(mediaRoute, '/api/app/media', {}, { workspaceSlug: WS_A_SLUG, fileName: 'route.pdf', contentType: 'application/pdf', dataBase64: pdf });
@@ -109,5 +120,32 @@ describe('template studio routes (DEMO)', () => {
     const huge = 'A'.repeat(MEDIA_UPLOAD_MAX_BODY_BYTES);
     expect((await call(mediaRoute, '/api/app/media', {}, { workspaceSlug: WS_A_SLUG, fileName: 'big.pdf', contentType: 'application/pdf', dataBase64: huge })).status).toBe(413);
     expect((await call(mediaRoute, '/api/app/media', {}, { workspaceSlug: 'kesari-crafts', fileName: 'route.pdf', contentType: 'application/pdf', dataBase64: pdf })).status).toBe(403);
+  });
+
+  it('media uploads: a file already stored is reused, 10 a minute per person (429), and the library has a ceiling', async () => {
+    runtime.limiters = createRateLimiters(runtime.clock);
+    const pdf = (tag: string) => Buffer.from(`%PDF-1.4 media-guard ${tag}`, 'latin1').toString('base64');
+    const upload = (tag: string, slug = WS_A_SLUG) => call(mediaRoute, '/api/app/media', {}, { workspaceSlug: slug, fileName: `${tag}.pdf`, contentType: 'application/pdf', dataBase64: pdf(tag) });
+    const first = (await (await upload('same')).json()) as { asset: { id: string } };
+    const again = (await (await upload('same')).json()) as { asset: { id: string } };
+    expect(again.asset.id).toBe(first.asset.id);
+    expect(await h.db.mediaAsset.count({ where: { workspaceId: seedId('workspace', WS_A_SLUG), sha256: (await h.db.mediaAsset.findUniqueOrThrow({ where: { id: first.asset.id } })).sha256 } })).toBe(1);
+
+    // The library ceiling: 50 files.
+    const ws = seedId('workspace', WS_A_SLUG);
+    const held = await h.db.mediaAsset.count({ where: { workspaceId: ws, kind: 'DOCUMENT' } });
+    const filler = Array.from({ length: 50 - held }, (_, i) => ({ id: `medfiller${String(i).padStart(4, '0')}`, workspaceId: ws, kind: 'DOCUMENT' as const, fileName: `f${i}.pdf`, mimeType: 'application/pdf', byteSize: 10, sha256: `filler-${i}`, storagePath: `media/${ws}/medfiller${i}.pdf`, uploadedBy: 'test', createdAt: h.clock.now() }));
+    await h.db.mediaAsset.createMany({ data: filler });
+    const full = await upload('one-too-many');
+    expect(full.status).toBe(422);
+    expect(await full.json()).toMatchObject({ code: 'MEDIA_QUOTA_REACHED' });
+    await h.db.mediaAsset.deleteMany({ where: { id: { startsWith: 'medfiller' } } });
+
+    // The rate limit is per person: the 11th upload within a minute is refused before anything is parsed.
+    runtime.limiters = createRateLimiters(runtime.clock);
+    for (let i = 0; i < 10; i += 1) runtime.limiters.mediaUpload.take(`media-upload:${seedId('user', 'employee')}`);
+    const limited = await upload('limited');
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('retry-after')).not.toBeNull();
   });
 });

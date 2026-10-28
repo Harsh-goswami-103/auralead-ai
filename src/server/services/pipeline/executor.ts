@@ -185,6 +185,10 @@ export async function advancePipeline(job: JobHandlerContext, deps: ExecutorDeps
 
   const runId = await job.fencedTx(async (tx) => {
     const now = job.clock.now();
+    // The decision to run was made on the snapshot above. A hand-over (or any other stop) that
+    // committed since has finished this stage run: it stays as it is, nothing runs.
+    const current = await tx.pipelineStageRun.findFirst({ where: { executionId, stage }, select: { status: true } });
+    if (current && TERMINAL.has(current.status)) return null;
     const run = await tx.pipelineStageRun.upsert({
       where: { executionId_stage: { executionId, stage } },
       create: { workspaceId, executionId, stage, status: 'RUNNING', jobId: job.job.id, startedAt: now },
@@ -194,6 +198,7 @@ export async function advancePipeline(job: JobHandlerContext, deps: ExecutorDeps
     await tx.pipelineExecution.update({ where: { id: executionId }, data: { currentStage: stage, updatedAt: now } });
     return run.id;
   });
+  if (runId === null) return { outcome: 'succeeded' };
 
   const markFailed = (reasonCode: string, outputRef?: Prisma.InputJsonValue) => async (tx: TxClient) => {
     const now = job.clock.now();

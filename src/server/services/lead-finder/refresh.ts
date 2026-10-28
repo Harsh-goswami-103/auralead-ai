@@ -17,6 +17,7 @@ import { withTx } from '@/server/db/tx';
 import type { JobStore } from '@/server/jobs/queue';
 import { recordAudit } from '@/server/services/audit/record';
 import { enqueueFinderPurge, FINDER_CONTENT_TTL_MS } from './jobs';
+import { HOLDS_CONTENT } from './purge';
 import { resolveWorkspacePlaces, type PlacesDeps } from './provider';
 import { erasedResult, hasDetails, loadFinderRun, PlacesNotConfiguredError } from './runs';
 import { placeHasContent, placesErrorCode, stopsRun } from './search';
@@ -64,10 +65,13 @@ export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; 
   }
 
   const expiresAt = new Date(now.getTime() + FINDER_CONTENT_TTL_MS);
+  let refreshed = 0;
   await withTx(ctx.db, async (tx) => {
     for (const { id, place } of fresh) {
-      await tx.leadFinderResult.updateMany({
-        where: { id, runId: run.id },
+      const written = await tx.leadFinderResult.updateMany({
+        // Re-checked at write time: an erasure that committed while the provider calls ran left the
+        // row without content and without a purge stamp, and must not be filled in again (ADR-127).
+        where: { id, runId: run.id, OR: [{ contentPurgedAt: { not: null } }, ...HOLDS_CONTENT] },
         data: {
           name: place.name?.slice(0, 300) ?? null,
           category: place.category?.slice(0, 200) ?? null,
@@ -87,17 +91,19 @@ export async function refreshFinderResults(ctx: AppCtx, input: { runId: string; 
           contentPurgedAt: null,
         },
       });
+      refreshed += written.count;
     }
-    if (fresh.length > 0) await enqueueFinderPurge(tx as unknown as JobStore, ctx.clock, { workspaceId, runId: run.id, expiresAt, correlationId: ctx.correlationId });
+    failed += fresh.length - refreshed;
+    if (refreshed > 0) await enqueueFinderPurge(tx as unknown as JobStore, ctx.clock, { workspaceId, runId: run.id, expiresAt, correlationId: ctx.correlationId });
     await recordAudit(tx, ctx, {
       action: 'finder.results.refresh',
       targetType: 'LeadFinderRun',
       targetId: run.id,
       workspaceId,
       simulated: run.simulated,
-      result: fresh.length === 0 ? 'FAILED' : 'SUCCESS',
-      summary: { requested: rows.length, refreshed: fresh.length, failed, notExpired, erased, errorCode },
+      result: refreshed === 0 ? 'FAILED' : 'SUCCESS',
+      summary: { requested: rows.length, refreshed, failed, notExpired, erased, errorCode },
     });
   });
-  return { requested: rows.length, refreshed: fresh.length, failed, notExpired, erased, errorCode };
+  return { requested: rows.length, refreshed, failed, notExpired, erased, errorCode };
 }

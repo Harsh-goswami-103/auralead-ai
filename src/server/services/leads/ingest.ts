@@ -249,6 +249,20 @@ async function storedResult(tx: Tx, workspaceId: string, batchId: string, record
   };
 }
 
+/**
+ * What a source record keeps of the received payload. Google Places listings and file-import rows
+ * keep the provider ID and the names of the fields only: the values are Places content that expires
+ * (ADR-118 (d)) or a spreadsheet's cells (ADR-120: rows never reach the database), and a record
+ * that was rejected or sent to review has no lead for the expiry sweep or an erasure to reach. The
+ * other sources keep the redacted payload.
+ */
+function rawPayloadFor(source: string, record: { providerId?: string | undefined; fields: Record<string, unknown>; answers?: Record<string, unknown> | undefined }): Prisma.InputJsonValue {
+  if (source === 'GOOGLE_PLACES' || source === 'FILE_IMPORT') {
+    return { providerId: record.providerId ?? null, fieldNames: Object.keys(record.fields).sort(), answerCount: Object.keys(record.answers ?? {}).length };
+  }
+  return redact({ providerId: record.providerId, fields: record.fields, answers: record.answers ?? {} }) as Prisma.InputJsonValue;
+}
+
 async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: IngestDeps): Promise<IngestRecordResult> {
   const { parsed, record, batchId, simulated } = input;
   const workspaceId = ctx.workspaceId;
@@ -267,7 +281,7 @@ async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: I
     importBatchId: batchId,
     source,
     externalId: record.externalId,
-    rawPayloadRedacted: redact({ providerId: record.providerId, fields: record.fields, answers: record.answers ?? {} }) as Prisma.InputJsonValue,
+    rawPayloadRedacted: rawPayloadFor(source, record),
     mappingVersion: parsed.mapping?.version ?? null,
     attribution: (record.attribution ?? {}) as Prisma.InputJsonValue,
     extractedAt: record.extractedAt ? new Date(record.extractedAt) : null,

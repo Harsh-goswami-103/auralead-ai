@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 import { getConfig } from '@/lib/config';
-import { safeFetch } from '@/server/security/safe-fetch';
+import { safeFetch, type SafeFetchOptions } from '@/server/security/safe-fetch';
 import { applyEmailOutcomes, crawlSiteEmails, demoSiteEmails, EMAIL_PAGE_LIMITS, type PageFetcher, type SiteEmailOutcome } from '@/server/services/lead-finder/emails';
 import { FINDER_EMAILS_JOB } from '@/server/services/lead-finder/jobs';
 import type { JobDefinition } from '../types';
@@ -22,10 +22,14 @@ export { FINDER_EMAILS_JOB };
 
 const payloadSchema = z.object({ runId: z.string().min(1).max(64), resultIds: z.array(z.string().min(1).max(64)).min(1).max(3) });
 
-/** The production fetcher: `safeFetch` with the identifying bot User-Agent and the ADR-118 page limits. */
-export function finderPageFetcher(appOrigin: string): PageFetcher {
+/**
+ * The production fetcher: `safeFetch` with the identifying bot User-Agent and the ADR-118 page
+ * limits. `seams` (the resolver and the connect target) exist only so a test can run it against a
+ * local server with every other check real; production passes none.
+ */
+export function finderPageFetcher(appOrigin: string, seams: Pick<SafeFetchOptions, 'lookup' | 'connectTo'> = {}): PageFetcher {
   const userAgent = `AuraLeadBot/1.0 (+${appOrigin.replace(/\/+$/, '')}/docs/bot)`;
-  return (url, signal) => safeFetch(url, { userAgent, totalTimeoutMs: EMAIL_PAGE_LIMITS.totalTimeoutMs, maxBytes: EMAIL_PAGE_LIMITS.maxBytes, ...(signal ? { signal } : {}) });
+  return (url, signal) => safeFetch(url, { ...seams, userAgent, totalTimeoutMs: EMAIL_PAGE_LIMITS.totalTimeoutMs, maxBytes: EMAIL_PAGE_LIMITS.maxBytes, ...(signal ? { signal } : {}) });
 }
 
 export type FinderEmailsOptions = { mode?: () => 'demo' | 'live'; fetchPage?: () => PageFetcher };

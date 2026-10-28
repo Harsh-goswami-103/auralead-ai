@@ -163,7 +163,8 @@ export const leadFinder: DocPage = {
           items: [
             'An imported lead keeps its place ID. The fields that came from Places (phone and alternate phones, rating, review count, address, PIN code and business type) carry an expiry of 30 days after the import.',
             'On that day `leads.placesExpire` clears those fields and deletes the lead\'s phone contact keys, unless the contact was confirmed. The name, city, website and place ID stay.',
-            'A contact counts as confirmed when a WhatsApp opt-in is recorded for the lead (see [Reach out and hand over](/docs/reach-out-and-handoff#record-opt-in)) or when an operator presses **Confirm details** on the lead (audited; `leads.write`). A confirmed lead keeps its details. A customer who simply writes from the number does not confirm the contact by themselves yet, so press Confirm details for a lead that has become a conversation.',
+            'A contact counts as confirmed when a WhatsApp opt-in is recorded for the lead (see [Reach out and hand over](/docs/reach-out-and-handoff#record-opt-in)) or when an operator presses **Confirm details** on the lead (audited; `leads.write`), or when the customer writes to you on WhatsApp from the number (a message that is not a Stop). A confirmed lead keeps its details. A lead that was handed over, has a quotation or has a conversation the customer has written in is also left alone by the sweep.',
+            'The source record kept for each imported listing holds the place ID and the names of its fields only, never the values; the score reasons are recalculated when the fields expire, so "Rated 4.5 of 5" does not outlive the rating.',
             'A lead export writes the lead\'s columns as stored, so a Places lead\'s phone, address and rating are in it until they expire.',
           ],
         },

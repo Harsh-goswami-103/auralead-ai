@@ -66,7 +66,7 @@ const MISSING_WORDS: Readonly<Record<string, string>> = { NO_VALUE: 'this lead h
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type Refusal = { message: string; reference: string | null; next: 'TEMPLATE' | 'REVIEW' | 'NONE' };
+type Refusal = { message: string; reference: string | null; next: 'TEMPLATE' | 'REVIEW' | 'NONE'; reasons: string[] };
 type Notice = { tone: 'info' | 'success'; text: string };
 
 /**
@@ -170,7 +170,8 @@ function ComposerForm(props: ComposerProps) {
     if (res.code === 'SEND_REFUSED') {
       const next = res.details?.next;
       keyRef.current = null;
-      setRefusal({ message: res.message, reference: res.reference, next: next === 'TEMPLATE' || next === 'REVIEW' ? next : 'NONE' });
+      const reasons = res.details?.reasons;
+      setRefusal({ message: res.message, reference: res.reference, next: next === 'TEMPLATE' || next === 'REVIEW' ? next : 'NONE', reasons: Array.isArray(reasons) ? reasons.filter((r): r is string => typeof r === 'string') : [] });
       router.refresh();
       return;
     }
@@ -388,8 +389,12 @@ function EligibilityLine(props: ComposerProps & { now: number; closedOnClient: b
     if (end && !props.closedOnClient && props.refusal === null) {
       line = `Free-form until ${formatClockTime(end, props.timeZone)}${sameDay ? '' : `, ${formatDayMonth(end, props.timeZone)}`} (${remainingHint(end.getTime() - props.now)}).`;
       tone = 'text-fg-1';
-    } else if (props.freeform.reasons.includes('WINDOW_CLOSED') || props.closedOnClient || props.refusal !== null) {
+    } else if (props.freeform.reasons.includes('WINDOW_CLOSED') || props.closedOnClient || props.refusal?.reasons.includes('WINDOW_CLOSED')) {
       line = 'Free-form window closed. Send an approved template or save the reply for review.';
+      tone = 'text-warning';
+    } else if (props.refusal !== null) {
+      // Refused for another reason (an opt-out, a handed-over lead): say that one, not the window.
+      line = props.refusal.message.replace(/^Not sent:\s*/, '');
       tone = 'text-warning';
     } else {
       line = props.freeform.labels.length > 0 ? `${props.freeform.labels.join('. ')}.` : 'WhatsApp free-form replies need an open 24-hour window.';

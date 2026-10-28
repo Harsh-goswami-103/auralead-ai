@@ -4,7 +4,8 @@
  * JSON body is capped at the base64 size of 5 MB plus the envelope (413 above it), the decoded file
  * at 5 MB (413); the type must be application/pdf, the name `.pdf` and the bytes start with `%PDF-`
  * (422 otherwise). Stored under STORAGE_DIR/media/<workspace>/<id>.pdf. Nothing is sent to a
- * provider here. Roles USER and EMPLOYEE, `templates.manage` in the `workspaceSlug` workspace
+ * provider here. At most 10 uploads a minute per person (`mediaUpload`); a workspace's library holds
+ * at most 50 files and 100 MB (422 MEDIA_QUOTA_REACHED) and a file already stored is reused. Roles USER and EMPLOYEE, `templates.manage` in the `workspaceSlug` workspace
  * (checked in the service); CSRF.
  */
 import { MEDIA_UPLOAD_MAX_BODY_BYTES, MediaUploadBody } from '@/lib/schemas/templates';
@@ -15,7 +16,16 @@ import { studioContext } from '../templates/_lib/deps';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const POST = withRoute({ auth: 'session', roles: ['USER', 'EMPLOYEE'], body: MediaUploadBody, maxBodyBytes: MEDIA_UPLOAD_MAX_BODY_BYTES }, async ({ ctx, session, runtime, body }) => {
+export const POST = withRoute(
+  {
+    auth: 'session',
+    roles: ['USER', 'EMPLOYEE'],
+    body: MediaUploadBody,
+    maxBodyBytes: MEDIA_UPLOAD_MAX_BODY_BYTES,
+    rateLimit: [{ policy: 'mediaUpload', key: ({ ctx }) => (ctx.actor ? `media-upload:${ctx.actor.userId}` : null) }],
+  },
+  async ({ ctx, session, runtime, body }) => {
   const target = await studioContext({ ctx, session, runtime }, body.workspaceSlug);
   return { asset: await uploadMediaAsset(target, body, { storageDir: runtime.config.paths.storageDir }) };
-});
+  },
+);

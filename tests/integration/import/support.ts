@@ -17,18 +17,18 @@ import { createLeadImportJob, createLeadImportPurgeJob } from '@/server/jobs/han
 import { uploadLeadImport } from '@/server/services/leads/import';
 import type { Worker } from '../../../worker/worker';
 import { seedId } from '../../../prisma/seed/ids';
-import { testConfig, uninstallRuntime, useRuntime as installTestRuntime } from '../auth/support';
+import { testConfig, uninstallRuntime, useRuntime as installTestRuntime, type TestRuntime } from '../auth/support';
 import { createQuoteHarness, drain, userCtx, workerWith, type QuoteHarness } from '../leads/support';
 
 export { userCtx, WS_A, WS_A_SLUG, WS_KESARI_SLUG, DAY, NOW } from '../leads/support';
 
-export type ImportHarness = QuoteHarness & { storageDir: string; config: AppConfig; pepper: string; worker: Worker; drain: () => Promise<void>; cleanup: () => Promise<void> };
+export type ImportHarness = QuoteHarness & { storageDir: string; config: AppConfig; runtime: TestRuntime; pepper: string; worker: Worker; drain: () => Promise<void>; cleanup: () => Promise<void> };
 
 export async function createImportHarness(label: string): Promise<ImportHarness> {
   const h = await createQuoteHarness(label);
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), `auralead-import-${label}-`));
   const config = testConfig('demo', { STORAGE_DIR: storageDir });
-  installTestRuntime(h.db, config, h.clock);
+  const runtime = installTestRuntime(h.db, config, h.clock);
   const pepper = config.secrets.suppressionPepper!;
   const worker = workerWith(h, [
     createLeadImportJob({ deps: () => ({ storageDir, contactKeyPepper: pepper, mode: 'demo' }) }),
@@ -38,6 +38,7 @@ export async function createImportHarness(label: string): Promise<ImportHarness>
     ...h,
     storageDir,
     config,
+    runtime,
     pepper,
     worker,
     drain: () => drain(worker),

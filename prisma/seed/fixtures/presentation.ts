@@ -436,7 +436,7 @@ export const HANDOFF_FIXTURE = {
   minutesAgo: 3 * 60,
   note: 'Wants a website with online appointment booking and to be found on Google. Prefers a call after 4 pm.',
   summary: {
-    asked: 'The customer sent 2 messages and asked about Business website, Website maintenance and a call back.',
+    asked: 'The customer sent 2 messages and asked about website services and a call back.',
     promised: 'The team sent 2 messages. No quotation was sent yet.',
     nextStep: "Reply to the customer and offer a quotation. Read the operator's note first.",
   },

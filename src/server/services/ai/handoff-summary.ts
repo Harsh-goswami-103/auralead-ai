@@ -218,6 +218,8 @@ export async function persistHandoffSummary(tx: TxClient, ctx: AppCtx, outcome: 
     targetType: 'Lead',
     targetId: outcome.leadId,
     simulated: outcome.simulated,
+    // "Handoff summary written" must not read as done when no summary was written.
+    result: ready ? 'SUCCESS' : 'FAILED',
     summary: {
       handoffId: outcome.handoffId,
       status: outcome.status,

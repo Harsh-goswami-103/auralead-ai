@@ -201,13 +201,17 @@ describe('DEMO submission and simulated review', () => {
 describe('read model', () => {
   it('lists authored templates first with their state, the DEMO capabilities and the permission', async () => {
     const ctx = await h.operator();
+    // Its own templates (not the ones other tests happen to have left): a draft and a submitted one.
+    await createTemplateDraft(ctx, { draft: marketing({ name: 'readmodel_intro' }), copyGeneratorLabel: null });
+    const submittedDraft = await createTemplateDraft(ctx, { draft: marketing({ name: 'readmodel_approve' }), copyGeneratorLabel: null });
+    await submitTemplate(ctx, submittedDraft.template.id, deps());
     const studio = await getTemplateStudio(ctx, { graphVersion: null });
     expect(studio).toMatchObject({ mode: 'demo', canManage: true, whatsapp: { canDraft: true, canSubmit: true, simulated: true, problem: null }, ai: { local: true, available: true } });
     expect(studio.templates.every((t) => t.origin === 'AUTHORED')).toBe(true);
-    const intro = studio.templates.find((t) => t.name === 'website_intro' && t.language === 'en')!;
-    expect(intro.draft).toEqual(marketing());
+    const intro = studio.templates.find((t) => t.name === 'readmodel_intro' && t.language === 'en')!;
+    expect(intro.draft).toEqual(marketing({ name: 'readmodel_intro' }));
     expect(intro.lastSubmit).toBeNull();
-    const approved = studio.templates.find((t) => t.name === 'website_launch_approve')!;
+    const approved = studio.templates.find((t) => t.name === 'readmodel_approve')!;
     expect(approved.lastSubmit).toMatchObject({ result: 'SUCCESS', outcome: 'SUBMITTED' });
     const neha = await getTemplateStudio(await h.neha(), { graphVersion: null });
     expect(neha.canManage).toBe(false);

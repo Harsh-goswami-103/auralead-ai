@@ -22,7 +22,7 @@ export function HandoffCard(props: { handoff: LeadHandoffDto; timeZone: string; 
   const summaryStatus = SUMMARY_STATUS_CHIPS[handoff.summaryStatus];
   const by = handoff.fromUserName ? ` by ${handoff.fromUserName}` : '';
   return (
-    <article data-handoff-id={handoff.id} data-handoff-status={handoff.status} className="flex flex-col gap-4">
+    <article data-handoff-id={handoff.id} data-handoff-status={handoff.status} tabIndex={-1} aria-label={`Handed-over lead: ${status.label}`} className="flex flex-col gap-4 focus:outline-none">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <ToneChip tone={status.tone} icon={status.icon} label={status.label} size="md" />
         <span className="text-sm text-fg-2">

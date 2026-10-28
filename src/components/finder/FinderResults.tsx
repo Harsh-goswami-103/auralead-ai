@@ -23,11 +23,11 @@ import { postJson } from '@/components/patterns/api-client';
 import { useCsrfToken } from '@/components/patterns/csrf';
 import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { ModeChip } from '@/components/patterns/StatusBadge';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonVariants, touchTarget } from '@/components/ui/button';
 import { cn } from '@/components/ui/cn';
 import { FINDER_EMAIL_STATUS_LABELS } from '@/lib/domain/lead-gen';
 import type { FinderResultDto, FinderRunView } from '@/server/services/lead-finder/runs';
-import { finderExportHref, finderHref, ratingWords } from './finder-vocabulary';
+import { finderErrorText, finderExportHref, finderHref, ratingWords } from './finder-vocabulary';
 import { PlacesAttribution } from './PlacesAttribution';
 
 type ImportResponse = { counts: { accepted: number; duplicate: number; review: number; rejected: number; alreadyImported: number; detailsExpired: number } };
@@ -42,6 +42,15 @@ export type FinderResultsProps = {
 
 function leadHref(slug: string, leadId: string): string {
   return `/dashboard/employee/${encodeURIComponent(slug)}/leads/${encodeURIComponent(leadId)}`;
+}
+
+/** Why the results are empty, by how the search ended: "found no places" is only true of a search that finished. */
+function emptyText(run: FinderRunView['run']): string {
+  if (run.status === 'QUEUED' || run.status === 'RUNNING') return 'Searching: places appear here as each page arrives.';
+  if (run.status === 'FAILED') return `The search stopped before any place was found. ${finderErrorText(run.errorCode) ?? ''}`.trim();
+  if (run.status === 'CANCELLED') return 'The search was cancelled before any place was found.';
+  if (run.status === 'PARTIAL') return 'Part of the search could not run and no place was found. Start the search again.';
+  return 'This search found no places.';
 }
 
 function importSummary(c: ImportResponse['counts']): string {
@@ -62,6 +71,11 @@ export function FinderResults(props: FinderResultsProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const selectable = view.results.filter((r) => r.importedLeadId === null && r.hasDetails);
   const expiredSelected = view.results.filter((r) => selected.has(r.id) && !r.hasDetails && !r.erased);
+  // What a click acts on is what is on screen: ticks left on another page or filter are not counted.
+  const importable = view.results.filter((r) => selected.has(r.id) && r.hasDetails && r.importedLeadId === null);
+  // One request refreshes at most 10 listings: the ticked expired ones, else the first expired ones on this page.
+  const expiredOnPage = view.results.filter((r) => !r.hasDetails && !r.erased);
+  const refreshTargets = (expiredSelected.length > 0 ? expiredSelected : expiredOnPage).slice(0, 10);
   const allSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.id));
   const q = { run: run.id, ...view.filters };
 
@@ -79,7 +93,7 @@ export function FinderResults(props: FinderResultsProps) {
   }
 
   async function importSelected() {
-    const ids = view.results.filter((r) => selected.has(r.id) && r.hasDetails && r.importedLeadId === null).map((r) => r.id);
+    const ids = importable.map((r) => r.id);
     if (ids.length === 0) {
       toast.error('Select at least one result that is not imported yet.');
       return;
@@ -94,8 +108,8 @@ export function FinderResults(props: FinderResultsProps) {
     router.refresh();
   }
 
-  async function refreshExpired() {
-    const ids = expiredSelected.map((r) => r.id);
+  async function refreshExpired(only?: readonly string[]) {
+    const ids = only ? [...only] : refreshTargets.map((r) => r.id);
     const res = await postJson<{ refreshed: number; failed: number }>(`/api/app/finder/runs/${encodeURIComponent(run.id)}/refresh`, { workspaceSlug, resultIds: ids }, csrfToken);
     if (!res.ok) {
       toast.error(res.message, { description: res.reference ? `Reference: ${res.reference}` : undefined });
@@ -125,7 +139,8 @@ export function FinderResults(props: FinderResultsProps) {
                 aria-current={on ? 'true' : undefined}
                 data-filter={f.key}
                 className={cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors duration-fast',
+                  'relative inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors duration-fast',
+                  touchTarget,
                   on ? 'border-panel/45 bg-panel/14 font-medium text-fg-1' : 'border-border-subtle text-fg-2 hover:bg-bg-3 hover:text-fg-1',
                 )}
               >
@@ -137,10 +152,10 @@ export function FinderResults(props: FinderResultsProps) {
           })}
         </nav>
         <div className="flex flex-wrap items-start gap-2">
-          {expiredSelected.length > 0 ? (
-            <GatedAction label={`Refresh details (${expiredSelected.length})`} pendingLabel="Refreshing..." variant="outline" icon={<RefreshCw aria-hidden="true" />} gate={props.refreshGate} onAction={refreshExpired} />
+          {refreshTargets.length > 0 ? (
+            <GatedAction label={`Refresh details (${refreshTargets.length})`} pendingLabel="Refreshing..." variant="outline" icon={<RefreshCw aria-hidden="true" />} gate={props.refreshGate} onAction={() => refreshExpired()} />
           ) : null}
-          <GatedAction label={selected.size > 0 ? `Import selected (${selected.size})` : 'Import selected'} pendingLabel="Importing..." icon={<UserPlus aria-hidden="true" />} gate={props.importGate} onAction={importSelected} />
+          <GatedAction label={importable.length > 0 ? `Import selected (${importable.length})` : 'Import selected'} pendingLabel="Importing..." icon={<UserPlus aria-hidden="true" />} gate={props.importGate} onAction={importSelected} />
           {props.exportGate ? (
             <GatedAction label="Download Excel" variant="outline" icon={<Download aria-hidden="true" />} gate={props.exportGate} />
           ) : (
@@ -154,7 +169,7 @@ export function FinderResults(props: FinderResultsProps) {
 
       {view.results.length === 0 ? (
         <p className="rounded-lg border border-border-subtle px-3 py-6 text-center text-sm text-fg-2">
-          {view.counts.all === 0 ? (run.status === 'QUEUED' || run.status === 'RUNNING' ? 'Searching: places appear here as each page arrives.' : 'This search found no places.') : 'No result matches these filters.'}
+          {view.counts.all === 0 ? emptyText(run) : 'No result matches these filters.'}
         </p>
       ) : (
         <div className="relative overflow-x-auto rounded-lg border border-border-subtle">

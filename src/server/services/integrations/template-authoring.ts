@@ -163,6 +163,7 @@ type TemplateRow = {
   syncedAt: Date | null;
   headerMediaId: string | null;
   integrationId: string;
+  providerTemplateId: string | null;
 };
 
 const templateSelect = {
@@ -182,6 +183,7 @@ const templateSelect = {
   syncedAt: true,
   headerMediaId: true,
   integrationId: true,
+  providerTemplateId: true,
 } as const;
 
 /** The words for a recorded submission outcome. */
@@ -423,7 +425,12 @@ export async function deleteTemplate(ctx: AppCtx, templateId: string, deps: Temp
   if (atProvider) {
     const admin = await resolveAdmin(ctx, deps);
     if (!admin.ok) throw notConfigured(admin);
-    const res = await admin.value.deleteTemplate(row.name);
+    // Meta deletes every language of a name when no template id is given: never do that while a
+    // sibling language of this name exists here (it would be deleted at Meta behind its row's back).
+    if (row.providerTemplateId === null && (await ctx.db.whatsAppTemplate.count({ where: { workspaceId, integrationId: row.integrationId, name: row.name, id: { not: row.id } } })) > 0) {
+      throw new ConflictError({ code: 'TEMPLATE_NOT_DELETABLE', userMessage: 'Another language of this template exists, and Meta would delete it too. Delete this one in WhatsApp Manager.' });
+    }
+    const res = await admin.value.deleteTemplate(row.name, row.providerTemplateId);
     if (!res.ok && !(res.phase === 'response' && res.status === 404)) {
       throw new ProviderRejectedError({ provider: 'whatsapp', code: 'TEMPLATE_DELETE_FAILED', message: redactText(res.error.message), userMessage: `Meta did not delete the template (${res.status ?? 'no answer'}). Nothing was changed here.` });
     }

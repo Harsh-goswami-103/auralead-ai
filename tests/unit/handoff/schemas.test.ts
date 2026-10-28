@@ -100,6 +100,22 @@ describe('the DEMO local handoff summary', () => {
     expect(LOCAL_TASKS.handoff_summary).toBe(generateLocalHandoffSummary);
   });
 
+  it('names a service only when the words the customer used single it out (a shared word is a topic, not a service)', () => {
+    const asked = (text: string, catalog: string[]) =>
+      generateLocalHandoffSummary({
+        message: JSON.parse(buildHandoffSummaryPrompt({ ...DATA, messages: [{ from: 'customer', kind: 'TEXT', channel: 'WHATSAPP', text, at: '2026-10-20T10:00:00.000Z' }], catalog: catalog.map((name) => ({ name })) }).user),
+        seed: 0,
+      }).asked;
+    const catalog = ['Business website', 'Website maintenance', 'Online store'];
+    // "website" is in two names: the customer did not ask for maintenance.
+    expect(asked('I need a website where patients can book', catalog)).toBe('The customer sent 1 message and asked about website services.');
+    expect(asked('I need a website where patients can book', catalog)).not.toContain('maintenance');
+    // A distinctive word picks one service.
+    expect(asked('Can you handle website maintenance for us?', catalog)).toBe('The customer sent 1 message and asked about Website maintenance.');
+    expect(asked('We want an online store', catalog)).toBe('The customer sent 1 message and asked about Online store.');
+    expect(asked('hello there', catalog)).toBe('The customer sent 1 message; none of them named a service from the catalog.');
+  });
+
   it('puts the call request, an accepted quote and the operator note into the next step', () => {
     const at = (over: Partial<HandoffSummaryData>) => generateLocalHandoffSummary({ message: JSON.parse(buildHandoffSummaryPrompt({ ...DATA, ...over }).user), seed: 0 }).nextStep;
     expect(at({ openCallRequest: true })).toBe('Call the customer back: they asked for a call.');

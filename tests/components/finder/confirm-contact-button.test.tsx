@@ -19,6 +19,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   refresh.mockReset();
   vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => {
@@ -53,6 +54,28 @@ describe('ConfirmContactButton', () => {
     expect(container.textContent).toContain('Contact details confirmed on 24 Oct 2026: Confirmed by an operator.');
     rerender(<ConfirmContactButton {...base} placesContentExpiresAt={null} />);
     expect(container.textContent).toBe('');
+  });
+
+  it('a refused confirmation shows the message and reference, and does not refresh; so does an unreachable server', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'NOT_FOUND', message: 'Not found.', reference: 'req_cc_1' }), { status: 404 }))
+      .mockRejectedValueOnce(new TypeError('down'));
+    render(
+      <CsrfProvider token="csrf-token-1">
+        <ConfirmContactButton {...base} />
+      </CsrfProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm details' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith('Not found.', { description: 'Reference: req_cc_1' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm details' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith(expect.stringContaining('could not be reached'), { description: undefined });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Confirm details' }).getAttribute('aria-disabled')).toBeNull();
   });
 
   it('without leads.write the button says why and posts nothing', async () => {

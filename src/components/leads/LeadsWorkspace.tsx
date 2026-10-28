@@ -7,6 +7,7 @@
 import type { ReactNode } from 'react';
 import { FileDown, Rows3, SearchX } from 'lucide-react';
 import { ChipTitle } from '@/components/patterns/IconChip';
+import { PlacesAttribution } from '@/components/finder/PlacesAttribution';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import type { Gate } from '@/components/patterns/GatedAction';
@@ -84,6 +85,10 @@ export function LeadsWorkspace(props: LeadsWorkspaceProps) {
   } else body = null;
 
   const total = props.board?.total ?? props.list?.total ?? null;
+  // ADR-118 (b): Google content (a Places lead's phone, category) carries "Google Maps" and the terms
+  // wherever it is listed, not only on the lead's own page.
+  const shown = props.board ? props.board.columns.flatMap((c) => c.rows) : (props.list?.rows ?? []);
+  const showsGooglePlaces = !props.emptyWorkspace && shown.some((r) => r.firstSource === 'GOOGLE_PLACES' && !r.simulated);
 
   return (
     <div className="flex flex-col gap-6">
@@ -97,6 +102,7 @@ export function LeadsWorkspace(props: LeadsWorkspaceProps) {
             That page link had expired, so the first page is shown.
           </p>
         ) : null}
+        {showsGooglePlaces ? <PlacesAttribution simulated={false} attributions={[]} /> : null}
         {body}
       </SectionCard>
       {props.emptyWorkspace ? null : (

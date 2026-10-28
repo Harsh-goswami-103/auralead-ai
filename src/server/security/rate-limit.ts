@@ -37,6 +37,8 @@ export const RATE_LIMIT_POLICIES = {
   leadImport: { limit: 10, windowMs: 60_000 },
   /** Template submissions per workspace, far below Meta's own per-account creation limit (ADR-123). */
   templateSubmit: { limit: 20, windowMs: 3_600_000 },
+  /** PDF brochure uploads per person (bodies up to about 7 MB, ADR-123). */
+  mediaUpload: { limit: 10, windowMs: 60_000 },
   /** Lead handoffs per person (ADR-124; a second handoff of a lead is 409 anyway). */
   handoff: { limit: 30, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitPolicy>;

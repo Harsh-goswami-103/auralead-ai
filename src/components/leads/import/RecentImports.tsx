@@ -5,6 +5,8 @@
  */
 import Link from 'next/link';
 import { ToneChip } from '@/components/leads/ToneChip';
+import { touchTarget } from '@/components/ui/button';
+import { cn } from '@/components/ui/cn';
 import { formatDateTime } from '@/lib/format/date';
 import type { LeadImportDto } from '@/lib/schemas/lead-import';
 import { IMPORT_STATUS } from './import-vocabulary';
@@ -32,7 +34,7 @@ export function RecentImports(props: { imports: LeadImportDto[]; basePath: strin
               ) : null}
             </span>
             {i.effectiveStatus === 'EXPIRED' ? null : (
-              <Link href={`${props.basePath}?${new URLSearchParams({ import: i.id }).toString()}`} className="text-sm text-cyan underline-offset-4 hover:underline">
+              <Link href={`${props.basePath}?${new URLSearchParams({ import: i.id }).toString()}`} className={cn('relative text-sm text-cyan underline-offset-4 hover:underline', touchTarget)}>
                 {i.effectiveStatus === 'PREVIEW' ? 'Continue' : 'Open'}
                 <span className="sr-only"> {i.fileName}</span>
               </Link>

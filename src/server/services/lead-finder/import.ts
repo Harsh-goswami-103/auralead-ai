@@ -8,8 +8,10 @@
  *   own statement about a website (`websiteListed`, NOT_LISTED when it has none, ADR-119), and the
  *   run's keyword and location as attribution. The best website-sourced email (a role address
  *   first) goes with it; Places itself gives no email.
- * - Records go in chunks of 100; the batch id carries the request key, so a retried request
- *   replays instead of importing twice. Accepted and duplicate records link the result to their
+ * - Records go in chunks of 100; the batch id carries the request key and a hash of the chunk's
+ *   result ids (not its position: the set of unlinked results shrinks as a request proceeds), so a
+ *   retried request never imports twice and never conflicts with its own earlier chunks. A record
+ *   an earlier chunk already sent to review or rejected keeps that outcome. Accepted and duplicate records link the result to their
  *   lead (`importedLeadId`, `importedAt`); a record sent to merge review or rejected stays
  *   unlinked. Results already imported, or whose 24-hour details expired, are skipped.
  * - Places leads carry no WhatsApp consent (ADR-15): ingestion records none for this source, so
@@ -17,6 +19,7 @@
  * - Imported leads keep their Places-sourced fields until `placesContentExpiresAt` (30 days,
  *   ADR-118 (d)); the `leads.placesExpire` sweep is armed for that day.
  */
+import { createHash } from 'node:crypto';
 import type { LeadFinderResult } from '@/generated/prisma/client';
 import { NotFoundError } from '@/lib/errors';
 import type { AppCtx } from '@/server/auth/context';
@@ -87,14 +90,21 @@ export async function importFinderResults(ctx: AppCtx, input: { runId: string; r
 
   for (let i = 0; i < toIngest.length; i += CHUNK) {
     const chunk = toIngest.slice(i, i + CHUNK);
-    const batch = await ingestBatch(ctx, { source: 'GOOGLE_PLACES', externalBatchId: `finder:${run.id}:${input.requestKey}:${i / CHUNK}`, simulated: run.simulated, records: chunk.map(finderIngestRecord) }, deps);
+    const chunkHash = createHash('sha256').update(chunk.map((row) => row.id).join(',')).digest('hex').slice(0, 16);
+    const batch = await ingestBatch(ctx, { source: 'GOOGLE_PLACES', externalBatchId: `finder:${run.id}:${input.requestKey}:${chunkHash}`, simulated: run.simulated, records: chunk.map(finderIngestRecord) }, deps);
     const linked: Array<{ resultId: string; leadId: string }> = [];
-    chunk.forEach((row, k) => {
-      const rec = batch.records[k]!;
+    for (const [k, row] of chunk.entries()) {
+      let rec: { status: string; leadId: string | null; reasonCode: string | null } = batch.records[k]!;
+      const earlier = batch.records[k]!;
+      if (earlier.reasonCode === 'ALREADY_RECEIVED' && earlier.sourceRecordId) {
+        // An earlier chunk of this request (or an earlier request) already decided this record: keep its outcome.
+        const stored = await ctx.db.leadSourceRecord.findFirst({ where: { id: earlier.sourceRecordId }, select: { status: true, leadId: true, reasonCode: true } });
+        if (stored) rec = stored;
+      }
       const leadId = (rec.status === 'ACCEPTED' || rec.status === 'DUPLICATE') && rec.leadId ? rec.leadId : null;
       outcomes.set(row.id, { outcome: rec.status === 'ACCEPTED' || rec.status === 'DUPLICATE' || rec.status === 'REVIEW' ? rec.status : 'REJECTED', leadId, reasonCode: rec.reasonCode });
       if (leadId) linked.push({ resultId: row.id, leadId });
-    });
+    }
     if (linked.length > 0) {
       await withTx(ctx.db, async (tx) => {
         for (const l of linked) await tx.leadFinderResult.updateMany({ where: { id: l.resultId, importedLeadId: null }, data: { importedLeadId: l.leadId, importedAt: now } });

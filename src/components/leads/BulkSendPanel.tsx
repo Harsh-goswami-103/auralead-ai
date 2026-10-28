@@ -71,7 +71,11 @@ export function BulkSendPanel(props: {
 
   const templateGate: Gate | null =
     channel === 'SEND_WHATSAPP_TEMPLATE' && props.templates.length === 0
-      ? { category: 'configuration', reason: 'No approved WhatsApp template is synced for this workspace. Templates come from WhatsApp Manager once WhatsApp is connected.' }
+      ? {
+          category: 'configuration',
+          reason: 'No approved WhatsApp template is available for this workspace. Write and submit one in the template studio, or sync one from WhatsApp Manager.',
+          fix: { href: `/dashboard/employee/${props.workspaceSlug}/templates`, label: 'Open templates' },
+        }
       : null;
 
   function action() {

@@ -89,7 +89,7 @@ export function ThreadTimeline(props: { messages: ThreadMessage[]; events: Threa
 
   return (
     <div className="rounded-xl border border-border-subtle bg-chat-wallpaper p-3 sm:p-4" data-chat-wallpaper>
-      <ol className="flex flex-col gap-2" aria-label="Conversation" data-thread-timeline>
+      <ol role="log" aria-live="polite" aria-relevant="additions" className="flex flex-col gap-2" aria-label="Conversation" data-thread-timeline>
         {nodes}
       </ol>
     </div>
@@ -130,7 +130,9 @@ function MessageBubble({ m, timeZone, actions }: { m: ThreadMessage; timeZone: s
             'relative flex max-w-[min(34rem,88%)] flex-col gap-1 rounded-lg px-3 pt-2 pb-1.5',
             outbound ? 'rounded-tr-none bg-chat-bubble-out' : 'rounded-tl-none bg-chat-bubble-in',
             notSent && 'rounded-lg border border-dashed border-border-input bg-bg-1',
-            (m.status === 'NOT_SENT' || m.status === 'FAILED') && 'opacity-80',
+            // Not faded: an opacity over the bubble pulls the 11 px time and status below AA. The label and icon
+            // already say it; the dashed edge marks it without touching the text colour.
+            (m.status === 'NOT_SENT' || m.status === 'FAILED') && 'border border-dashed border-border-input',
           )}
           data-bubble={outbound ? 'out' : 'in'}
         >

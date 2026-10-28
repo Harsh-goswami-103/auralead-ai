@@ -177,3 +177,49 @@ describe('readTable', () => {
     expect(() => readTable(new Uint8Array(0), 'x.csv')).toThrowError(expect.objectContaining({ code: 'EMPTY_FILE' }));
   });
 });
+
+describe('readXlsx on crafted and styled sheets (adversarial review)', () => {
+  it('reads a sheet of unclosed <row> tags in linear time (a 1 KB zip must not freeze the process)', () => {
+    const bytes = excelStyleWorkbook('<row r="1">'.repeat(60_000), []);
+    expect(bytes.length).toBeLessThan(10_000);
+    const started = performance.now();
+    expect(() => readXlsx(bytes)).not.toThrow();
+    expect(performance.now() - started).toBeLessThan(1_500);
+  });
+
+  it('reads unclosed <c> and <si> tags in linear time too', () => {
+    const cells = `<row r="1">${'<c r="A1" t="s">'.repeat(60_000)}`;
+    const shared = '<si><t>x'.repeat(60_000);
+    const started = performance.now();
+    readXlsx(zipSync({ ...unzipSync(excelStyleWorkbook(cells, [])), 'xl/sharedStrings.xml': strToU8(`<sst>${shared}</sst>`) }));
+    expect(performance.now() - started).toBeLessThan(1_500);
+  });
+
+  it('accepts styled blank rows far below the data (Excel writes them) instead of TOO_MANY_ROWS', () => {
+    const sheet = [
+      '<row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c></row>',
+      '<row r="2"><c r="A2" t="inlineStr"><is><t>Acme</t></is></c></row>',
+      `<row r="${SPREADSHEET_LIMITS.maxRows * 2}"><c r="A${SPREADSHEET_LIMITS.maxRows * 2}" s="1"/></row>`,
+      `<row r="${SPREADSHEET_LIMITS.maxRows * 2 + 1}" s="1"/>`,
+    ].join('');
+    expect(readTable(excelStyleWorkbook(sheet, []), 'x.xlsx').rows).toEqual([['Name'], ['Acme']]);
+  });
+
+  it('still refuses a row with a value beyond the row limit', () => {
+    const n = SPREADSHEET_LIMITS.maxRows + 5;
+    expect(() => readXlsx(excelStyleWorkbook(`<row r="${n}"><c r="A${n}"><v>1</v></c></row>`, []))).toThrowError(expect.objectContaining({ code: 'TOO_MANY_ROWS' }));
+  });
+});
+
+describe('readTable CSV row numbers (adversarial review)', () => {
+  it('numbers rows by the line the record starts on, not by the record count', () => {
+    const csv = 'name,phone\n\nAcme,1\n\n\nBeta,"two\nlines"\nGamma,3';
+    const table = readTable(strToU8(csv), 'x.csv');
+    expect(table.rows.map((r) => r[0])).toEqual(['name', 'Acme', 'Beta', 'Gamma']);
+    expect(table.rowNumbers).toEqual([1, 3, 6, 8]);
+  });
+
+  it('counts CRLF and bare CR line ends once', () => {
+    expect(readTable(strToU8('a\r\n\r\nb\rc'), 'x.csv').rowNumbers).toEqual([1, 3, 4]);
+  });
+});

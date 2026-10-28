@@ -112,6 +112,10 @@ export function mergeEmails(lists: ReadonlyArray<readonly ExtractedEmail[]>): Ex
 }
 
 const CONTACT_RE = /contact|reach-?us|get-?in-?touch|enquir|inquir|about|support|connect/i;
+/** An anchor's tag and label are read from this many characters after its `<a`. */
+const ANCHOR_WINDOW = 2_048;
+const MAX_HREF_LENGTH = 2_048;
+const ANCHOR_HREF_RE = /\bhref\s*=\s*["']([^"'#]+)["']/i;
 
 /** Up to two same-host pages the home page links to that look like contact pages. */
 export function contactPageUrls(html: string, pageUrl: string, limit = 2): string[] {
@@ -122,10 +126,21 @@ export function contactPageUrls(html: string, pageUrl: string, limit = 2): strin
     return [];
   }
   const out: string[] = [];
-  for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    if (out.length >= limit) break;
-    const href = m[1]!.trim();
-    const label = m[2]!.replace(/<[^>]+>/g, ' ');
+  // Linear scan: every `<a` looks only at a bounded window after it, so a page of unclosed tags
+  // (hostile or just broken) cannot make the work grow with the square of its size.
+  const anchorStart = /<a\s/gi;
+  while (out.length < limit) {
+    const found = anchorStart.exec(html);
+    if (found === null) break;
+    const start = found.index;
+    const window = html.slice(start, start + ANCHOR_WINDOW);
+    const close = window.indexOf('>');
+    if (close === -1) continue;
+    const href = ANCHOR_HREF_RE.exec(window.slice(0, close))?.[1]?.trim();
+    if (!href || href.length > MAX_HREF_LENGTH) continue;
+    const rest = window.slice(close + 1);
+    const end = rest.toLowerCase().indexOf('</a>');
+    const label = (end === -1 ? rest : rest.slice(0, end)).replace(/<[^>]*>/g, ' ');
     if (!CONTACT_RE.test(href) && !CONTACT_RE.test(label)) continue;
     let url: URL;
     try {
@@ -143,6 +158,11 @@ export function contactPageUrls(html: string, pageUrl: string, limit = 2): strin
 }
 
 type Rule = { allow: boolean; path: string };
+
+/** A rule longer than this, a path longer than this, or more rules than this are not matched or kept. */
+const MAX_RULE_LENGTH = 1_024;
+const MAX_MATCH_PATH_LENGTH = 2_048;
+const MAX_RULES = 2_000;
 
 /** The robots.txt rules that apply to our bot (its own group, else `*`). */
 export function robotsRules(text: string, token = ROBOTS_AGENT_TOKEN): Rule[] {
@@ -171,15 +191,31 @@ export function robotsRules(text: string, token = ROBOTS_AGENT_TOKEN): Rule[] {
   }
   const own = groups.filter((g) => g.agents.some((a) => a.split('/')[0]!.trim() === token));
   const chosen = own.length > 0 ? own : groups.filter((g) => g.agents.includes('*'));
-  return chosen.flatMap((g) => g.rules);
+  return chosen.flatMap((g) => g.rules).slice(0, MAX_RULES);
 }
 
-function ruleMatches(path: string, pattern: string): boolean {
-  if (pattern === '') return false;
+/**
+ * RFC 9309 pattern match without a RegExp: the pattern's `*` wildcards and optional trailing `$`
+ * are matched left to right (each literal piece at its first position after the previous one), so
+ * the work is bounded by pattern times path and a hostile robots.txt cannot cause backtracking.
+ */
+function ruleMatches(rawPath: string, pattern: string): boolean {
+  if (pattern === '' || pattern.length > MAX_RULE_LENGTH) return false;
+  const path = rawPath.length > MAX_MATCH_PATH_LENGTH ? rawPath.slice(0, MAX_MATCH_PATH_LENGTH) : rawPath;
   const anchored = pattern.endsWith('$');
-  const body = anchored ? pattern.slice(0, -1) : pattern;
-  const re = new RegExp(`^${body.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}${anchored ? '$' : ''}`);
-  return re.test(path);
+  const parts = (anchored ? pattern.slice(0, -1) : pattern).split('*');
+  const first = parts[0]!;
+  if (parts.length === 1) return anchored ? path === first : path.startsWith(first);
+  if (!path.startsWith(first)) return false;
+  let pos = first.length;
+  for (let i = 1; i < parts.length - 1; i += 1) {
+    const found = path.indexOf(parts[i]!, pos);
+    if (found === -1) return false;
+    pos = found + parts[i]!.length;
+  }
+  const tail = parts[parts.length - 1]!;
+  if (!anchored) return path.indexOf(tail, pos) !== -1;
+  return path.length - tail.length >= pos && path.endsWith(tail);
 }
 
 /** Whether our bot may fetch `path` (path plus query) under these rules. */

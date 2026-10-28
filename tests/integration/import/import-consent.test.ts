@@ -148,8 +148,8 @@ describe('an honoured consent column', () => {
 });
 
 describe('a consent column that is ignored', () => {
-  async function runIgnored(key: string, ctxKey: 'owner' | 'pooja' | 'employee', body: Parameters<typeof confirmLeadImport>[2], reason: string) {
-    const { ctx, id } = await preview(rowsFor(`Ignored ${key}`, [{ optIn: 'yes', date: '14/09/2026' }]), key, ctxKey);
+  async function runIgnored(key: string, ctxKey: 'owner' | 'pooja' | 'employee', body: Parameters<typeof confirmLeadImport>[2], reason: string, date = '14/09/2026') {
+    const { ctx, id } = await preview(rowsFor(`Ignored ${key}`, [{ optIn: 'yes', date }]), key, ctxKey);
     const result = await confirmLeadImport(ctx, id, body, { storageDir: h.storageDir });
     expect(result.consent).toMatchObject({ honoured: false, reason });
     const stored = await h.db.leadImport.findUniqueOrThrow({ where: { id } });
@@ -184,6 +184,38 @@ describe('a consent column that is ignored', () => {
   it.each(['PUBLIC_DIRECTORY', 'THIRD_PARTY_LIST', undefined] as const)('a %s data source ignores the column', async (dataSource) => {
     await runIgnored(`consent-source-${dataSource ?? 'none'}`.slice(0, 40), 'owner', { mapping: MAP, ...(dataSource ? { dataSource } : {}), consent: CONSENT }, 'DATA_SOURCE_NOT_OWN');
   });
+
+  // The three policy rules stay silent (ADR-129): bad input never turns an ignored column into a 422.
+  // A MEMBER, an operator without consent.import and a business that did not collect the list
+  // itself must get the same quiet "ignored" answer whatever they send, so they cannot probe the
+  // business name (the notice rule), the mapping or the attestation text through error codes.
+  const BAD: Array<[string, Partial<{ mapping: ImportMappingValue; noticeText: string; attestation: string; date: string }>]> = [
+    ['no opt-in column', { mapping: { name: 0, phone: 1, consentDate: 4 } }],
+    ['no opt-in date column', { mapping: { name: 0, phone: 1, consent: 3 } }],
+    ['a notice without the business name', { noticeText: 'We will send you offers on WhatsApp.' }],
+    ['a notice without WhatsApp', { noticeText: `${BUSINESS} will send you offers by SMS.` }],
+    ['an edited attestation', { attestation: 'I did not read this.' }],
+    ['an opt-in date in the future', { date: '2026-12-01' }],
+  ];
+  const WHO: Array<[string, 'owner' | 'pooja' | 'employee', string, Partial<{ dataSource: 'OWN_CUSTOMERS' | 'PUBLIC_DIRECTORY' | 'THIRD_PARTY_LIST' }>]> = [
+    ['a MEMBER', 'pooja', 'NO_CAPABILITY', { dataSource: 'OWN_CUSTOMERS' }],
+    ['an operator without consent.import', 'employee', 'NO_CAPABILITY', { dataSource: 'OWN_CUSTOMERS' }],
+    ['an OWNER with a public directory', 'owner', 'DATA_SOURCE_NOT_OWN', { dataSource: 'PUBLIC_DIRECTORY' }],
+    ['an OWNER with no data source', 'owner', 'DATA_SOURCE_NOT_OWN', {}],
+  ];
+  let n = 0;
+  for (const [who, ctxKey, reason, source] of WHO) {
+    it.each(BAD)(`${who} sending %s is ignored with ${reason}, never 422`, async (_label, over) => {
+      n += 1;
+      await runIgnored(
+        `silent-${n}`,
+        ctxKey,
+        { mapping: over.mapping ?? MAP, ...source, consent: { noticeText: over.noticeText ?? NOTICE, attestation: over.attestation ?? ATTESTATION } },
+        reason,
+        over.date,
+      );
+    });
+  }
 });
 
 describe('a consent request that cannot be honoured as sent (422, still a preview)', () => {

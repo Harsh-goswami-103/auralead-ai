@@ -104,10 +104,11 @@ const ROWS = [
   result({ id: 'res_3', name: 'Lotus Bhojanalaya', importedLeadId: 'lead_9', importedAt: '2026-10-23T06:10:00.000Z' }),
 ];
 
-function renderResults(v: FinderRunView, gates: { importGate?: null | { category: 'permission'; reason: string }; exportGate?: null | { category: 'permission'; reason: string } } = {}) {
+type PermissionGate = null | { category: 'permission'; reason: string };
+function renderResults(v: FinderRunView, gates: { importGate?: PermissionGate; exportGate?: PermissionGate; refreshGate?: PermissionGate } = {}) {
   return render(
     <CsrfProvider token="csrf-token-1">
-      <FinderResults view={v} workspaceSlug="codecraft-web" importGate={gates.importGate ?? null} exportGate={gates.exportGate ?? null} refreshGate={null} />
+      <FinderResults view={v} workspaceSlug="codecraft-web" importGate={gates.importGate ?? null} exportGate={gates.exportGate ?? null} refreshGate={gates.refreshGate ?? null} />
     </CsrfProvider>,
   );
 }
@@ -186,6 +187,109 @@ describe('FinderResults', () => {
     expect(url).toBe('/api/app/finder/runs/run_1/refresh');
     expect(JSON.parse(init.body as string)).toEqual({ workspaceSlug: 'codecraft-web', resultIds: ['res_x'] });
     expect(toast.success).toHaveBeenCalledWith('1 listing refreshed.', expect.anything());
+  });
+
+  it('offers Refresh details for expired rows without ticking anything (up to 10 per request)', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ refreshed: 2, failed: 0 }), { status: 200 }));
+    const gone = (id: string) => result({ id, hasDetails: false, name: null, category: null, phone: null, rating: null, reviewCount: null, address: null, city: null, pincode: null });
+    renderResults(view(Array.from({ length: 12 }, (_, i) => gone(`res_x${i}`))));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh details (10)' }));
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((JSON.parse(init.body as string) as { resultIds: string[] }).resultIds).toEqual(Array.from({ length: 10 }, (_, i) => `res_x${i}`));
+  });
+
+  it('counts only the selections that are on screen: ticks left on another page or filter are not in the button', () => {
+    const { rerender } = renderResults(view(ROWS));
+    fireEvent.click(screen.getByLabelText('Select every result on this page that is not imported'));
+    expect(screen.getByRole('button', { name: 'Import selected (2)' })).toBeTruthy();
+    rerender(
+      <CsrfProvider token="csrf-token-1">
+        <FinderResults view={view([result({ id: 'res_p2' })])} workspaceSlug="codecraft-web" importGate={null} exportGate={null} refreshGate={null} />
+      </CsrfProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Import selected' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Import selected \(/ })).toBeNull();
+  });
+
+  it('an empty result says how the search ended: failed and cancelled searches did not "find no places"', () => {
+    const ended = (status: FinderRunView['run']['status'], errorCode: string | null) => {
+      const v = view([], true, { counts: { all: 0, noWebsite: 0, hasPhone: 0, notImported: 0 } });
+      return { ...v, run: { ...v.run, status, errorCode } };
+    };
+    renderResults(ended('SUCCEEDED', null));
+    expect(screen.getByText('This search found no places.')).toBeTruthy();
+    cleanup();
+    renderResults(ended('FAILED', 'PLACES_KEY_REJECTED'));
+    expect(screen.queryByText('This search found no places.')).toBeNull();
+    expect(screen.getByText(/stopped before any place was found/)).toBeTruthy();
+    cleanup();
+    renderResults(ended('CANCELLED', null));
+    expect(screen.getByText(/cancelled before any place was found/)).toBeTruthy();
+  });
+
+  it('filter chips keep a 44 px touch area on phones', () => {
+    renderResults(view(ROWS));
+    expect((document.querySelector('[data-filter="noWebsite"]') as HTMLElement).className).toContain('max-lg:before:min-h-11');
+  });
+
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  it('a refused import shows the server message with its reference, keeps the ticks, and does not refresh', async () => {
+    fetchMock.mockResolvedValue(json(409, { code: 'CONFLICT', message: 'This run changed. Reload and try again.', reference: 'req_imp_1' }));
+    renderResults(view(ROWS));
+    fireEvent.click(screen.getByLabelText('Select every result on this page that is not imported'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import selected (2)' }));
+    });
+    expect(toast.error).toHaveBeenCalledWith('This run changed. Reload and try again.', { description: 'Reference: req_imp_1' });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Import selected (2)' }).getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('an import that cannot reach the server says so (no reference), and a 500 does the same', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('network down')).mockResolvedValueOnce(json(500, { code: 'INTERNAL', message: 'Something went wrong.', reference: 'req_500' }));
+    renderResults(view(ROWS));
+    fireEvent.click(screen.getByLabelText('Select every result on this page that is not imported'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import selected (2)' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith(expect.stringContaining('could not be reached'), { description: undefined });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import selected (2)' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith('Something went wrong.', { description: 'Reference: req_500' });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('a refused or unreachable Refresh says why and refreshes nothing', async () => {
+    fetchMock.mockResolvedValueOnce(json(403, { code: 'PERMISSION_DENIED', message: 'Not allowed.', reference: 'req_ref_1' })).mockRejectedValueOnce(new TypeError('down'));
+    const expired = result({ id: 'res_x', hasDetails: false, name: null, category: null, phone: null, rating: null, reviewCount: null, address: null, city: null, pincode: null });
+    renderResults(view([expired]));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh details (1)' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith('Not allowed.', { description: 'Reference: req_ref_1' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh details (1)' }));
+    });
+    expect(toast.error).toHaveBeenLastCalledWith(expect.stringContaining('could not be reached'), { description: undefined });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('without finder.run Refresh details is a permission gate: focusable, with its reason, and posts nothing', async () => {
+    const expired = result({ id: 'res_x', hasDetails: false, name: null, category: null, phone: null, rating: null, reviewCount: null, address: null, city: null, pincode: null });
+    renderResults(view([expired]), { refreshGate: { category: 'permission', reason: 'Your assignment here does not include “Run the finder”.' } });
+    const refreshButton = screen.getByRole('button', { name: 'Refresh details (1)' });
+    expect(refreshButton.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('Your assignment here does not include “Run the finder”.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(refreshButton);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('a row whose details an erasure removed says so and can be neither selected nor refreshed', () => {

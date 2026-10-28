@@ -42,7 +42,6 @@ let h: DispatchHarness;
 let owner: AppCtx;
 let operator: AppCtx;
 let templateId: string;
-let placesLeads: Array<{ id: string; phoneE164: string | null }> = [];
 
 beforeAll(async () => {
   h = await createDispatchHarness('lg-consent', () => [
@@ -85,18 +84,22 @@ async function runImport(ctx: AppCtx, rows: string[][], body: Parameters<typeof 
   return { id: created.id, confirmed, done: await h.db.leadImport.findUniqueOrThrow({ where: { id: created.id } }) };
 }
 
+/** A finder run over the DEMO directory and the import of its first `count` results with a phone (each test makes its own). */
+async function importPlacesLeads(count: number) {
+  const { run } = await startFinderRun(operator, StartFinderRunBody.parse({ requestKey: key('finder'), keywords: ['Dental clinic'], locations: ['Indore'], maxPerQuery: 20 }), { keyRing: null });
+  await h.drain();
+  const results = await h.db.leadFinderResult.findMany({ where: { runId: run.id, hasPhone: true }, orderBy: { createdAt: 'asc' }, take: count });
+  expect(results).toHaveLength(count);
+  const imported = await importFinderResults(operator, { runId: run.id, resultIds: results.map((r) => r.id), requestKey: key('finder-import') }, DEPS);
+  const leads = await h.db.lead.findMany({ where: { id: { in: imported.results.map((r) => r.leadId!) } } });
+  return { run, imported, leads };
+}
+
 describe('leads from the Lead Finder', () => {
   it('have no WhatsApp opt-in: a bulk template send skips them NO_WHATSAPP_OPT_IN and sends nothing', async () => {
-    const { run } = await startFinderRun(operator, StartFinderRunBody.parse({ requestKey: key('finder'), keywords: ['Dental clinic'], locations: ['Indore'], maxPerQuery: 20 }), { keyRing: null });
-    await h.drain();
+    const { run, imported, leads } = await importPlacesLeads(3);
     expect(await h.db.leadFinderRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: 'SUCCEEDED', simulated: true });
-    const results = await h.db.leadFinderResult.findMany({ where: { runId: run.id, hasPhone: true }, orderBy: { createdAt: 'asc' }, take: 3 });
-    expect(results).toHaveLength(3);
-
-    const imported = await importFinderResults(operator, { runId: run.id, resultIds: results.map((r) => r.id), requestKey: key('finder-import') }, DEPS);
     expect(imported.counts).toMatchObject({ accepted: 3, rejected: 0, review: 0 });
-    const leads = await h.db.lead.findMany({ where: { id: { in: imported.results.map((r) => r.leadId!) } } });
-    placesLeads = leads.map((l) => ({ id: l.id, phoneE164: l.phoneE164 }));
     expect(leads.map((l) => l.firstSource)).toEqual(['GOOGLE_PLACES', 'GOOGLE_PLACES', 'GOOGLE_PLACES']);
     expect(await h.db.consentRecord.count({ where: { leadId: { in: leads.map((l) => l.id) } } })).toBe(0);
 
@@ -153,7 +156,8 @@ describe('a file import without the attestation', () => {
 
 describe('a file import with the full attestation', () => {
   it('records OPT_IN, reaches an existing Places lead by its number, and never clears a STOP', async () => {
-    const existingPlaces = placesLeads[0]!;
+    // Its own Places lead (the same listing imported before is the same lead), not one left by another test.
+    const existingPlaces = (await importPlacesLeads(1)).leads[0]!;
     const stoppedPhone = '+919825010099';
     // The Stop is older than the opt-in date below: an ordinary re-opt-in would clear it.
     const saved = h.clock.now();

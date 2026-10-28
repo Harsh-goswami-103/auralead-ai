@@ -200,6 +200,23 @@ describe('service questions go to conversation_reply', () => {
     expect(h.wa.calls.at(-1)!.request.body).toBe(sent.body);
   }, 60_000);
 
+  it('every new 24-hour window starts again with the disclosure; a reply inside a running window does not (ADR-122)', async () => {
+    const { lead } = await autoThread();
+    const first = await customerSays(h, lead, 'How long does teeth whitening take?');
+    await h.drain();
+    expect((await onlyReply(first)).body?.startsWith(DISCLOSURE)).toBe(true);
+
+    // One minute inside the window after the previous message: the same window, no second disclosure.
+    const inside = await customerSays(h, lead, 'Do you do root canal treatment?', WINDOW_MS - 60_000);
+    await h.drain();
+    expect((await onlyReply(inside)).body?.startsWith(DISCLOSURE)).toBe(false);
+
+    // Exactly 24 hours after the previous message the window had closed: a new window, the disclosure again.
+    const next = await customerSays(h, lead, 'Do you do aligners?', WINDOW_MS);
+    await h.drain();
+    expect((await onlyReply(next)).body).toBe(`${DISCLOSURE}\n\nRoot canal treatment is a single-tooth treatment, usually completed within 7 days.`);
+  }, 120_000);
+
   it.each([
     ['the model escalates', reply('I am not sure, a colleague will help.', 'service_faq', true), 'MODEL_ESCALATED'],
     ['the model reports another intent', reply('Prices start low!', 'quote_request', false), 'MODEL_ESCALATED'],

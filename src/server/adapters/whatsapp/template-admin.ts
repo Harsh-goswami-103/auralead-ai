@@ -46,7 +46,11 @@ export interface TemplateAdminPort {
   readonly label: 'graph' | 'demo';
   readonly simulated: boolean;
   createTemplate(req: TemplateCreateRequest): Promise<GraphCall<TemplateCreated>>;
-  deleteTemplate(name: string): Promise<GraphCall<{ deleted: true }>>;
+  /**
+   * Deletes one template. Meta deletes every language of a name unless `hsm_id` names one, so the
+   * provider's template id is sent with the name whenever it is known (null: all languages).
+   */
+  deleteTemplate(name: string, providerTemplateId: string | null): Promise<GraphCall<{ deleted: true }>>;
   /** A header sample handle for a DOCUMENT header (resumable upload). */
   uploadHeaderDocument(doc: HeaderDocument): Promise<GraphCall<{ handle: string }>>;
 }
@@ -144,7 +148,7 @@ export function createGraphTemplateAdmin(opts: GraphTemplateAdminOptions): Graph
         if (typeof o.id !== 'string' || o.id.length === 0) return null;
         return { id: o.id, status: typeof o.status === 'string' ? o.status.slice(0, 64) : null, category: typeof o.category === 'string' ? o.category.slice(0, 64) : null };
       }),
-    deleteTemplate: (name) => call('DELETE', `/${opts.wabaId}/message_templates?name=${encodeURIComponent(name)}`, null, (json) => (record(json).success === true ? { deleted: true as const } : null)),
+    deleteTemplate: (name, providerTemplateId) => call('DELETE', `/${opts.wabaId}/message_templates?${providerTemplateId ? `hsm_id=${encodeURIComponent(providerTemplateId)}&` : ''}name=${encodeURIComponent(name)}`, null, (json) => (record(json).success === true ? { deleted: true as const } : null)),
     async uploadHeaderDocument(doc) {
       if (opts.appId === null) return localFailure('the Meta app ID is not set in the WhatsApp setup, so a document header cannot be uploaded');
       if (doc.bytes.length === 0 || doc.bytes.length > HEADER_DOCUMENT_MAX_BYTES) return localFailure('the document is empty or larger than 5 MB');

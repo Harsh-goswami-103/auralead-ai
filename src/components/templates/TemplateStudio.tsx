@@ -9,9 +9,11 @@
  * rejected. Gates (plan §12): permission without `templates.manage`; configuration in LIVE without
  * a stored WhatsApp integration (new drafts) or without a verified one with a WABA ID
  * (submission), with the fix link. While a submission waits for Meta (or the DEMO simulated review),
- * the page re-reads itself every few seconds.
+ * the page re-reads itself on the shared worker-wait schedule (usePolling: it skips a hidden tab,
+ * backs off, and stops with a "taking longer than usual" line instead of polling forever). Opening
+ * the editor (New template, Edit) scrolls it into view and moves focus to it.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CircleAlert, FlaskConical, MessageSquareText, PencilLine, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -24,6 +26,7 @@ import { GatedAction, type Gate } from '@/components/patterns/GatedAction';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { SectionCard } from '@/components/patterns/SectionCard';
 import { ModeChip } from '@/components/patterns/StatusBadge';
+import { usePolling } from '@/components/leads/use-polling';
 import { Button } from '@/components/ui/button';
 import { STUDIO_CATEGORY_LABELS, UTILITY_TRIGGER_LABELS, type TemplateDraft, type UtilityTrigger } from '@/lib/domain/template-authoring';
 import { formatDateTime } from '@/lib/format/date';
@@ -63,8 +66,6 @@ export type StudioView = {
   media: Array<{ id: string; fileName: string; byteSize: number }>;
 };
 
-export const REFRESH_EVERY_MS = 5_000;
-
 const PERMISSION: Gate = { category: 'permission', reason: 'Your assignment here does not include “Manage templates”. A super admin can grant it.' };
 
 function snippet(text: string): string {
@@ -94,11 +95,16 @@ export function TemplateStudio({ workspaceSlug, view }: { workspaceSlug: string;
     : { category: 'configuration', reason: 'Connect an AI integration (Anthropic or OpenAI) to generate copy, or write the template yourself.', fix: { href: integrationsHref, label: 'Open integrations' } };
 
   const waiting = view.templates.some((t) => t.status.trim().toUpperCase() === 'SUBMITTING' || (view.mode === 'demo' && t.origin === 'AUTHORED' && t.status.trim().toUpperCase() === 'PENDING'));
+  const { exhausted } = usePolling(waiting, () => router.refresh());
+  const editorRef = useRef<HTMLDivElement>(null);
+  const editingKey = editing ? (editing.id ?? 'new') : null;
   useEffect(() => {
-    if (!waiting) return;
-    const timer = setInterval(() => router.refresh(), REFRESH_EVERY_MS);
-    return () => clearInterval(timer);
-  }, [waiting, router]);
+    if (editingKey === null) return;
+    // The editor opens above the list: bring it into view and give keyboard and screen-reader users a place.
+    const el = editorRef.current;
+    el?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    el?.focus({ preventScroll: true });
+  }, [editingKey]);
 
   async function submit(t: StudioTemplate) {
     const res = await postJson<{ simulated: boolean; template: { status: string } }>(`/api/app/templates/${encodeURIComponent(t.id)}/submit`, { workspaceSlug }, csrf);
@@ -133,17 +139,26 @@ export function TemplateStudio({ workspaceSlug, view }: { workspaceSlug: string;
         </p>
       ) : null}
 
+      {exhausted ? (
+        <p role="status" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/8 px-3 py-2 text-sm text-fg-1">
+          <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+          {view.mode === 'demo' ? 'The simulated review is taking longer than usual: the worker may not be running. Reload this page later.' : 'Meta is taking longer than usual to answer. This page stopped checking; reload it later or run a template sync.'}
+        </p>
+      ) : null}
+
       {editing ? (
-        <TemplateEditor
-          key={editing.id ?? 'new'}
-          workspaceSlug={workspaceSlug}
-          businessName={view.workspace.name}
-          localGenerator={view.ai.local}
-          aiGate={aiGate}
-          initial={editing}
-          media={view.media}
-          onClose={() => setEditing(null)}
-        />
+        <div ref={editorRef} tabIndex={-1} role="region" aria-label="Template editor" className="scroll-mt-4">
+          <TemplateEditor
+            key={editing.id ?? 'new'}
+            workspaceSlug={workspaceSlug}
+            businessName={view.workspace.name}
+            localGenerator={view.ai.local}
+            aiGate={aiGate}
+            initial={editing}
+            media={view.media}
+            onClose={() => setEditing(null)}
+          />
+        </div>
       ) : null}
 
       <SectionCard
@@ -196,8 +211,8 @@ export function TemplateStudio({ workspaceSlug, view }: { workspaceSlug: string;
                       {t.rejectedReason ? `Meta's reason: ${t.rejectedReason}` : 'Meta rejected this template without a reason in the last sync.'}
                     </p>
                   ) : null}
-                  {status === 'SUBMITTING' ? <p className="text-xs text-fg-2">Waiting for Meta’s answer. This page updates by itself.</p> : null}
-                  {status === 'PENDING' && t.simulated ? <p className="text-xs text-fg-2">Simulated review in progress: the demo answers about 30 seconds after the submission.</p> : null}
+                  {status === 'SUBMITTING' ? <p className="text-xs text-fg-2">{exhausted ? 'Still waiting for Meta’s answer.' : 'Waiting for Meta’s answer. This page updates by itself.'}</p> : null}
+                  {status === 'PENDING' && t.simulated ? <p className="text-xs text-fg-2">Simulated review in progress: the demo answers about 30 seconds after the submission.{exhausted ? '' : ' This page updates by itself.'}</p> : null}
                   {failed?.message ? (
                     <p role="note" className="flex items-start gap-2 text-xs text-fg-1">
                       <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0 text-danger" />

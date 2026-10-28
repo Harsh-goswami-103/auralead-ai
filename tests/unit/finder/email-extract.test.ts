@@ -90,3 +90,39 @@ describe('robots.txt', () => {
     expect(robotsAllows(rules, '/')).toBe(false);
   });
 });
+
+describe('hostile input stays linear (adversarial review)', () => {
+  it('matches a many-wildcard robots rule against a long path without backtracking', () => {
+    const rules = robotsRules(`User-agent: *\nDisallow: /${'*a'.repeat(12)}*b\n`);
+    const path = `/contact-${'a'.repeat(300)}`;
+    const started = performance.now();
+    expect(robotsAllows(rules, path)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
+  it('still matches wildcards in order, with and without the $ anchor', () => {
+    const rules = robotsRules('User-agent: *\nDisallow: /a*b*c$\nDisallow: /x*y\nAllow: /x*y*z\n');
+    expect(robotsAllows(rules, '/aXbYc')).toBe(false);
+    expect(robotsAllows(rules, '/aXbYcZ')).toBe(true);
+    expect(robotsAllows(rules, '/acb')).toBe(true);
+    expect(robotsAllows(rules, '/x1y')).toBe(false);
+    expect(robotsAllows(rules, '/x1y2z')).toBe(true);
+    expect(robotsAllows(robotsRules('User-agent: *\nDisallow: /p*$\n'), '/p')).toBe(false);
+    expect(robotsAllows(robotsRules('User-agent: *\nDisallow: /ab*b$\n'), '/ab')).toBe(true);
+  });
+
+  it('ignores an absurdly long rule and keeps a bounded number of rules', () => {
+    const long = `User-agent: *\nDisallow: /${'a*'.repeat(5000)}\n`;
+    expect(robotsAllows(robotsRules(long), '/aaaa')).toBe(true);
+    const many = `User-agent: *\n${Array.from({ length: 50_000 }, (_, i) => `Disallow: /p${i}`).join('\n')}\n`;
+    expect(robotsRules(many).length).toBeLessThanOrEqual(2_000);
+  });
+
+  it('finds contact links on a page of many unclosed <a> tags in linear time', () => {
+    const html = `${'<a href="/x" '.repeat(80_000)}>`;
+    const started = performance.now();
+    expect(contactPageUrls(html, 'https://shop.in/')).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(contactPageUrls(`<a href="/${'c'.repeat(5000)}-contact">x</a><a href="/contact">Contact</a>`, 'https://shop.in/')).toEqual(['https://shop.in/contact']);
+  });
+});

@@ -2,8 +2,11 @@
 
 export type CellValue = string | number | boolean | null | undefined;
 
-/** One sheet as a rectangle of strings: row 0 is usually the header. */
-export type Table = { sheetName: string; rows: string[][] };
+/**
+ * One sheet as a rectangle of strings: row 0 is usually the header. `rowNumbers` (CSV only) is the
+ * physical line each row starts on; without it row i is sheet row i + 1.
+ */
+export type Table = { sheetName: string; rows: string[][]; rowNumbers?: number[] };
 
 export const SPREADSHEET_LIMITS = {
   /** Largest upload accepted at all. */

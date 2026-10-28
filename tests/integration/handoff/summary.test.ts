@@ -98,6 +98,7 @@ describe('DEMO: the labelled local generator', () => {
 
     const audit = await db.auditEvent.findFirstOrThrow({ where: { action: 'lead.handoff.summary', targetId: lead.id } });
     expect(audit.summary).toMatchObject({ handoffId, status: 'READY', generatorLabel: 'local-deterministic', errorCode: null, violationRules: [] });
+    expect(audit.result).toBe('SUCCESS');
     expect(JSON.stringify(audit.summary)).not.toContain('quotation');
   });
 
@@ -160,6 +161,8 @@ describe('LIVE', () => {
     await makeLive(db, WS_A);
     expect(await runJobs('live', () => deps)).toBe(1);
     expect(await db.leadHandoff.findUniqueOrThrow({ where: { id: handoffId } })).toMatchObject({ summaryStatus: 'NOT_CONFIGURED', summary: null, summaryGeneratorLabel: null });
+    // The activity feed shows a Failed pill: no summary was written.
+    expect((await db.auditEvent.findFirstOrThrow({ where: { action: 'lead.handoff.summary', targetId: lead.id } })).result).toBe('FAILED');
     expect(t.captured).toHaveLength(0);
   });
 
@@ -197,6 +200,7 @@ describe('LIVE', () => {
     const row = await db.leadHandoff.findUniqueOrThrow({ where: { id: handoffId } });
     expect(row).toMatchObject({ summaryStatus: 'FAILED', summary: null, summaryGeneratorLabel: 'anthropic' });
     const audit = await db.auditEvent.findFirstOrThrow({ where: { action: 'lead.handoff.summary', targetId: lead.id } });
+    expect(audit.result).toBe('FAILED');
     expect(audit.summary).toMatchObject({ status: 'FAILED', errorCode: 'OUTPUT_POLICY', violationRules: expect.arrayContaining(['promised:CURRENCY_AMOUNT', 'promised:PERCENTAGE', 'nextStep:URL']) });
     expect(JSON.stringify(audit.summary)).not.toContain('pay.example');
   });

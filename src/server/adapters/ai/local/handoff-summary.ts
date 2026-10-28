@@ -52,6 +52,22 @@ function listOf(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
+/**
+ * The services the customer's words point at. A service counts only by the words it shares with
+ * the customer; the best-matching one is named. When several services tie (the customer said
+ * "website" and two services have it in their name) none is claimed: the shared word is reported
+ * as a kind of service instead, so the summary never says they asked about what they did not.
+ */
+function servicesAskedAbout(catalog: Data['catalog'], said: ReadonlySet<string>): string[] {
+  const scored = catalog.map((s) => ({ name: s.name, hits: [...words(s.name)].filter((w) => said.has(w)) })).filter((s) => s.hits.length > 0);
+  if (scored.length === 0) return [];
+  const best = Math.max(...scored.map((s) => s.hits.length));
+  const top = scored.filter((s) => s.hits.length === best);
+  if (top.length === 1) return [top[0]!.name];
+  const shared = top[0]!.hits.filter((w) => top.every((s) => s.hits.includes(w)));
+  return [`${shared[0] ?? top[0]!.hits[0]!} services`];
+}
+
 function asked(data: Data, seed: number): string {
   const inbound = data.messages.filter((m) => m.from === 'customer');
   if (inbound.length === 0) return 'The customer has not written yet.';
@@ -60,7 +76,7 @@ function asked(data: Data, seed: number): string {
     .join('\n')
     .replace(LINKS, ' ');
   const said = words(text);
-  const services = data.catalog.filter((s) => [...words(s.name)].some((w) => said.has(w))).map((s) => s.name);
+  const services = servicesAskedAbout(data.catalog, said);
   const topics = TOPICS.filter((t) => t.pattern.test(text)).map((t) => t.label);
   const named = [...services, ...topics].slice(0, MAX_TOPICS);
   const opener = `${OPENERS[seed % OPENERS.length]} ${plural(inbound.length, 'message', 'messages')}`;

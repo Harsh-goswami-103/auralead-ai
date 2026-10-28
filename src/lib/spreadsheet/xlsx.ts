@@ -118,12 +118,70 @@ function decodeEntities(value: string): string {
   });
 }
 
-/** Concatenated text of every `<t>` in a string item, without phonetic (`rPh`) runs. */
-function stringItemText(xml: string): string {
-  const body = xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '');
-  let out = '';
-  for (const m of body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>|<t\b[^>]*\/>/g)) out += decodeEntities(m[1] ?? '');
-  return out;
+type XmlTag = { name: string; close: boolean; self: boolean; raw: string; text: string };
+
+/** Most tags read from one part: far above any workbook within SPREADSHEET_LIMITS, and a cap on crafted ones. */
+const MAX_TAGS_PER_PART = 3_000_000;
+const MAX_SHARED_STRINGS = 1_000_000;
+
+/**
+ * A single forward pass over the tags of an XML part (indexOf only, no backtracking regex), so the
+ * cost is linear in the part's size whatever closing tags are missing. `text` is what precedes the
+ * tag. Comments, processing instructions and declarations are skipped.
+ */
+function* xmlTags(xml: string): Generator<XmlTag> {
+  let pos = 0;
+  let count = 0;
+  for (;;) {
+    const lt = xml.indexOf('<', pos);
+    if (lt === -1) return;
+    const gt = xml.indexOf('>', lt);
+    if (gt === -1) return;
+    const text = xml.slice(pos, lt);
+    pos = gt + 1;
+    const first = xml.charCodeAt(lt + 1);
+    if (first === 33 /* ! */ || first === 63 /* ? */) continue;
+    count += 1;
+    if (count > MAX_TAGS_PER_PART) throw new SpreadsheetError('TOO_LARGE', 'This workbook is too large to import.');
+    const close = first === 47; /* / */
+    const nameStart = lt + (close ? 2 : 1);
+    let end = nameStart;
+    while (end < gt) {
+      const c = xml.charCodeAt(end);
+      if (c === 32 || c === 9 || c === 10 || c === 13 || c === 47) break;
+      end += 1;
+    }
+    yield { name: xml.slice(nameStart, end), close, self: !close && xml.charCodeAt(gt - 1) === 47, raw: xml.slice(lt, gt + 1), text };
+  }
+}
+
+/** The text of each string item (`<si>`): joined `<t>` runs decoded, phonetic (`rPh`) runs dropped. */
+function sharedStringItems(xml: string): string[] {
+  const items: string[] = [];
+  let current: string | null = null;
+  let phonetic = false;
+  const finish = () => {
+    if (current !== null) items.push(current);
+    current = null;
+    phonetic = false;
+  };
+  for (const tag of xmlTags(xml)) {
+    if (tag.name === 'si') {
+      finish();
+      if (items.length >= MAX_SHARED_STRINGS) throw new SpreadsheetError('TOO_LARGE', 'This workbook is too large to import.');
+      if (tag.close) continue;
+      if (tag.self) items.push('');
+      else current = '';
+    } else if (current === null) {
+      continue;
+    } else if (tag.name === 'rPh') {
+      phonetic = !tag.close && !tag.self;
+    } else if (tag.name === 't' && tag.close && !phonetic) {
+      current += decodeEntities(tag.text);
+    }
+  }
+  finish();
+  return items;
 }
 
 function attr(tag: string, name: string): string | undefined {
@@ -198,40 +256,81 @@ export function readXlsx(bytes: Uint8Array): Table {
   const sheetBytes = files[sheetPath];
   if (!sheetBytes) throw new SpreadsheetError('NOT_A_WORKBOOK', 'The first sheet of the workbook is missing.');
 
-  const shared: string[] = [];
   const sharedPart = files[sharedPath];
-  if (sharedPart) {
-    for (const m of strFromU8(sharedPart).matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>|<si\b[^>]*\/>/g)) shared.push(stringItemText(m[1] ?? ''));
-  }
+  const shared = sharedPart ? sharedStringItems(strFromU8(sharedPart)) : [];
 
-  const rows: string[][] = [];
-  const sheetXml = strFromU8(sheetBytes);
-  for (const rowMatch of sheetXml.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
-    const rowNumber = Number(attr(`<row${rowMatch[1]}>`, 'r') ?? rows.length + 1);
-    if (!Number.isInteger(rowNumber) || rowNumber < 1) continue;
-    if (rowNumber > SPREADSHEET_LIMITS.maxRows) throw new SpreadsheetError('TOO_MANY_ROWS', `A sheet can hold at most ${SPREADSHEET_LIMITS.maxRows} rows.`);
-    const row: string[] = [];
-    let next = 0;
-    for (const cell of (rowMatch[2] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const tag = `<c${cell[1]}>`;
-      const ref = attr(tag, 'r');
-      const col = ref ? columnIndex(ref) : next;
-      next = col + 1;
-      if (col < 0 || col >= SPREADSHEET_LIMITS.maxColumns) continue;
-      const type = attr(tag, 't');
-      const inner = cell[2] ?? '';
-      const raw = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(inner)?.[1];
+  const sparse = new Map<number, string[]>();
+  let lastRow = 0;
+  let maxRow = 0;
+  let row: string[] | null = null;
+  let rowNumber = 0;
+  let rowHasValue = false;
+  let nextCol = 0;
+  let cell: { col: number; type: string | undefined; raw: string | undefined; inline: string } | null = null;
+  let inInline = false;
+  let phonetic = false;
+  const finishCell = () => {
+    if (cell !== null && row !== null && cell.col >= 0 && cell.col < SPREADSHEET_LIMITS.maxColumns) {
+      const { col, type, raw } = cell;
       let value = '';
       if (type === 's') value = shared[Number(raw)] ?? '';
-      else if (type === 'inlineStr') value = stringItemText(/<is\b[^>]*>([\s\S]*?)<\/is>/.exec(inner)?.[1] ?? '');
+      else if (type === 'inlineStr') value = cell.inline;
       else if (type === 'b') value = raw === '1' ? 'TRUE' : 'FALSE';
       else if (raw !== undefined) value = decodeEntities(raw);
       while (row.length < col) row.push('');
       row[col] = value;
+      if (value.trim() !== '') rowHasValue = true;
     }
-    while (rows.length < rowNumber - 1) rows.push([]);
-    rows[rowNumber - 1] = row;
+    cell = null;
+    inInline = false;
+    phonetic = false;
+  };
+  const finishRow = () => {
+    finishCell();
+    // A row with no value (Excel writes styled blank rows far down a sheet) is neither counted nor kept.
+    if (row !== null && rowHasValue) {
+      if (rowNumber > SPREADSHEET_LIMITS.maxRows) throw new SpreadsheetError('TOO_MANY_ROWS', `A sheet can hold at most ${SPREADSHEET_LIMITS.maxRows} rows.`);
+      sparse.set(rowNumber, row);
+      maxRow = Math.max(maxRow, rowNumber);
+    }
+    row = null;
+    rowHasValue = false;
+  };
+  for (const tag of xmlTags(strFromU8(sheetBytes))) {
+    if (tag.name === 'row') {
+      finishRow();
+      if (tag.close) continue;
+      const n = Number(attr(tag.raw, 'r') ?? lastRow + 1);
+      if (!Number.isInteger(n) || n < 1) continue;
+      lastRow = n;
+      rowNumber = n;
+      nextCol = 0;
+      row = tag.self ? null : [];
+    } else if (row === null) {
+      continue;
+    } else if (tag.name === 'c') {
+      finishCell();
+      if (tag.close) continue;
+      const ref = attr(tag.raw, 'r');
+      const col = ref ? columnIndex(ref) : nextCol;
+      nextCol = col + 1;
+      cell = { col, type: attr(tag.raw, 't'), raw: undefined, inline: '' };
+      if (tag.self) finishCell();
+    } else if (cell === null) {
+      continue;
+    } else if (tag.name === 'v') {
+      if (tag.close) cell.raw = tag.text;
+    } else if (tag.name === 'is') {
+      inInline = !tag.close && !tag.self;
+    } else if (tag.name === 'rPh') {
+      phonetic = !tag.close && !tag.self;
+    } else if (tag.name === 't' && tag.close && inInline && !phonetic) {
+      cell.inline += decodeEntities(tag.text);
+    }
   }
+  finishRow();
+  const rows: string[][] = [];
+  for (let n = 1; n <= maxRow; n += 1) rows.push(sparse.get(n) ?? []);
   const width = Math.max(0, ...rows.map((r) => r.length));
   return { sheetName, rows: rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? '')) };
 }

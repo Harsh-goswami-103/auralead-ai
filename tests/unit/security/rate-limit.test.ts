@@ -119,6 +119,7 @@ describe('plan §9 policies', () => {
       finderRun: { limit: 10, windowMs: 3_600_000 },
       leadImport: { limit: 10, windowMs: 60_000 },
       templateSubmit: { limit: 20, windowMs: 3_600_000 },
+      mediaUpload: { limit: 10, windowMs: 60_000 },
       handoff: { limit: 30, windowMs: 60_000 },
     });
   });

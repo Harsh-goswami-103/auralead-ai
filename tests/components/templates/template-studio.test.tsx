@@ -13,7 +13,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import { CsrfProvider } from '@/components/patterns/csrf';
-import { REFRESH_EVERY_MS, TemplateStudio, type StudioTemplate, type StudioView } from '@/components/templates/TemplateStudio';
+import { TemplateStudio, type StudioTemplate, type StudioView } from '@/components/templates/TemplateStudio';
 import { defaultButtons } from '@/lib/domain/template-authoring';
 
 const refresh = vi.fn();
@@ -183,12 +183,43 @@ describe('TemplateStudio', () => {
   it('re-reads the page while a submission waits for Meta or the DEMO review, and only then', () => {
     vi.useFakeTimers();
     const { unmount } = renderStudio(view({ templates: [template({ status: 'PENDING', editable: false, submittable: false, deletable: false })] }));
-    vi.advanceTimersByTime(REFRESH_EVERY_MS * 2);
+    vi.advanceTimersByTime(4_000);
     expect(refresh).toHaveBeenCalledTimes(2);
     unmount();
     refresh.mockReset();
     renderStudio(view());
-    vi.advanceTimersByTime(REFRESH_EVERY_MS * 2);
+    vi.advanceTimersByTime(60_000);
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not poll a hidden tab, and stops with a "taking longer than usual" line instead of polling forever', () => {
+    vi.useFakeTimers();
+    const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    renderStudio(view({ templates: [template({ status: 'SUBMITTING', simulated: false, editable: false, submittable: false, deletable: false })], mode: 'live' }));
+    vi.advanceTimersByTime(30_000);
+    expect(refresh).not.toHaveBeenCalled();
+    hidden.mockReturnValue('visible');
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    const calls = refresh.mock.calls.length;
+    expect(calls).toBeGreaterThan(0);
+    expect(calls).toBeLessThanOrEqual(40);
+    expect(screen.getByRole('status').textContent).toContain('taking longer than usual');
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    expect(refresh.mock.calls.length).toBe(calls);
+    hidden.mockRestore();
+  });
+
+  it('opening the editor moves focus to it and scrolls it into view', () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderStudio(view());
+    fireEvent.click(within(row('website_intro')).getByRole('button', { name: 'Edit' }));
+    const editor = screen.getByRole('region', { name: 'Template editor' });
+    expect(document.activeElement).toBe(editor);
+    expect(scroll).toHaveBeenCalled();
   });
 });

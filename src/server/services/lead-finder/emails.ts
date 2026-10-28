@@ -79,6 +79,20 @@ export async function crawlSiteEmails(website: string, blacklist: readonly strin
     return answer;
   };
 
+  const servedAllowed = async (requested: URL, finalUrl: string): Promise<'ALLOWED' | 'BLOCKED' | 'FAILED'> => {
+    let served: URL;
+    try {
+      served = new URL(finalUrl);
+    } catch {
+      return 'FAILED';
+    }
+    if (served.origin === requested.origin) return 'ALLOWED';
+    const answer = await rulesFor(served);
+    if (answer.kind === 'failed') return 'FAILED';
+    if (answer.kind === 'unreachable' || !robotsAllows(answer.rules, pathOf(served))) return 'BLOCKED';
+    return 'ALLOWED';
+  };
+
   const startRules = await rulesFor(start);
   if (startRules.kind === 'unreachable') return { status: 'BLOCKED', emails: [], pagesRead: 0 };
   if (startRules.kind === 'failed') return { status: 'FAILED', emails: [], pagesRead: 0 };
@@ -89,6 +103,10 @@ export async function crawlSiteEmails(website: string, blacklist: readonly strin
   } catch {
     return { status: 'FAILED', emails: [], pagesRead: 0 };
   }
+  // The fetcher follows redirects: a page served from another origin is read only if that origin's
+  // robots.txt allows it too (ADR-118: robots.txt is honoured before any page is read).
+  const homeServed = await servedAllowed(start, home.finalUrl);
+  if (homeServed !== 'ALLOWED') return { status: homeServed, emails: [], pagesRead: 0 };
   const found: ExtractedEmail[][] = [keepEmails(emailCandidates(home.body), home.finalUrl, blacklist)];
   let pagesRead = 1;
   let contactPages = 0;
@@ -100,6 +118,7 @@ export async function crawlSiteEmails(website: string, blacklist: readonly strin
     contactPages += 1;
     try {
       const res = await fetchPage(page, signal);
+      if ((await servedAllowed(url, res.finalUrl)) !== 'ALLOWED') continue;
       pagesRead += 1;
       found.push(keepEmails(emailCandidates(res.body), res.finalUrl, blacklist));
     } catch {
