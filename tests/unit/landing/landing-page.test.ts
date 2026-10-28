@@ -108,6 +108,37 @@ describe('landing page', () => {
     expect(t).toContain('Suppressed at once; queued outreach is cancelled.');
   });
 
+  it('presents the lead-gen flow in order: Find, Chat, Hand over, Quote (ADR-126)', () => {
+    for (const html of [demo, live]) {
+      const start = html.indexOf('data-landing-flow');
+      expect(start).toBeGreaterThan(0);
+      const list = html.slice(start, html.indexOf('</ol>', start));
+      const titles = [...list.matchAll(/<h3[^>]*>(.*?)<\/h3>/g)].map((m) => text(m[1]!).trim());
+      expect(titles).toEqual(['Find', 'Chat', 'Hand over', 'Quote']);
+      const t = text(list);
+      expect(t).toContain('Google Places');
+      expect(t).toContain('24-hour window');
+      expect(t).toContain('price list');
+      // The flow sits in the how-it-works section, before the pipeline stages.
+      expect(start).toBeGreaterThan(html.indexOf('id="how-it-works"'));
+      expect(start).toBeLessThan(html.indexOf('data-stage="capture"'));
+    }
+  });
+
+  it('names a Google Places search and Excel import as capture sources', () => {
+    for (const html of [demo, live]) {
+      const start = html.indexOf('data-stage="capture"');
+      const capture = text(html.slice(start, html.indexOf('data-stage="normalize"')));
+      expect(capture).toContain('Google Places search');
+      expect(capture).toMatch(/Excel or CSV import/);
+      expect(text(html)).toContain('Excel and CSV import');
+    }
+  });
+
+  it('never calls lead data "scraped"', () => {
+    for (const html of [demo, live]) expect(text(html)).not.toMatch(/scrap/i);
+  });
+
   it('says nothing about demos, simulators or the mode in LIVE (ADR-116)', () => {
     const t = text(live);
     expect(t).not.toMatch(/\bdemo|simulat|fictitious|seeded|LIVE mode|DEMO and LIVE/i);

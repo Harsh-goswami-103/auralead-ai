@@ -31,7 +31,14 @@ const EVENTS = [
   { value: 'start', label: 'Sends START' },
 ] as const;
 
-export function DemoSimulator(props: { leads: Array<{ id: string; displayName: string; phoneLast4: string }>; fixedLeadId?: string; canSimulate: boolean; compact?: boolean }) {
+export function DemoSimulator(props: {
+  leads: Array<{ id: string; displayName: string; phoneLast4: string }>;
+  fixedLeadId?: string;
+  canSimulate: boolean;
+  compact?: boolean;
+  /** The operator's assigned workspace (`[ws]` inbox, ADR-121); omitted in the client panel. */
+  workspaceSlug?: string;
+}) {
   const router = useRouter();
   const csrf = useCsrfToken();
   const id = useId();
@@ -48,7 +55,7 @@ export function DemoSimulator(props: { leads: Array<{ id: string; displayName: s
   async function simulate() {
     setFailure(null);
     setNotice(null);
-    const res = await postAction('/api/webhooks/whatsapp/simulate', { leadId, event, ...(event === 'text' ? { text } : {}) }, csrf);
+    const res = await postAction('/api/webhooks/whatsapp/simulate', { leadId, event, ...(event === 'text' ? { text } : {}), ...(props.workspaceSlug ? { workspaceSlug: props.workspaceSlug } : {}) }, csrf);
     if (!res.ok) {
       setFailure({ message: res.message, reference: res.reference });
       return;

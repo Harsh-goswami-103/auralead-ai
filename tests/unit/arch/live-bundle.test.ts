@@ -97,7 +97,11 @@ describe('LIVE bundle excludes the role switcher', () => {
   });
 
   it('the switcher offers exactly the server-side demo personas', () => {
+    // Four personas: the presentation client (ADR-126) joined the three of T06.
+    expect([...DEMO_PERSONA_KEYS]).toEqual(['user', 'client', 'employee', 'admin']);
     expect(SWITCHER_PERSONAS.map((p) => p.key)).toEqual([...DEMO_PERSONA_KEYS]);
+    // e2e names the workspace owner by /^Workspace owner/: no other label may start with it.
+    expect(SWITCHER_PERSONAS.filter((p) => p.label.startsWith('Workspace owner')).map((p) => p.key)).toEqual(['user']);
     for (const p of SWITCHER_PERSONAS) {
       expect(p.label).toBe(DEMO_PERSONAS[p.key].label);
       expect(p.home).toBe(DEMO_PERSONAS[p.key].home);

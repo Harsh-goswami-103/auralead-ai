@@ -8,7 +8,8 @@
  * literal comparison must sit next to each import for the bundler to drop it.
  *
  * The /login persona list loads on the client only, so until its chunk arrives the card shows
- * three persona-card placeholders of the same size. That avoids an empty card and a layout jump.
+ * one persona-card placeholder per DEMO persona (four), of the same size. That avoids an empty
+ * card and a layout jump.
  * The placeholders use the shared Skeleton shimmer (static under reduced motion), are aria-hidden
  * and carry no live region; the list's buttons are the content.
  */
@@ -18,7 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 function PersonaListPlaceholder() {
   return (
     <div aria-hidden="true" className="flex flex-col gap-2.5">
-      {[0, 1, 2].map((i) => (
+      {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex min-h-16 items-center gap-3 rounded-xl border border-border-strong bg-bg-2/80 px-3 py-2.5">
           <Skeleton className="size-11 shrink-0 rounded-lg bg-bg-3/80" />
           <div className="flex flex-1 flex-col gap-2">

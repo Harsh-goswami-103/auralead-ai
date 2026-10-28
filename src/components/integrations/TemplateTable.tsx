@@ -2,9 +2,10 @@
  * Synced WhatsApp templates (T28, T32; ADR-17, P12): name, language, the raw category and status
  * strings exactly as WhatsApp Manager reports them (status as icon + the raw label), the intent each
  * template is mapped to, its positional variables, whether this app can send it, and the sync
- * time. With `integrations.manage` each row opens its mapping form (intent, variable sources,
- * quick-reply buttons). Templates are authored and approved in WhatsApp Manager, never here. The
- * table scrolls inside its card. Server-safe (the mapping form is a client island).
+ * time ("Not synced yet" for a template that was never synced: ADR-123 lets the template studio
+ * write templates before Meta has them). With `integrations.manage` each row opens its mapping form
+ * (intent, variable sources, quick-reply buttons). The table scrolls inside its card. Server-safe
+ * (the mapping form is a client island).
  */
 import { formatDateTime } from '@/lib/format/date';
 import { StatusChip } from './StatusChip';
@@ -19,7 +20,7 @@ export type TemplateRow = {
   status: string;
   intent: string | null;
   variables: string[];
-  syncedAt: Date;
+  syncedAt: Date | null;
   sources?: Record<string, string>;
   quickReplies?: Array<{ index: number; text: string; intent: string | null }>;
   notSendable?: string | null;
@@ -76,7 +77,7 @@ export function TemplateTable({ templates, timeZone, mapping }: { templates: Tem
               <td className="px-3 py-2 font-mono text-xs text-fg-1">{t.category}</td>
               <td className="px-3 py-2 text-fg-1">{t.intent ? (INTENT_LABELS[t.intent] ?? t.intent) : <span className="text-fg-2">Not mapped</span>}</td>
               <td className="px-3 py-2 text-fg-1">{t.variables.length === 0 ? <span className="text-fg-2">None</span> : t.variables.map((v) => `{{${v}}}`).join(' ')}</td>
-              <td className="px-3 py-2 text-xs whitespace-nowrap text-fg-2">{formatDateTime(t.syncedAt, timeZone)}</td>
+              <td className="px-3 py-2 text-xs whitespace-nowrap text-fg-2">{t.syncedAt ? formatDateTime(t.syncedAt, timeZone) : 'Not synced yet'}</td>
             </tr>
           ))}
         </tbody>

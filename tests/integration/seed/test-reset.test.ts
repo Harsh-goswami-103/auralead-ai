@@ -1,7 +1,8 @@
 /**
  * POST /api/test/reset (A40): with DEMO + AURALEAD_TEST_CONTROL=1 + the token it wipes and
  * reseeds to exactly the deterministic fixtures (anchored at SEED_NOW, else the request clock
- * floored to the hour); without the token it is a plain 404 and changes nothing.
+ * floored to the hour); without the token it is a plain 404 and changes nothing. The reference
+ * seed uses the route's config, so the presentation pack's contact keys use the same pepper.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@/generated/prisma/client';
@@ -18,6 +19,8 @@ const TOKEN = 'reset-token-'.padEnd(40, 'x');
 const NOW = '2026-10-15T06:42:10.000Z';
 const ANCHOR = new Date('2026-10-15T06:00:00.000Z');
 
+const CONFIG = testConfig('demo', { AURALEAD_TEST_CONTROL: '1', TEST_CONTROL_TOKEN: TOKEN });
+
 let target: TestDb;
 let reference: TestDb;
 let db: PrismaClient;
@@ -28,11 +31,11 @@ beforeAll(async () => {
   reference = await createTestDb({ label: 'test-reset-ref' });
   db = target.client();
   const ref = reference.client();
-  await seedDemo(ref, { config: { mode: 'demo' }, now: ANCHOR });
+  await seedDemo(ref, { config: CONFIG, now: ANCHOR });
   expected = (await contentHash(ref)).hash;
   await seedDemo(db, { config: { mode: 'demo' }, now: new Date('2026-09-01T00:00:00.000Z') });
   await db.workspace.update({ where: { id: seedId('workspace', 'ironpulse-fitness') }, data: { automationPaused: true } });
-  useRuntime(db, testConfig('demo', { AURALEAD_TEST_CONTROL: '1', TEST_CONTROL_TOKEN: TOKEN }), new FixedClock(NOW));
+  useRuntime(db, CONFIG, new FixedClock(NOW));
 });
 
 afterAll(async () => {
@@ -54,7 +57,7 @@ describe('/api/test/reset', () => {
   it('reseeds to the deterministic fixtures anchored at the clock floored to the hour', async () => {
     const res = await POST(makeRequest('/api/test/reset', { method: 'POST', body: {}, headers: { [TEST_CONTROL_HEADER]: TOKEN } }), noParams);
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ reset: true, anchorAt: ANCHOR.toISOString(), workspaces: 5 });
+    expect(await res.json()).toMatchObject({ reset: true, anchorAt: ANCHOR.toISOString(), workspaces: 6 });
     expect((await contentHash(db)).hash).toBe(expected);
   });
 });

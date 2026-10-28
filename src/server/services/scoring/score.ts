@@ -7,8 +7,13 @@
  *   listed in `unknownInputs`, never treated as a negative signal).
  * - The score is the sum of the reason points, so it is always explained exactly, and it stays in
  *   0..100 because each reason is capped by its weight and the weights sum to 100.
- * - Website: only REACHABLE and VERIFIED_ABSENT are known (G-SSRF-2). UNKNOWN, PRESENT_UNVERIFIED,
- *   UNREACHABLE and BLOCKED say nothing about the business and are unknown.
+ * - Website: only REACHABLE, VERIFIED_ABSENT and NOT_LISTED are known (G-SSRF-2, ADR-119).
+ *   NOT_LISTED (the source listing says there is no website) scores like VERIFIED_ABSENT.
+ *   UNKNOWN, PRESENT_UNVERIFIED, UNREACHABLE and BLOCKED say nothing about the business and are
+ *   unknown.
+ * - Source intent: forms and inbound messages are known 1; a Maps listing (the extension or a
+ *   Google Places search, ADR-118) is a known 0; a manual entry or a file import is unknown, each
+ *   with its own reason code.
  * - The result names the config version it was computed with, so a stored score stays
  *   reproducible after the config changes.
  */
@@ -43,6 +48,7 @@ export type ScoreResult = {
 type Factor = { known: true; fraction: number; label: string } | { known: false; reasonCode: string; label: string };
 
 const FORM_OR_INBOUND: ReadonlySet<LeadSource> = new Set(['GOOGLE_SHEETS', 'META_ADS', 'WHATSAPP_INBOUND', 'EMAIL_INBOUND']);
+const MAPS_LISTING: ReadonlySet<LeadSource> = new Set(['GMAPS_EXTENSION', 'GOOGLE_PLACES']);
 
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
@@ -55,6 +61,7 @@ function norm(s: string): string {
 function website(status: WebsiteStatus, preference: 'PRESENT' | 'ABSENT'): Factor {
   if (status === 'REACHABLE') return { known: true, fraction: preference === 'PRESENT' ? 1 : 0, label: 'Website reachable' };
   if (status === 'VERIFIED_ABSENT') return { known: true, fraction: preference === 'ABSENT' ? 1 : 0, label: 'No website (verified by a person)' };
+  if (status === 'NOT_LISTED') return { known: true, fraction: preference === 'ABSENT' ? 1 : 0, label: 'No website listed' };
   const labels: Record<string, string> = {
     UNKNOWN: 'Website: unknown, not verified absent',
     PRESENT_UNVERIFIED: 'Website: listed, not checked yet',
@@ -79,7 +86,8 @@ function factors(input: ScoreInput, config: ScoringConfig): Record<ScoreInputNam
 
   let sourceIntent: Factor;
   if (FORM_OR_INBOUND.has(input.firstSource)) sourceIntent = { known: true, fraction: 1, label: 'Came in through a form or an inbound message' };
-  else if (input.firstSource === 'GMAPS_EXTENSION') sourceIntent = { known: true, fraction: 0, label: 'Found on a Maps listing; no inbound action' };
+  else if (MAPS_LISTING.has(input.firstSource)) sourceIntent = { known: true, fraction: 0, label: 'Found on a Maps listing; no inbound action' };
+  else if (input.firstSource === 'FILE_IMPORT') sourceIntent = { known: false, reasonCode: 'SOURCE_FILE_IMPORT', label: 'Source: imported from a file' };
   else sourceIntent = { known: false, reasonCode: 'SOURCE_MANUAL', label: 'Source: added by hand' };
 
   return {

@@ -74,7 +74,7 @@ export default async function ExtensionPage({ params }: { params: Promise<{ ws: 
       <PageHeader
         eyebrow={name}
         title="Maps extension"
-        description="Businesses scraped with the Google Maps extension arrive here in batches, each signed with an ingestion-only token of this workspace. The website configures and monitors the extension; it never controls the browser."
+        description="Businesses collected with the Google Maps extension arrive here in batches, each signed with an ingestion-only token of this workspace. The website configures and monitors the extension; it never controls the browser."
       />
       <WorkspaceSectionNav slug={ws} workspaceName={name} />
       {view === null ? (

@@ -115,7 +115,27 @@ describe('plan §9 policies', () => {
       appsScript: { limit: 120, windowMs: 60_000 },
       metaWebhook: { limit: 600, windowMs: 60_000 },
       aiDraft: { limit: 30, windowMs: 60_000 },
+      // Lead-gen suite (lead-gen plan §4 B3; keys are composed by the slices' routes).
+      finderRun: { limit: 10, windowMs: 3_600_000 },
+      leadImport: { limit: 10, windowMs: 60_000 },
+      templateSubmit: { limit: 20, windowMs: 3_600_000 },
+      mediaUpload: { limit: 10, windowMs: 60_000 },
+      handoff: { limit: 30, windowMs: 60_000 },
     });
+  });
+
+  it('lead-gen: a workspace starts at most 10 paid finder runs at once, then one more every 6 minutes', () => {
+    const clock = new FixedClock(T0);
+    const limiters = createRateLimiters(clock);
+    for (let i = 0; i < 10; i++) expect(limiters.finderRun.take('workspace:w1').allowed).toBe(true);
+    const denied = limiters.finderRun.take('workspace:w1');
+    expect(denied).toMatchObject({ allowed: false, retryAfterSeconds: 360 });
+    expect(limiters.finderRun.take('workspace:w2').allowed).toBe(true);
+    clock.advance(360_000);
+    expect(limiters.finderRun.take('workspace:w1').allowed).toBe(true);
+    expect(limiters.leadImport.take('workspace:w1').allowed).toBe(true);
+    expect(limiters.templateSubmit.take('workspace:w1').allowed).toBe(true);
+    expect(limiters.handoff.take('user:u1').allowed).toBe(true);
   });
 
   it('createRateLimiters builds one limiter per policy on the given clock', () => {

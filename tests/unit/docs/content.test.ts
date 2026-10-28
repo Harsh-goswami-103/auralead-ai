@@ -19,6 +19,25 @@ import { parse as parseEnv } from 'dotenv';
 import { describe, expect, it } from 'vitest';
 import { DOC_MODES, inlineStrings, inlineText, pageAnchors, parseInline, type DocBlock, type DocPage, type InlineNode } from '@content/docs/format';
 import { DOC_PAGES, docNeighbours, docPagesFor, getDocPage } from '@content/docs/index';
+import { CAPABILITIES, type Capability } from '@/lib/domain/enums';
+import { PROMOTIONAL_WORDS, STUDIO_CATEGORIES, TEMPLATE_LIMITS, UTILITY_TRIGGER_LABELS } from '@/lib/domain/template-authoring';
+import { OPT_IN_METHOD_LABELS, OPT_IN_METHODS } from '@/lib/schemas/consent';
+import {
+  consentAttestationText,
+  IMPORT_CONSENT_TRUTHY_VALUES,
+  IMPORT_DATA_SOURCE_LABELS,
+  IMPORT_FIELD_MAX_LENGTH,
+  LEAD_IMPORT_CHUNK,
+  LEAD_IMPORT_MAX_ROWS,
+  LEAD_IMPORT_PREVIEW_ROWS,
+  LEAD_IMPORT_TTL_HOURS,
+} from '@/lib/schemas/lead-import';
+import { LEAD_EXPORT_ROW_CAP, LEAD_EXPORT_TTL_HOURS } from '@/lib/schemas/leads';
+import { MEDIA_PDF_MAX_BYTES } from '@/lib/schemas/templates';
+import { SPREADSHEET_LIMITS } from '@/lib/spreadsheet/types';
+import { DEMO_TEMPLATE_REVIEW_DELAY_MS } from '@/server/adapters/whatsapp/template-admin-demo';
+import { DEMO_PERSONA_KEYS, DEMO_PERSONAS } from '@/server/auth/demo-personas';
+import { MEMBER_CAPABILITIES } from '@/server/auth/guards';
 import { INVITE_TTL_MS } from '@/server/auth/invites';
 import { LOGIN_LOCKOUT } from '@/server/auth/login';
 import { ARGON2_PARAMS, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/server/auth/password';
@@ -27,10 +46,21 @@ import { SESSION_POLICY } from '@/server/auth/session';
 import { ROUTES } from '@/server/routes.manifest';
 import { RATE_LIMIT_POLICIES, type RateLimitPolicyName } from '@/server/security/rate-limit';
 import { safeHref } from '@/server/security/safe-href';
+import { CONVERSATION_HISTORY_LIMIT } from '@/server/services/ai/conversation-reply';
+import { automatedReplyDisclosure, FIXED_REPLIES } from '@/server/services/ai/reply-guard';
+import { MAX_EMAILS_PER_RESULT } from '@/server/services/lead-finder/email-extract';
+import { EMAIL_PAGE_LIMITS } from '@/server/services/lead-finder/emails';
+import { FINDER_EXPORT_ROW_CAP } from '@/server/services/lead-finder/export';
+import { FINDER_CONTENT_TTL_MS } from '@/server/services/lead-finder/jobs';
+import { FINDER_LIMITS } from '@/server/services/lead-finder/schemas';
+import { PLACES_CONTENT_TTL_DAYS } from '@/server/services/leads/ingest';
+import { LEAD_EXPORT_ACTIVE_CAP } from '@/server/services/leads/export';
+import { AUTOMATED_REPLY_CAP } from '@/server/services/messaging/conversations';
 import { DEFERRABLE_REASONS, REASON_LABELS, REASON_ORDER } from '@/server/services/messaging/eligibility';
 import { START_KEYWORDS, STOP_KEYWORDS } from '@/server/services/messaging/quick-replies';
 import { WORKER_STALE_AFTER_MS } from '@/server/services/shell/panel-home';
 import { PROCESSED_RETENTION_MS, UNRESOLVED_RETENTION_MS } from '@/server/services/webhooks/events';
+import { WORKSPACE_FIXTURES } from '../../../prisma/seed/fixtures/workspaces';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), 'utf8');
@@ -408,6 +438,128 @@ describe('docs facts match the code', () => {
 
   it.each(FACTS)('%s states "%s"', (slug, fact) => {
     expect(pageText(page(slug))).toContain(fact);
+  });
+});
+
+// ---- lead-gen suite facts (ADR-117 to ADR-135) --------------------------------------------------
+
+const MB = 1024 * 1024;
+const num = (n: number) => n.toLocaleString('en-US');
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+describe('lead-gen docs facts match the code', () => {
+  const [perQueryA, perQueryB, perQueryC] = FINDER_LIMITS.perQueryOptions;
+
+  const FACTS: ReadonlyArray<readonly [string, string]> = [
+    // Lead Finder
+    ['lead-finder', `At most ${FINDER_LIMITS.maxKeywords} of each, so at most ${FINDER_LIMITS.maxKeywords * FINDER_LIMITS.maxLocations} searches`],
+    ['lead-finder', `A keyword is at most ${FINDER_LIMITS.maxKeywordLength} characters, a location at most ${FINDER_LIMITS.maxLocationLength}`],
+    ['lead-finder', `Up to ${perQueryA}, ${perQueryB} or ${perQueryC}, your choice`],
+    ['lead-finder', `${RATE_LIMIT_POLICIES.finderRun.limit} per workspace (the finderRun limit`],
+    ['lead-finder', `${FINDER_LIMITS.maxImport} (the grid shows ${FINDER_LIMITS.pageSize} results per page)`],
+    ['lead-finder', `${FINDER_LIMITS.maxRefresh}, because each refresh is a paid Google request`],
+    ['lead-finder', `it is kept for ${FINDER_CONTENT_TTL_MS / 3_600_000} hours after it was fetched`],
+    ['lead-finder', `carry an expiry of ${PLACES_CONTENT_TTL_DAYS} days after the import`],
+    ['lead-finder', `up to ${num(FINDER_EXPORT_ROW_CAP)} rows`],
+    ['lead-finder', `gives each page at most ${EMAIL_PAGE_LIMITS.totalTimeoutMs / 1000} seconds and ${EMAIL_PAGE_LIMITS.maxBytes / MB} MB`],
+    ['lead-finder', `At most ${MAX_EMAILS_PER_RESULT} are kept per business`],
+    // File import and export
+    ['import-and-export', `At most ${num(LEAD_IMPORT_MAX_ROWS)} data rows below the header, and ${SPREADSHEET_LIMITS.maxColumns} columns`],
+    ['import-and-export', `of at most ${SPREADSHEET_LIMITS.maxFileBytes / MB} MB`],
+    ['import-and-export', `the first ${LEAD_IMPORT_PREVIEW_ROWS} rows`],
+    ['import-and-export', `${LEAD_IMPORT_CHUNK} rows at a time`],
+    ['import-and-export', `${LEAD_IMPORT_TTL_HOURS} hours after the upload`],
+    ['import-and-export', `${RATE_LIMIT_POLICIES.leadImport.limit} uploads or confirmations a minute`],
+    ['import-and-export', `A business name up to ${IMPORT_FIELD_MAX_LENGTH.name} characters, an email up to ${IMPORT_FIELD_MAX_LENGTH.email}, a website up to ${num(IMPORT_FIELD_MAX_LENGTH.website)}, an address up to ${num(IMPORT_FIELD_MAX_LENGTH.address)}`],
+    ['import-and-export', `a file holds at most ${num(LEAD_EXPORT_ROW_CAP)} leads`],
+    ['import-and-export', `stays ready for ${LEAD_EXPORT_TTL_HOURS} hours`],
+    ['import-and-export', IMPORT_DATA_SOURCE_LABELS.OWN_CUSTOMERS],
+    ['import-and-export', IMPORT_DATA_SOURCE_LABELS.OWN_FORM_OR_EVENT],
+    ['import-and-export', consentAttestationText('<business>')],
+    [
+      'import-and-export',
+      `${IMPORT_CONSENT_TRUTHY_VALUES.slice(0, -1).join(', ')} or ${IMPORT_CONSENT_TRUTHY_VALUES.at(-1)}`,
+    ],
+    ['security', `a workbook may not inflate beyond ${SPREADSHEET_LIMITS.maxUncompressedBytes / MB} MB`],
+    ['security', `at most ${MEDIA_PDF_MAX_BYTES / MB} MB`],
+    // Inbox and automatic replies
+    ['inbox-and-ai-replies', `After ${AUTOMATED_REPLY_CAP} automatic replies in a row`],
+    ['inbox-and-ai-replies', `the last ${CONVERSATION_HISTORY_LIMIT} messages of the thread`],
+    ['inbox-and-ai-replies', automatedReplyDisclosure('<Business>')],
+    // Template studio
+    ['template-studio', `up to ${TEMPLATE_LIMITS.name} characters`],
+    ['template-studio', `text of at most ${TEMPLATE_LIMITS.headerText} characters with at most one variable`],
+    ['template-studio', `at most ${num(TEMPLATE_LIMITS.body)} characters. Variables are numbered`],
+    ['template-studio', `at most ${TEMPLATE_LIMITS.variables}, and never at the very start or end`],
+    ['template-studio', `Optional, at most ${TEMPLATE_LIMITS.footer} characters, no variables`],
+    [
+      'template-studio',
+      `At most ${TEMPLATE_LIMITS.quickReplies} quick replies, ${TEMPLATE_LIMITS.urlButtons} website links (a fixed https address) and ${TEMPLATE_LIMITS.phoneButtons} call button, each with a text of at most ${TEMPLATE_LIMITS.buttonText} characters`,
+    ],
+    ['template-studio', `promotional words (${PROMOTIONAL_WORDS.join(', ')})`],
+    ['template-studio', `at most ${MEDIA_PDF_MAX_BYTES / MB} MB`],
+    ['template-studio', `A workspace may submit ${RATE_LIMIT_POLICIES.templateSubmit.limit} templates an hour`],
+    ['template-studio', `${DEMO_TEMPLATE_REVIEW_DELAY_MS / 1000} seconds later a simulated review`],
+    ['getting-started', `About ${DEMO_TEMPLATE_REVIEW_DELAY_MS / 1000} seconds later the simulated review`],
+    // Hand over
+    ['reach-out-and-handoff', `The limit is ${RATE_LIMIT_POLICIES.handoff.limit} handovers a minute per person`],
+    // Retention
+    ['data-and-privacy', `Removed ${FINDER_CONTENT_TTL_MS / 3_600_000} hours after it was fetched`],
+    ['data-and-privacy', `Removed ${PLACES_CONTENT_TTL_DAYS} days after the import`],
+    ['data-and-privacy', `or ${LEAD_IMPORT_TTL_HOURS} hours after the upload`],
+    ['data-and-privacy', `Ready for ${LEAD_EXPORT_TTL_HOURS} hours, then deleted`],
+    // Limits
+    ['limitations', `At most ${FINDER_LIMITS.maxKeywords} keywords and ${FINDER_LIMITS.maxLocations} locations`],
+    ['limitations', `At most ${num(LEAD_IMPORT_MAX_ROWS)} rows and ${SPREADSHEET_LIMITS.maxFileBytes / MB} MB per file`],
+  ];
+
+  it.each(FACTS)('%s states "%s"', (slug, fact) => {
+    expect(pageText(page(slug))).toContain(fact);
+  });
+
+  it('keeps the export cap and the active-export cap in step with the import page', () => {
+    expect(LEAD_EXPORT_ACTIVE_CAP).toBe(3);
+    expect(pageText(page('import-and-export'))).toContain('at most three exports that are preparing or ready');
+  });
+
+  it('the fixed hand-over reply the inbox page quotes is the one the guard sends', () => {
+    const quoted = 'a member of our team will reply to you here';
+    expect(FIXED_REPLIES.handoff.toLowerCase()).toContain(quoted);
+    expect(pageText(page('inbox-and-ai-replies'))).toContain(quoted);
+  });
+
+  it('the template page names both studio categories and every utility trigger', () => {
+    const text = pageText(page('template-studio'));
+    for (const category of STUDIO_CATEGORIES) expect(text).toContain(category);
+    for (const label of Object.values(UTILITY_TRIGGER_LABELS)) expect(text.toLowerCase()).toContain(lowerFirst(label).replace(/^the /, ''));
+  });
+
+  it('the reach-out page lists every opt-in method with its code and wording', () => {
+    const text = pageText(page('reach-out-and-handoff'));
+    for (const method of OPT_IN_METHODS) {
+      expect(text).toContain(method);
+      expect(text).toContain(lowerFirst(OPT_IN_METHOD_LABELS[method]));
+    }
+  });
+
+  it('the capability table lists the lead-gen capabilities and marks members as the code does', () => {
+    const p = page('roles-and-panels');
+    expect(pageText(p)).toContain(`There are ${CAPABILITIES.length} capabilities`);
+    const table = tableWithHead(p, 'Capability');
+    const listed = table.rows.map((r) => codeSpansOf(parseInline(r[0]!))[0] as Capability);
+    for (const capability of ['finder.run', 'leads.import', 'consent.import', 'templates.manage', 'leads.handoff'] as const) expect(listed).toContain(capability);
+    table.rows.forEach((row, i) => {
+      expect(CAPABILITIES as readonly string[], listed[i]).toContain(listed[i]);
+      expect(row[2], listed[i]).toBe(MEMBER_CAPABILITIES.has(listed[i]!) ? 'Yes' : 'No');
+    });
+  });
+
+  it('the DEMO guide names every seeded identity and business', () => {
+    const text = pageText(page('getting-started'));
+    expect(text).toContain(`lists ${['zero', 'one', 'two', 'three', 'four', 'five', 'six'][DEMO_PERSONA_KEYS.length]} seeded identities`);
+    for (const key of DEMO_PERSONA_KEYS) expect(text).toContain(DEMO_PERSONAS[key].label);
+    expect(text).toContain(`The seed holds ${['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'][WORKSPACE_FIXTURES.length]} invented businesses`);
+    for (const workspace of WORKSPACE_FIXTURES) expect(text).toContain(workspace.name);
   });
 });
 

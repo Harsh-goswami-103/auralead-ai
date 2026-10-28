@@ -62,6 +62,11 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, { label: string; hin
   'sheets.manage': { label: 'Manage Sheets', hint: 'Set up and sync Google Sheets sources.' },
   'scoring.manage': { label: 'Manage scoring', hint: 'Change the lead score configuration.' },
   'pipeline.manage': { label: 'Manage pipeline', hint: 'Edit the automation pipeline.' },
+  'finder.run': { label: 'Run lead finder', hint: 'Search Google Places for businesses (paid calls in LIVE).' },
+  'leads.import': { label: 'Import leads', hint: 'Upload Excel or CSV lead lists.' },
+  'consent.import': { label: 'Import consent', hint: 'Record WhatsApp opt-ins from an attested file column (owner only by default).' },
+  'templates.manage': { label: 'Manage templates', hint: 'Write WhatsApp templates and submit them for approval.' },
+  'leads.handoff': { label: 'Hand over leads', hint: 'Pass converted leads to the client to close the deal.' },
 };
 
 export const AUDIT_RESULT_VOCABULARY: Readonly<Record<AuditResult, StatusEntry>> = {
@@ -133,6 +138,7 @@ export const INTEGRATION_KIND_LABELS: Readonly<Record<IntegrationKind, string>> 
   GOOGLE_SHEETS: 'Google Sheets',
   AI_ANTHROPIC: 'AI (Anthropic)',
   AI_OPENAI: 'AI (OpenAI)',
+  GOOGLE_PLACES: 'Google Places',
 };
 
 export const formatBps = (bps: number) => `${(bps / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`;

@@ -16,6 +16,10 @@
  *    audit row; one -> DUPLICATE linked to that lead, which is not modified; several -> REVIEW with
  *    an OPEN MergeReview and no write to the candidates.
  * 4. Consent capture from the mapping (P1) for ACCEPTED and DUPLICATE records.
+ * A new lead keeps the record's PIN code and website status (NOT_LISTED when the source says the
+ * listing has no website, ADR-119). A GOOGLE_PLACES lead also keeps its place ID (`Lead.placeId`,
+ * from `providerId` or `fields.placeId`, also its PROVIDER key) and gets `placesContentExpiresAt`
+ * = now + 30 days (ADR-118 (d)). A duplicate never modifies the existing lead.
  * Ingestion never enqueues scoring, enrichment or drafting directly (E9): the pipeline executor
  * runs those stages.
  */
@@ -36,6 +40,14 @@ import { openMergeReview } from './merge-review';
 import { normalizeLeadFields } from './normalize';
 
 export type { IngestBatchInput } from '@/lib/schemas/ingest';
+
+/**
+ * ADR-118 (d): the Places-sourced fields of a lead imported from Google Places (phone, rating,
+ * review count, address, PIN code, category) carry `Lead.placesContentExpiresAt` = ingestion time
+ * + 30 days; `leads.placesExpire` (slice F1) nulls them then unless the contact was confirmed.
+ */
+export const PLACES_CONTENT_TTL_DAYS = 30;
+export const PLACES_CONTENT_TTL_MS = PLACES_CONTENT_TTL_DAYS * 86_400_000;
 
 export type IngestDeps = {
   /** SUPPRESSION_PEPPER: consent records carry the same contact key as suppressions (C17). */
@@ -237,6 +249,20 @@ async function storedResult(tx: Tx, workspaceId: string, batchId: string, record
   };
 }
 
+/**
+ * What a source record keeps of the received payload. Google Places listings and file-import rows
+ * keep the provider ID and the names of the fields only: the values are Places content that expires
+ * (ADR-118 (d)) or a spreadsheet's cells (ADR-120: rows never reach the database), and a record
+ * that was rejected or sent to review has no lead for the expiry sweep or an erasure to reach. The
+ * other sources keep the redacted payload.
+ */
+function rawPayloadFor(source: string, record: { providerId?: string | undefined; fields: Record<string, unknown>; answers?: Record<string, unknown> | undefined }): Prisma.InputJsonValue {
+  if (source === 'GOOGLE_PLACES' || source === 'FILE_IMPORT') {
+    return { providerId: record.providerId ?? null, fieldNames: Object.keys(record.fields).sort(), answerCount: Object.keys(record.answers ?? {}).length };
+  }
+  return redact({ providerId: record.providerId, fields: record.fields, answers: record.answers ?? {} }) as Prisma.InputJsonValue;
+}
+
 async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: IngestDeps): Promise<IngestRecordResult> {
   const { parsed, record, batchId, simulated } = input;
   const workspaceId = ctx.workspaceId;
@@ -255,7 +281,7 @@ async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: I
     importBatchId: batchId,
     source,
     externalId: record.externalId,
-    rawPayloadRedacted: redact({ providerId: record.providerId, fields: record.fields, answers: record.answers ?? {} }) as Prisma.InputJsonValue,
+    rawPayloadRedacted: rawPayloadFor(source, record),
     mappingVersion: parsed.mapping?.version ?? null,
     attribution: (record.attribution ?? {}) as Prisma.InputJsonValue,
     extractedAt: record.extractedAt ? new Date(record.extractedAt) : null,
@@ -278,7 +304,10 @@ async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: I
     return result('REJECTED', normalized.reasonCode, rejected.id, null, { outcome: 'NONE', reason: 'REJECTED' });
   }
   const lead = normalized.lead;
-  const keys = contactKeysFor(lead, source, record.providerId);
+  // A Places record may carry its place ID as fields.placeId instead of providerId (the schema
+  // refuses a record whose two values differ). Other sources never set Lead.placeId.
+  const placeId = source === 'GOOGLE_PLACES' ? (record.providerId ?? record.fields.placeId ?? null) : null;
+  const keys = contactKeysFor(lead, source, record.providerId ?? placeId ?? undefined);
   const matches = await findMatchingLeadIds(tx as never, keys);
 
   const captureConsent = (leadId: string) =>
@@ -326,8 +355,11 @@ async function processRecord(tx: Tx, ctx: RecordCtx, input: RecordInput, deps: I
       websiteStatus: lead.websiteStatus,
       address: lead.address,
       city: lead.city,
+      pincode: lead.pincode,
       rating: lead.rating,
       reviewCount: lead.reviewCount,
+      placeId,
+      placesContentExpiresAt: source === 'GOOGLE_PLACES' ? new Date(now.getTime() + PLACES_CONTENT_TTL_MS) : null,
       scoreReasons: [],
       unknownInputs: [],
       pipelineConfigVersionId: pipeline?.id ?? null,

@@ -16,6 +16,10 @@ export default defineConfig({
           name: 'unit',
           environment: 'node',
           include: ['tests/unit/**/*.test.ts'],
+          // The first ESLint/Vite/TypeScript load in the arch tests takes several seconds when the whole
+          // suite runs in parallel on a loaded host (OneDrive repo); same budget as integration.
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
         },
       },
       {

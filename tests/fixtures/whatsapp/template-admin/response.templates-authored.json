@@ -1,0 +1,39 @@
+{
+  "data": [
+    {
+      "id": "594425479261596",
+      "name": "website_intro",
+      "language": "en",
+      "status": "APPROVED",
+      "category": "MARKETING",
+      "rejected_reason": "NONE",
+      "components": [
+        { "type": "HEADER", "format": "TEXT", "text": "A website for your business" },
+        { "type": "BODY", "text": "Hello {{1}}, {{2}} builds fast websites for local businesses. Reply to see our work.", "example": { "body_text": [["Ravi", "Live Dental Co"]] } },
+        { "type": "FOOTER", "text": "Tap Stop to opt out" },
+        { "type": "BUTTONS", "buttons": [{ "type": "QUICK_REPLY", "text": "Stop" }] }
+      ]
+    },
+    {
+      "id": "594425479261598",
+      "name": "festive_launch",
+      "language": "en",
+      "status": "REJECTED",
+      "category": "MARKETING",
+      "rejected_reason": "INVALID_FORMAT",
+      "components": [
+        { "type": "BODY", "text": "Hello {{1}}, our festive website launch is here. Reply to know more.", "example": { "body_text": [["Ravi"]] } },
+        { "type": "BUTTONS", "buttons": [{ "type": "QUICK_REPLY", "text": "Stop" }] }
+      ]
+    },
+    {
+      "id": "594425479261599",
+      "name": "draft_clash",
+      "language": "en",
+      "status": "APPROVED",
+      "category": "UTILITY",
+      "components": [{ "type": "BODY", "text": "Your appointment is confirmed for tomorrow." }]
+    }
+  ],
+  "paging": { "cursors": { "before": "QVFIUBEFORE", "after": "QVFIUAFTER" } }
+}

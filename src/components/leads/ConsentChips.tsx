@@ -33,6 +33,7 @@ export const CONSENT_SOURCE_LABELS: Readonly<Record<string, string>> = {
   START_KEYWORD: 'START keyword',
   MANUAL_EVIDENCE: 'Evidence recorded by a person',
   EMPLOYEE_ATTESTATION: 'Attested by an operator',
+  FILE_IMPORT: 'Attested file import',
   STOP_BUTTON: 'Stop button',
   STOP_KEYWORD: 'STOP keyword',
   UNSUBSCRIBE: 'Unsubscribe link',

@@ -2,7 +2,7 @@
  * Leads area schemas (T26, plan §11 M4, R31), shared by the list and board pages of both panels,
  * the stage, export and scoring routes, and the services (plan §2: one schema set).
  *
- * The list query lives in the URL (`?q=&stage=&source=&score=&sort=&cursor=&dir=&view=&lead=`), so
+ * The list query lives in the URL (`?q=&stage=&source=&score=&handedOver=1&sort=&cursor=&dir=&view=&lead=`), so
  * a reload, a shared link and the back button all show the same rows. Parsing the URL is lenient:
  * a hand-edited or stale value is dropped instead of failing the page. Request bodies are strict.
  */
@@ -54,8 +54,13 @@ export const LeadFilters = z.object({
   stage: z.enum(SalesStage).optional(),
   source: z.enum(LeadSource).optional(),
   score: z.enum(SCORE_BANDS).optional(),
+  /** ADR-124: only leads handed over to the client (`Lead.handedOverAt` set). */
+  handedOver: z.boolean().optional(),
   sort: z.enum(LEAD_SORTS).default('newest'),
 });
+
+/** The URL value of the handed-over filter (`?handedOver=1`). */
+export const HANDED_OVER_PARAM = '1';
 export type LeadFilters = z.output<typeof LeadFilters>;
 
 export type LeadListParams = LeadFilters & { cursor?: string; dir: 'next' | 'prev' };
@@ -83,6 +88,7 @@ export function parseLeadPageParams(params: SearchParamsInput): LeadPageParams {
     stage: pick(z.enum(SalesStage), first(params, 'stage')),
     source: pick(z.enum(LeadSource), first(params, 'source')),
     score: pick(z.enum(SCORE_BANDS), first(params, 'score')),
+    handedOver: first(params, 'handedOver') === HANDED_OVER_PARAM ? true : undefined,
     sort: pick(z.enum(LEAD_SORTS), first(params, 'sort')) ?? 'newest',
     cursor: pick(cursorField, first(params, 'cursor')),
     dir: first(params, 'dir') === 'prev' ? 'prev' : 'next',
@@ -101,6 +107,7 @@ export function leadPageSearch(current: Partial<LeadPageParams>, overrides: Part
     stage: current.stage,
     source: current.source,
     score: current.score,
+    handedOver: current.handedOver ? HANDED_OVER_PARAM : undefined,
     sort: current.sort,
     view: current.view,
     cursor: current.cursor,
@@ -109,7 +116,7 @@ export function leadPageSearch(current: Partial<LeadPageParams>, overrides: Part
   };
   for (const [k, v] of Object.entries(overrides)) merged[k] = v;
   const out = new URLSearchParams();
-  for (const key of ['view', 'q', 'stage', 'source', 'score', 'sort', 'cursor', 'dir', 'lead'] as const) {
+  for (const key of ['view', 'q', 'stage', 'source', 'score', 'handedOver', 'sort', 'cursor', 'dir', 'lead'] as const) {
     const v = merged[key];
     if (v === undefined || v === '') continue;
     if (key === 'sort' && v === 'newest') continue;
@@ -123,7 +130,7 @@ export function leadPageSearch(current: Partial<LeadPageParams>, overrides: Part
 
 /** True when any filter narrows the list (used for the empty state wording). */
 export function hasLeadFilters(p: Partial<LeadFilters>): boolean {
-  return Boolean(p.q || p.stage || p.source || p.score);
+  return Boolean(p.q || p.stage || p.source || p.score || p.handedOver);
 }
 
 // ---- Stage moves (stage CAS) --------------------------------------------------------------------
@@ -147,10 +154,16 @@ export type LeadStageResult = { lead: { id: string; salesStage: SalesStage; stag
 /** A client-generated key per export click: a double click or retry returns the same export. */
 export const LeadExportRequestKey = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'requestKey must be 8-64 letters, digits, _ or -');
 
+/** File formats of a lead export (ADR-120): CSV (the default) or an Excel workbook. */
+export const LEAD_EXPORT_FORMATS = ['csv', 'xlsx'] as const;
+export type LeadExportFormat = (typeof LEAD_EXPORT_FORMATS)[number];
+export const LEAD_EXPORT_FORMAT_LABELS: Readonly<Record<LeadExportFormat, string>> = { csv: 'CSV', xlsx: 'Excel' };
+
 export const LeadExportBody = z.object({
   workspaceSlug: workspaceSlugField.optional(),
   requestKey: LeadExportRequestKey,
   filters: LeadFilters.default({ sort: 'newest' }),
+  format: z.enum(LEAD_EXPORT_FORMATS).default('csv'),
 });
 export type LeadExportBody = z.output<typeof LeadExportBody>;
 
@@ -166,6 +179,7 @@ export type LeadExportStatus = 'QUEUED' | 'READY' | 'FAILED' | 'EXPIRED';
 
 export type LeadExportDto = {
   id: string;
+  format: LeadExportFormat;
   status: LeadExportStatus;
   /** READY whose expiry passed reads EXPIRED even before the purge job ran. */
   effectiveStatus: LeadExportStatus;
@@ -308,5 +322,17 @@ export type LeadProfileDto = {
   sources: SourceRecordDto[];
   quotes: Array<{ id: string; number: string; status: string; currentVersionNo: number; totalPaise: string | null; validUntil: string | null }>;
   conversations: Array<{ id: string; channel: 'WHATSAPP' | 'EMAIL'; lastInboundProviderAt: string | null }>;
+  /**
+   * Set for a lead found through Google Places (ADR-118 (d)): when its Places-sourced fields expire,
+   * whether the business's contact details were confirmed (and how), and the attributions Google
+   * returned with the place while the finder still holds them (ADR-118 (b)).
+   */
+  places: {
+    expiresAt: string | null;
+    confirmedAt: string | null;
+    confirmedVia: string | null;
+    attributions: Array<{ provider: string; providerUri: string | null }>;
+    canConfirm: boolean;
+  } | null;
   permissions: { canMoveStage: boolean };
 };

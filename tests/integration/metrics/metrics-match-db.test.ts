@@ -105,6 +105,12 @@ beforeAll(async () => {
   await insertCallRequest(db, { status: 'DONE' });
   await insertCallRequest(db, { workspaceId: WS_B, status: 'OPEN' });
 
+  // ADR-124 (lead-gen F5): one handoff waiting for the client, one acknowledged, one in workspace B.
+  for (const [workspaceId, status] of [[WS_A, 'HANDED_OVER'], [WS_A, 'ACKNOWLEDGED'], [WS_B, 'HANDED_OVER']] as const) {
+    const lead = await insertLead(db, { workspaceId, stage: 'CONVERTED', createdAt: ago(30 * DAY) });
+    await db.leadHandoff.create({ data: { workspaceId, leadId: lead.id, fromUserId: OWNER_A, summaryStatus: 'NOT_CONFIGURED', status, createdAt: ago(DAY) } });
+  }
+
   await insertAudit(db, { action: 'quote.approve', actorUserId: OWNER_A, actorKind: 'USER', targetType: 'Quote', targetId: draft.quote.id, createdAt: ago(60_000) });
   await insertAudit(db, { workspaceId: WS_B, action: 'quote.cancel', actorKind: 'USER', targetType: 'Quote', createdAt: ago(30_000) });
 });
@@ -194,7 +200,7 @@ describe('client command center (workspace A owner)', () => {
     expect(CLIENT_METRICS.acceptedQuoteValue.definition).toMatch(/not.*payment/i);
   });
 
-  it('"Needs you" counts equal the stored approvals, deliveries, takeovers and call requests', async () => {
+  it('"Needs you" counts equal the stored approvals, deliveries, takeovers, call requests and open handoffs', async () => {
     const items = value(cc.needsYou);
     const byId = Object.fromEntries(items.map((i) => [i.id, i.count]));
     const weekAgo = new Date(NOW.getTime() - 7 * DAY);
@@ -208,8 +214,9 @@ describe('client command center (workspace A owner)', () => {
       unknownDeliveries: await db.message.count({ where: { workspaceId: WS_A, direction: 'OUT', status: 'UNKNOWN' } }),
       takeoverThreads: (await directCounts(WS_A)).takeover,
       openCallRequests: await db.callRequest.count({ where: { workspaceId: WS_A, status: 'OPEN' } }),
+      handedOverLeads: await db.leadHandoff.count({ where: { workspaceId: WS_A, status: 'HANDED_OVER' } }),
     });
-    expect(byId).toMatchObject({ quoteApprovals: 1, messageApprovals: 1, invalidatedApprovals: 1, failedDeliveries: 1, unknownDeliveries: 1, takeoverThreads: 1, openCallRequests: 1 });
+    expect(byId).toMatchObject({ quoteApprovals: 1, messageApprovals: 1, invalidatedApprovals: 1, failedDeliveries: 1, unknownDeliveries: 1, takeoverThreads: 1, openCallRequests: 1, handedOverLeads: 1 });
     for (const item of items) {
       expect(item.definition.length).toBeGreaterThan(20);
       expect(item.label).toBe(NEEDS_YOU_ITEMS[item.id].label);

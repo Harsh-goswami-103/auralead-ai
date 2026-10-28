@@ -82,6 +82,7 @@ export const RUN_REASONS: Readonly<Record<string, string>> = {
   FIRST_TOUCH_UNAVAILABLE: 'The draft has no message for the approved channel, so nothing was sent.',
   LEAD_MERGED: 'This lead was merged into another lead; the pipeline continues there.',
   PIN_MISMATCH: 'The pipeline version changed after this lead arrived, so this run stopped.',
+  HANDED_OVER: 'Stopped: the lead was handed over to the client.',
 };
 
 export function runReasonText(code: string): string {
@@ -96,6 +97,8 @@ export const WEBSITE_LABELS: Readonly<Record<string, string>> = {
   UNREACHABLE: 'Unreachable',
   BLOCKED: 'Blocked by the safety check',
   VERIFIED_ABSENT: 'No website',
+  /** ADR-119: the source listing has no website (equal to the CSV label). */
+  NOT_LISTED: 'No website listed',
 };
 
 /** AiDraft.trigger. */

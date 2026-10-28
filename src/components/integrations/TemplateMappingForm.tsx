@@ -5,7 +5,7 @@
  * quotation ready, follow-up, call request reply), what each positional variable holds, and which
  * quick reply each button stands for (Send the quotation, Request a call, Stop messages). The
  * payload id of each mapped button is set on every send (ADR-62). The template itself is never
- * edited here: it is authored and approved in WhatsApp Manager. Posts to
+ * edited here: it is written in the template studio or in WhatsApp Manager, and approved by Meta. Posts to
  * /api/app/integrations/whatsapp/templates/[id]/mapping; the server checks the positions again.
  */
 import { useId, useState, type FormEvent } from 'react';

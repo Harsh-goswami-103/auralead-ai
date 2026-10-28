@@ -53,6 +53,9 @@ describe('/api/demo/session', () => {
 
   it('in DEMO issues a DEMO-mode session for the seeded persona', async () => {
     useRuntime(db, testConfig('demo'));
+    // Four personas, including the presentation client (ADR-126), all through the same route.
+    expect(Object.keys(DEMO_PERSONAS)).toEqual(['user', 'client', 'employee', 'admin']);
+    expect(DEMO_PERSONAS.client).toMatchObject({ globalRole: 'USER', home: '/dashboard/user' });
     for (const [key, persona] of Object.entries(DEMO_PERSONAS)) {
       const res = await switchTo(key);
       expect(res.status).toBe(200);

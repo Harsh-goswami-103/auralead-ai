@@ -70,7 +70,7 @@ describe('assignment overview', () => {
     expect(t).toContain('Approvals waiting');
     expect(t).toContain('Integrations needing attention');
     expect(t).toContain('Smile Avenue Dental Clinic');
-    expect(t).toMatch(/1 simulated · 6 not configured/);
+    expect(t).toMatch(/1 simulated · 7 not configured/);
     expect(t).toContain('v1, human approval');
     for (const segment of ['integrations', 'pipeline', 'sheets', 'meta', 'extension']) expect(html).toContain(`/dashboard/employee/${WS_A_SLUG}/${segment}`);
   });

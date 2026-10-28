@@ -75,7 +75,8 @@ describe('inbox read model', () => {
     const inbound = thread.messages.find((m) => m.direction === 'IN');
     expect(inbound).toMatchObject({ body: 'What are your timings?', simulated: false });
     const draft = thread.messages.find((m) => m.direction === 'OUT');
-    expect(draft).toMatchObject({ status: 'DRAFT', generatorLabel: 'reply-guard', approval: { status: 'PENDING' } });
+    // ADR-122: a service question's suggestion comes from the conversation_reply task (DEMO: the labelled local generator).
+    expect(draft).toMatchObject({ status: 'DRAFT', generatorLabel: 'local-deterministic', approval: { status: 'PENDING' } });
     expect(draft!.approval!.flags).toContain('ai_reply');
     expect(thread.composer.channel).toBe('WHATSAPP');
     expect(thread.composer.freeform).toMatchObject({ eligible: true, reasons: [] });

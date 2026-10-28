@@ -12,6 +12,7 @@ Plan: [`implementation-plan.md`](implementation-plan.md) (milestones §11, check
 | M4 Panels and visual | T25-T31 | In progress: UI v2 redesign and T30 landing landed early (ADR-66) | 2026-10-20 |
 | M5 Integrations | T32-T36 | Not started | |
 | M6 Hardening, docs, verify | T37-T39 | Not started | |
+| Lead-gen suite (owner request, ADR-117 to ADR-135) | B1-B3, F1-F6 | Merged and documented; full-suite run, browser walk and live provider checks pending | 2026-10-23 |
 
 ## M1 Foundation (T01-T09)
 
@@ -126,6 +127,96 @@ Gate, run 2026-10-20 (Linux container):
 - `prisma.config.ts` resolves only the data paths, so `prisma generate` in `npm ci` no longer needs the secrets.
 - README quick start is the LIVE install; DEMO moved under "Development mode".
 
+## Lead-gen suite: foundation baseline (2026-10-23)
+
+Integration checkout `claude/lead-gen-suite`. Foundation-A (`7d703e9`, `61b4352`), then Foundation-B merged with `git merge --no-ff` in plan order, no conflicts:
+- `c9f21b4` merge `lg/b1` (data: ingest fields, erase coverage, rebase columns, handoff guard)
+- `e2a5d95` merge `lg/b2` (AI: `run-task`, local task dispatcher, `AiProvenance`, `AiActionButton`)
+- `d7a1cb5` merge `lg/b3` (shared constants, per-lead template variables, chat tokens, rate limits, anchor blocks)
+- `c24d1a6` integration: the dispatcher test reads the AI task names from `LEAD_GEN_AI_TASKS`; ADR-127 records the Foundation-B deviations the implementers left to the integrator.
+
+Baseline at `d7a1cb5`, run alone on Windows 11 (Node 22.23.2) after `prisma generate`, nothing else running (`c24d1a6` then changed one test assertion and docs; typecheck, lint and that file, 11/11, pass):
+| Check | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run lint` | exit 0 |
+| `npm run test` | 290 files, 3257 tests, all passed, 0 failed, 0 skipped (187 s) |
+
+No failing files. Known flake: `tests/unit/arch/lint-rules.test.ts` can hit its 5 s timeout under heavy parallel load; it passed in this run. The container-only failures listed under the Aurora gate (`with-tx-retry`, `spike/teardown`, `seed/determinism`) do not occur on Windows.
+
+Carried to the slices (details in `docs/handoff/lead-gen-b1.md`, `-b2.md`, `-b3.md`):
+- **F1:** an erased place keeps its finder rows (place ID, keyword, location), so Refresh could fetch the listing again; there is no erased marker column (a schema request if needed). "Lead finder" goes first in `WORKSPACE_SECTIONS`; the integrator reorders it after the F1 merge.
+- **F2:** `leadExportFileName` and the download content type still assume csv. The import job must recheck in every chunk that the import is RUNNING and `storagePath` is set, because `lead:erase` can end it mid-run.
+- **F3:** take the read-only state from `Lead.handedOverAt` (an operator in a closed window gets 422 `SEND_REFUSED` before the guard's 409). `reply.auto` runs with a `system:` initiator, which the guard never refuses, so it must recheck `handedOverAt` itself (ADR-122).
+- **F4:** B1 edited `services/bulk/bulk.ts` (`classifyRows` gained a last parameter `byEmployee`) and `messaging/dispatch.ts` (four guard calls). `BulkTemplateVariables` still hard-codes 200 instead of `TEMPLATE_VARIABLE_MAX_LENGTH`.
+- **F5:** `handOverLead` must call the takeover and mode functions before it sets `handedOverAt` (the guard refuses the operator afterwards), or update conversations directly under the `modeVersion` compare-and-set.
+- **F6:** `REBASE_COLUMNS` lists only `escalatedAt` for Conversation; seeded open-window chats need Conversation `createdAt`, `lastInboundProviderAt` and Message `createdAt`, `providerTs`. The rate-limit table in `content/docs` lacks `finderRun`, `leadImport`, `templateSubmit` and `handoff`.
+- **AI tasks (F3, F4, F5):** `LOCAL_TASKS` anchors are single lines (one entry under each), not begin/end blocks; use the names in `LEAD_GEN_AI_TASKS`. Activity icons (`FAMILIES`) have no anchor, so a new action prefix falls back to the History icon. `defaultAiDeps()` duplicates `defaultDraftDeps()` (kept for existing importers).
+
+## Lead-gen suite: slices merged (2026-10-23)
+
+The six slice branches were merged into `claude/lead-gen-suite` with `git merge --no-ff` in plan order. After each merge: `prisma generate`, `npm run typecheck`, `eslint` on the files the merge changed, and vitest on `tests/unit/arch`, `tests/unit/lib`, `tests/unit/docs`, `tests/integration/authz`, `tests/integration/db` plus every test file the slices had added or changed so far.
+| Merge | Commit | Conflicts and how they were resolved |
+|---|---|---|
+| F5 handoff and reach-out | `6f79953` | none |
+| F2 import and export | `5466e7f` | `docs/decisions.md` only (both slices appended an ADR): kept both, ADRs in number order |
+| F1 Lead Finder | `7d32ac0` | `docs/decisions.md` only: same |
+| F4 template studio | `b95f901` | `docs/decisions.md` (same) and `adapters/ai/local-deterministic.ts` (the two slices' import lines at the same spot: kept both; the `LOCAL_TASKS` lines sat in their own anchors). The merge left the section-nav test without "Templates": `c4980e3` |
+| F3 chat and AI replies | `712ea5d` | `docs/decisions.md` (same) and `tests/components/integrations/source-actions.test.tsx` (F3 compares the nav with `WORKSPACE_SECTIONS`, F1 and F4 had edited the literal list: kept F3's form and listed every section) |
+| F6 presentation seed and copy | `cbc009d` | `docs/decisions.md` only: same |
+
+Every other shared file (`routes.manifest.ts`, `jobs/registry.ts`, `activity-vocabulary.ts`, `adapters/registry.ts`, `tests/support/routes.ts`, `registry-live.test.ts`, `sections.ts`, `LOCAL_TASKS`, `approvals/queue.ts`, `dispatch-run.ts`, `bulk.ts`, `leads.ts`, `consent.ts`) merged without a conflict through the anchor blocks.
+
+Integration work after the merges (ADR-134):
+- **Fix, flaky test (`59e7c30`):** `tests/integration/finder/run-flow.test.ts` ("reports how many websites are still being checked") listed the 10 newest runs, but every run of the file is created at the same fixed instant, so which runs were in the list depended on a random id order (failed about 1 run in 6). The test now creates its runs a minute later.
+- **Section order:** Lead finder, Leads, Inbox, Templates, Approvals, Integrations, Pipeline, Sheets, Meta, Extension (`SECTION_ORDER`); the nav now shows on the Leads, Import and Approvals pages as well.
+- **Lead pages:** F5's hand-over action and reach-out panel (already wired by F5), F1's Places attribution and "Confirm details" (`LeadPlacesNotice`, `LeadProfileDto.places`) on the operator lead page, the client lead page and the Leads sheet, F5's handoff card on the client lead page and in the sheet, F2's "Import leads" link in the employee Leads header.
+- **Seed alignment:** the seeded summary was plain text (the client panel reads JSON `{asked, promised, nextStep}`); the seeded AI answers, opt-in evidence and handoff audits now equal what the services write, and a test recomputes them (`presentation-alignment.test.ts`). F4's trigger `MEETING_BOOKED` already matched the seed. The operator persona already held every capability except `consent.import`, and `REBASE_COLUMNS` already listed the finder and Places lead dates.
+- **Seeded finder results survive the presentation:** their `contentExpiresAt` is the fetch time + 365 days (real runs keep 24 hours) and no purge job is queued for the seeded run. `demo:refresh` moves the date with the rest; the seeded Places leads keep the 30-day rule. A database seeded before this merge still needs `npm run db:reset` (`db:seed` leaves a seeded database alone, and the pack is new).
+- **Shared fixes from the slice notes:** the export filter `handedOver` (same-export reuse, audit, panel), `HANDED_OVER` run reason, "Needs you" icon for `handedOverLeads`, activity feed link for Lead targets, activity labels for `consent.capture` and `suppression.clear_refused`, the docs rate-limit table (`finderRun`, `leadImport`, `templateSubmit`, `handoff`), the public `/docs/bot` page the crawler's User-Agent points to.
+- **New cross-slice tests:** `tests/integration/seed/presentation-alignment.test.ts`, the wiring block of `presentation-pages.test.ts`, `tests/integration/leads/export-handed-over.test.ts`, `tests/unit/jobs/lead-gen-registry.test.ts` (every lead-gen job type registered once: the worker-boot check without a process).
+
+- **Cross-slice tests (ADR-135):** `tests/integration/lead-gen/` holds six files that compose the slices with the real services, the production handlers and the real DB harness: `handed-over-paths` (an operator is refused on the composer, drafts, approval and quotation sends, bulk rows and the mode, takeover and resume routes after a real `handOverLead`, the client owner is not, and `reply.auto` sends nothing), `consent-invariants` (Places and unattested imports are skipped NO_WHATSAPP_OPT_IN; an attested import records OPT_IN and never clears a STOP), `erase-cross-slice` (`lead:erase` of a lead with a finder result, handoff, summary, chat and xlsx export), `worker-boot` (every lead-gen job type registered once, and claimed by a real `worker/index.ts` process), `demo-story` (find, import three, opt in one, template, bulk send, inbound, AUTO reply, hand over, acknowledge, with zero outbound) and `live-gates` (no Places, WhatsApp or AI integration means configuration errors, never simulated data). They exposed two defects, both fixed: a thread opened after a handoff started with the AI able to answer (`newConversationMode`), and the five DEMO tripwires armed in `beforeAll` were restored by `restoreMocks` before the first test, so they could never fail (`tests/support/tripwire.ts`, armed per test and asserted).
+
+Left for the next stages: the full suite run alone; the walk of the DEMO story in a browser on a fresh data dir (the landing flow, the finder, the chat, both lead pages and the client panel have never been looked at in a browser); a fresh LIVE install; the presenter section of `docs/runbooks.md`; unverified provider shapes (Places, Graph template calls) stay `verified: false` until one live check. The in-app documentation, the README and `docs/integrations.md` were written afterwards (next section).
+
+## Lead-gen suite: documentation, what shipped, deferred and known limits (2026-10-23)
+
+Documentation step (docs-only commit after the integration commits):
+- **In-app docs (`content/docs`).** Five new pages in sidebar order after Roles and panels: `/docs/lead-finder`, `/docs/import-and-export`, `/docs/inbox-and-ai-replies`, `/docs/template-studio`, `/docs/reach-out-and-handoff`. Updated: roles-and-panels (the five capabilities, the member column, the new pages of both panels), messaging-rules (`FILE_IMPORT`, the opt-in rules, Places and import leads, `HANDED_OVER`, Automatic sending), lead-to-quote-workflow (sources, `NOT_LISTED` scoring, handoff stage), data-and-privacy (storage folder, retention rows for finder results 24 h, Places fields on leads 30 days, import rows, lead exports, handoff notes, brochures; erasure; exports), security (uploads and crawling), going-live (setup of the Places, WhatsApp and AI integrations), troubleshooting, limitations, and getting-started (four personas, six businesses, the Codecraft walkthrough). LIVE views carry no demo wording: every DEMO statement sits in a block with `appliesTo: ['DEMO']`.
+- **Honesty tests.** `tests/unit/docs/content.test.ts` gained a "lead-gen docs facts match the code" block: the limits, retention periods, caps, the attestation, the disclosure line, the capability table with its member column and the DEMO guide's personas and businesses are compared with the constants in the code, so a change there fails the test.
+- **README** (features, the presentation seed and personas, the presenter steps, the page list; quick start unchanged) and **`docs/integrations.md`** (Google Places API (New): checked 2026-10-23, verification level fixture-tested, not live-verified, billing tier and Google's terms recorded as not checked; template authoring endpoints with their level; the lead-gen AI tasks).
+
+What shipped (merged on `claude/lead-gen-suite`; ADR-117 to ADR-135):
+| Area | State |
+|---|---|
+| Spreadsheet module (`src/lib/spreadsheet`, ADR-117) | XLSX writer and reader on `fflate` 0.8.3, RFC 4180 CSV, size, zip-bomb, row and column limits |
+| Lead Finder (F1, ADR-118, ADR-119, ADR-128) | Google Places API (New) adapter with a simulated directory in DEMO; 10 keywords by 10 locations; 24-hour working copy and purge; attribution; Places fields on leads for 30 days unless confirmed ("Confirm details"); email search with robots.txt; limited Excel; `NOT_LISTED` |
+| File import and export (F2, ADR-120, ADR-129) | Upload, preview, mapping, chunked job, row reasons, sample workbook, the attested consent column that never clears a Stop, lead export as CSV or Excel |
+| Inbox and AI replies (F3, ADR-121, ADR-122, ADR-130) | Operator inbox in the chat look, Automatic sending, `conversation_reply` for service questions only, disclosure, 24-hour window, reply cap of 4, `escalatedAt` in Needs you, simulated ticks in DEMO |
+| Template studio (F4, ADR-123, ADR-131) | Category-first form, AI copy, STOP button, UTILITY trigger, PDF brochure headers, LIVE submit job and sync, DEMO review after 30 s, per-lead variables in bulk and the composer |
+| Handoff and reach-out (F5, ADR-124, ADR-125, ADR-127, ADR-132) | `handOverLead` in one transaction, summary job, client surfaces with Acknowledge, the `assertNotHandedOver` guard, recorded opt-in with notice and method, click-to-chat link |
+| Presentation (F6, ADR-126, ADR-133, ADR-134) | Codecraft Web Studio seed, the `client` persona, landing story flow, 365-day seeded finder content |
+| Foundation | One migration, five capabilities (20 in all), four rate limits, shared constants and anchor blocks |
+| Tests | Slice tests, cross-slice tests (`tests/integration/lead-gen/`, ADR-135), the armed DEMO outbound tripwire |
+
+Deferred (built for later, not in this delivery):
+- **Browser and acceptance work:** the full suite run alone, a browser walk of the DEMO story on a fresh data dir, a fresh LIVE install, `npm run test:e2e` for the new pages, a look at the landing flow at 125% zoom, and the presenter section of `docs/runbooks.md`.
+- **Live verification:** every Places and template-authoring request shape, the `rejected_reason` field and the `anyOf` output schema of `template_copy` (`docs/integrations.md`). Google's Maps Platform terms and the Places pricing tier of the field mask were not re-read.
+- **F1:** a runs-history page beyond the latest 10 runs; importing more than 200 selected results in one request (the grid selects per page of 50).
+- **Contact confirmation (ADR-118 (d), closed by ADR-136).** An inbound WhatsApp message from a Places lead's number (not a Stop) now sets `contactConfirmedAt` and `INBOUND_WHATSAPP` (`messaging/inbound.ts`), and the 30-day sweep also leaves alone a lead that was handed over, has a quote or has a conversation the customer wrote in. `WEBSITE_EMAIL` is still never set.
+- **F2:** a Client-panel import page (the routes accept an owner; the page is Operator-only, so the consent column is reachable only by an operator whose assignment includes `consent.import`); month-name opt-in dates; Hindi header synonyms; a chunk job that dies without reporting leaves the import on Queued or Importing until the 24-hour cleanup.
+- **F3:** an "Open chat" link from the operator lead page to its thread; `approveAndSendMessage` does not clear the `escalatedAt` column (the inbox read model treats the approved send as settling it).
+- **F4:** IMAGE and VIDEO headers, header variables filled at send, link buttons with a variable, editing an approved template, deleting a brochure (and a cap on the library), the free-form document reply for a brochure inside the window, and a bulk panel that lists only the typed positions.
+- **F5/F6:** hiding the "Simulate a lead source" cards for Codecraft Web Studio; rendering the DEMO click-to-chat link as text only.
+
+Known limits (also in `/docs/limitations`):
+- **Hand-over guard.** It stops sends and conversation controls for operators, not stage moves or lead edits. A `pipeline.advance` job whose stage handler is already running at the moment of a handoff can still queue one `system:pipeline` send; a stage the handoff has already stopped is no longer revived by a job that started later (ADR-136), and the later stages do not run.
+- **Places content.** A lead export writes the lead's stored columns, so a Places lead's phone, address and rating are in it until they expire after 30 days. This reduces risk and is not a licence.
+- **Wording.** The stale 'templates come only from WhatsApp Manager' strings were reworded (ADR-136) and `tests/unit/presentation/wording.test.ts` forbids them. The integration center still reports every DOCUMENT header as `documentHeader: true` (nothing renders it today).
+- **DEMO.** `npm run db:seed` leaves a seeded database alone, so a database seeded before the pack needs `npm run db:reset` once; `npm run demo:refresh` also moves the rows a rehearsal created. The Places leads of the seeded workspace keep the 30-day rule.
+- **Backups.** `db:backup` does not include the storage folder: brochures (`media/`), lead exports and quotation PDFs are copied by hand; a restored database without its brochure files reports `MEDIA_MISSING` at submit and at send.
+
 ## Unresolved / carried forward
 
 - `npm run test:e2e`: specs exist for smoke, the panel flows and `visual/webgl-fallback`; the rest of the visual projects (responsive, a11y, states) get specs in T31. In this Linux container Playwright 1.64's own browser build is not installed; the run above used the preinstalled Chromium through a throwaway config with `launchOptions.executablePath`.
@@ -133,7 +224,7 @@ Gate, run 2026-10-20 (Linux container):
 - `npm audit`: 9 high advisories, all in transitive dev tooling (eslint plugin `braces`, prisma's `deepmerge-ts`/`mysql2`); the only offered fix is a downgrade. Re-check at T38.
 - npm warns about peer ranges for nested ESLint plugins declaring `eslint ^9`; lint works and every lint fixture passes.
 - Preview-feature caveat (ADR-47): never call `findUnique`/`upsert` on the partial-unique keys of PricingVersion or Suppression; use `findFirst` with the predicate.
-- `tests/unit/arch/lint-rules.test.ts` can hit its 5 s timeout under heavy parallel CPU load; passes alone and in the full gate runs.
+- Load-sensitive timeouts (fixed in the lead-gen final gate): the unit project now has the same 60 s test and hook budget as integration, because `tests/unit/arch/lint-rules.test.ts` and `live-bundle.test.ts` hit the old 5 s default when the full suite ran on a loaded host. `tests/integration/jobs/heartbeat.test.ts` now starts observing the heartbeat row and the extended lease before it spawns worker B; both facts exist only while the 6 s job runs. All three passed alone and failed only under CPU oversubscription.
 
 - DEMO has no WhatsApp integration or approved template yet, so quote-over-WhatsApp cannot be shown through the UI; ADR-17 says DEMO seeds approved and rejected templates. Assigned to M4 (T28 integration center).
 - Approve-and-send (`/api/app/approvals/[id]/send`) accepts an ineligible lead and leaves the skip to dispatch preflight, while the composer refuses upfront with 422. Safe, but inconsistent; fixed in the M4 follow-up.

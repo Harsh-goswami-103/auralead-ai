@@ -1,14 +1,16 @@
 // R12, R13: lead normalization is pure and conservative. It maps the source fields onto the Lead
 // columns, converts phones to E.164 (IN default) keeping alternates and the raw text, never
 // invents or guesses an email, nulls placeholder emails, keeps the website status UNKNOWN unless a
-// website was supplied (then PRESENT_UNVERIFIED; only enrichment or a human may go further), and
-// rejects a record per row with a reason code instead of failing the batch.
+// website was supplied (then PRESENT_UNVERIFIED; only enrichment or a human may go further) or the
+// source says the listing has none (NOT_LISTED, ADR-119), keeps only valid PIN codes, and rejects a
+// record per row with a reason code instead of failing the batch.
 import { describe, expect, it } from 'vitest';
 import {
   isPlaceholderEmail,
   normalizeEmail,
   normalizeLeadFields,
   normalizeName,
+  normalizePincode,
   normalizeWebsite,
   parseRatingX10,
   parseReviewCount,
@@ -85,6 +87,34 @@ describe('normalizeLeadFields', () => {
     expect(r.lead).toMatchObject({ phoneE164: null, phoneRaw: '000', alternatePhones: [], emailNormalized: 'hello@pixelchai.in' });
   });
 
+  it('NOT_LISTED only when the source says the listing has no website and no URL came with it (ADR-119)', () => {
+    const notListed = normalizeLeadFields({ name: 'Annapurna Sweets', phone: '9826012345', websiteListed: false });
+    expect(notListed.ok && notListed.lead).toMatchObject({ website: null, websiteStatus: 'NOT_LISTED' });
+    // A blank website value is no website.
+    const blank = normalizeLeadFields({ name: 'Annapurna Sweets', phone: '9826012345', website: '   ', websiteListed: false });
+    expect(blank.ok && blank.lead.websiteStatus).toBe('NOT_LISTED');
+    // The listing gave a URL after all: the URL wins.
+    const listedAnyway = normalizeLeadFields({ name: 'Annapurna Sweets', phone: '9826012345', website: 'annapurna.in', websiteListed: false });
+    expect(listedAnyway.ok && listedAnyway.lead).toMatchObject({ website: 'https://annapurna.in/', websiteStatus: 'PRESENT_UNVERIFIED' });
+    // A value that is not a usable URL is not evidence of "no website": UNKNOWN, never NOT_LISTED.
+    const garbage = normalizeLeadFields({ name: 'Annapurna Sweets', phone: '9826012345', website: 'javascript:alert(1)', websiteListed: false });
+    expect(garbage.ok && garbage.lead).toMatchObject({ website: null, websiteStatus: 'UNKNOWN' });
+    // Without the source's statement, a missing website stays UNKNOWN.
+    for (const websiteListed of [true, null, undefined]) {
+      const r = normalizeLeadFields({ name: 'Annapurna Sweets', phone: '9826012345', websiteListed });
+      expect(r.ok && r.lead.websiteStatus, String(websiteListed)).toBe('UNKNOWN');
+    }
+  });
+
+  it('keeps a valid Indian PIN code and drops anything else', () => {
+    const r = normalizeLeadFields({ name: 'Codecraft Web Studio', phone: '9826012345', pincode: '452 001' });
+    expect(r.ok && r.lead.pincode).toBe('452001');
+    const bad = normalizeLeadFields({ name: 'Codecraft Web Studio', phone: '9826012345', pincode: '45200' });
+    expect(bad.ok && bad.lead.pincode).toBeNull();
+    const none = normalizeLeadFields({ name: 'Codecraft Web Studio', phone: '9826012345' });
+    expect(none.ok && none.lead.pincode).toBeNull();
+  });
+
   it('accepts full-width and Devanagari digits', () => {
     const r = normalizeLeadFields({ name: 'Nestkey', phone: '９８４５０ １２３４５' });
     expect(r.ok && r.lead.phoneE164).toBe('+919845012345');
@@ -119,6 +149,21 @@ describe('field helpers', () => {
     expect(normalizeWebsite('https://user:pw@nestkey.in')).toBeNull();
     expect(normalizeWebsite('localhost')).toBeNull();
     expect(normalizeWebsite('  ')).toBeNull();
+  });
+
+  it('normalizePincode accepts six-digit PIN codes in any digit script and never guesses', () => {
+    expect(normalizePincode('452001')).toBe('452001');
+    expect(normalizePincode(452001)).toBe('452001');
+    expect(normalizePincode(' 452-001 ')).toBe('452001');
+    expect(normalizePincode('४५२००१')).toBe('452001');
+    expect(normalizePincode('０５２００１')).toBeNull();
+    expect(normalizePincode('45200')).toBeNull();
+    expect(normalizePincode('4520011')).toBeNull();
+    expect(normalizePincode('Indore 452001')).toBeNull();
+    expect(normalizePincode(4.52)).toBeNull();
+    expect(normalizePincode('')).toBeNull();
+    expect(normalizePincode(null)).toBeNull();
+    expect(normalizePincode(undefined)).toBeNull();
   });
 
   it('parseRatingX10 and parseReviewCount accept common spellings and reject out-of-range values', () => {

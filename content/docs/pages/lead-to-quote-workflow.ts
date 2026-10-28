@@ -6,7 +6,7 @@ export const leadToQuoteWorkflow: DocPage = {
   summary:
     'How a lead is ingested, de-duplicated, scored and drafted, and how a versioned quotation is priced, approved, rendered as a PDF, shared and accepted, with the states it moves through.',
   appliesTo: ['DEMO', 'LIVE'],
-  checked: '2026-10-20',
+  checked: '2026-10-23',
   sections: [
     {
       id: 'overview',
@@ -35,7 +35,7 @@ export const leadToQuoteWorkflow: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Every source goes through the same ingestion. Leads arrive from Google Sheets form rows (`/api/webhooks/google-sheets`), Meta Lead Ads (`/api/webhooks/meta-ads`), the Maps extension (`/api/webhooks/gmaps-extension`) and inbound WhatsApp messages: a message from a number the workspace does not know yet creates a lead (a Stop never does).',
+          text: 'Every source goes through the same ingestion. Leads arrive from Google Sheets form rows (`/api/webhooks/google-sheets`), Meta Lead Ads (`/api/webhooks/meta-ads`), the Maps extension (`/api/webhooks/gmaps-extension`), results an operator imports from a [Lead Finder](/docs/lead-finder) search, rows of an Excel or CSV file ([Import and export leads](/docs/import-and-export)) and inbound WhatsApp messages: a message from a number the workspace does not know yet creates a lead (a Stop never does).',
         },
         {
           kind: 'paragraph',
@@ -62,7 +62,7 @@ export const leadToQuoteWorkflow: DocPage = {
             'Phone numbers become E.164 (India by default); email addresses are trimmed and lower-cased. An email is never invented, and placeholder addresses are dropped.',
             'Each lead gets contact keys (phone, email, provider id) that are unique within the workspace.',
             'A record that matches no lead creates one (ACCEPTED). One that matches exactly one lead is a DUPLICATE linked to it, and the existing lead is not changed. One that matches two or more leads is held for REVIEW with a merge review, and nothing is written to the candidates. A record that cannot be normalized is REJECTED with a reason.',
-            'When the source mapping has a consent column (Sheets) or question (Meta) and the answer is yes, an OPT_IN consent is recorded for the mapped channel and purpose, with the form, the response, the submission time and a hash of the notice text. No mapping, a missing column or another answer records nothing. Maps extension leads never get WhatsApp consent.',
+            'When the source mapping has a consent column (Sheets) or question (Meta) and the answer is yes, an OPT_IN consent is recorded for the mapped channel and purpose, with the form, the response, the submission time and a hash of the notice text. No mapping, a missing column or another answer records nothing. Maps extension and Google Places leads never get WhatsApp consent, and a file import records it only for an owner\'s attested consent column ([Import and export leads](/docs/import-and-export#import-consent)).',
           ],
         },
       ],
@@ -102,7 +102,8 @@ export const leadToQuoteWorkflow: DocPage = {
           items: [
             'The score runs from 0 to 100 over seven inputs: phone present, email present, website status, rating, review count, category match and source intent. The weights come from the workspace\'s scoring version and add up to 100.',
             'A known input earns points and becomes a reason, including known zeros such as "No email on record". An unknown input earns nothing and is listed as unknown, never counted against the lead. The score is the sum of its reasons, so it is always fully explained.',
-            'Only a reachable website or one a person verified as absent counts. In LIVE the worker checks a website through a hardened fetch that refuses private and local addresses; a DNS miss or a timeout means unreachable, never absent.',
+            'Only a reachable website, one a person verified as absent, or a listing that says it has no website (**No website listed**, from Google Places) counts as known. With the default scoring a reachable website earns the website points and an absence is a known zero; a workspace that sells websites can set its scoring to prefer businesses without one, and then both kinds of absence earn the full points. In LIVE the worker checks a website through a hardened fetch that refuses private and local addresses; a DNS miss or a timeout means unreachable, never absent.',
+            'The source adds intent points for a form or an inbound message. A business found on a Maps listing (the extension or a Google Places search) scores a known zero there, and a lead imported from a file counts as unknown.',
             'The screen labels it "Heuristic fit score. Not purchase intent or consent." A stored score keeps the scoring version it was computed with.',
           ],
         },
@@ -249,7 +250,7 @@ export const leadToQuoteWorkflow: DocPage = {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'A lead\'s sales stage is one of `NEW`, `CONTACTED`, `REPLIED`, `QUOTE_SENT`, `CONVERTED` and `LOST`. Automatic moves only go forward: handing over a quotation moves the lead to QUOTE_SENT and an acceptance to CONVERTED. The stage never decides consent, approval or delivery; those follow [the messaging rules](/docs/messaging-rules).',
+          text: 'A lead\'s sales stage is one of `NEW`, `CONTACTED`, `REPLIED`, `QUOTE_SENT`, `CONVERTED` and `LOST`. Automatic moves only go forward: handing over a quotation moves the lead to QUOTE_SENT and an acceptance to CONVERTED. Handing a lead over to the client ([Reach out and hand over](/docs/reach-out-and-handoff#handoff)) also moves it to CONVERTED and stops its automated pipeline; the client then creates the quotation. The stage never decides consent, approval or delivery; those follow [the messaging rules](/docs/messaging-rules).',
         },
       ],
     },

@@ -150,6 +150,7 @@ describe('ScoringEditor', () => {
 
 const exportRow = (id: string, status: LeadExportDto['effectiveStatus']): LeadExportDto => ({
   id,
+  format: 'csv',
   status: status === 'EXPIRED' ? 'READY' : status,
   effectiveStatus: status,
   filters: { sort: 'newest' },

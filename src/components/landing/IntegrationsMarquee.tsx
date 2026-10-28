@@ -21,6 +21,8 @@ const fromSource = (source: string, name?: string, icon?: LucideIcon): Integrati
 const NEUTRAL = 'border-border-strong bg-bg-2/80 text-fg-1';
 
 const INTEGRATIONS: readonly Integration[] = [
+  fromSource('GOOGLE_PLACES', 'Google Places API'),
+  fromSource('FILE_IMPORT', 'Excel and CSV import'),
   fromSource('sheets'),
   fromSource('sheets', 'Google Forms via Sheets', ClipboardList),
   fromSource('meta'),

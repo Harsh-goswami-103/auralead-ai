@@ -1,7 +1,7 @@
 /**
  * WhatsApp template sync (T28 seam and DEMO behaviour; ADR-17, P12, plan §5.5).
  *
- * Templates are authored and approved in WhatsApp Manager and synced here with the provider's raw
+ * Templates are written in the template studio (ADR-123) or in WhatsApp Manager, approved by Meta, and synced here with the provider's raw
  * status and category strings (never enums), then mapped to intents and variable sources. The
  * DEMO process plays the provider: `syncWhatsAppTemplates` in DEMO creates the workspace's
  * SIMULATED WhatsApp integration when absent (no routing key, the same shape the inbox simulator
@@ -111,7 +111,7 @@ export async function syncWhatsAppTemplates(ctx: AppCtx, deps: { liveSync: LiveT
     if (!row || !SYNCABLE_LIVE.has(row.status)) {
       throw new DomainRuleError({
         code: 'INTEGRATION_NOT_CONFIGURED',
-        userMessage: 'Connect and verify WhatsApp before syncing templates. Templates come from WhatsApp Manager.',
+        userMessage: 'Connect and verify WhatsApp before syncing templates.',
         safeDetails: { status: row?.status ?? 'NOT_CONFIGURED' },
       });
     }

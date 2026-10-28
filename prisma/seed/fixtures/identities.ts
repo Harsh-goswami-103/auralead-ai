@@ -1,12 +1,17 @@
 /**
- * Demo identities. The three role-switcher personas are exactly DEMO_PERSONAS (T06); the other
- * people make the tenant matrix and the panels realistic: an owner per workspace, a workspace
- * member, an employee with one narrow assignment and an employee with none. Every user is
- * `isDemo`, ACTIVE unless stated, and has no password (DEMO signs in through the persona route).
- * Emails use the reserved `.test` TLD, so no fixture contact is deliverable.
+ * Demo identities. The four role-switcher personas are exactly DEMO_PERSONAS (T06, ADR-126); the
+ * other people make the tenant matrix and the panels realistic: an owner per workspace, a
+ * workspace member, an employee with one narrow assignment and an employee with none. Every user
+ * is `isDemo`, ACTIVE unless stated, and has no password (DEMO signs in through the persona
+ * route). Emails use the reserved `.test` TLD, so no fixture contact is deliverable.
+ *
+ * ADR-126: the `client` persona (Aarav Mehta) owns the presentation workspace codecraft-web, and
+ * the employee persona is its operator with every capability except `consent.import` (ADR-120:
+ * honouring a consent column stays with the workspace owner).
  */
-import type { Capability } from '../../../src/lib/domain/enums';
+import { CAPABILITIES, type Capability } from '../../../src/lib/domain/enums';
 import { DEMO_PERSONAS } from '../../../src/server/auth/demo-personas';
+import { PRESENTATION_SLUG } from './presentation';
 
 export type UserFixture = {
   key: string;
@@ -29,6 +34,7 @@ export const USER_FIXTURES: readonly UserFixture[] = [
   { key: 'siddharth', email: 'siddharth.rao@pixelchai.demo.auralead.test', name: 'Siddharth Rao', globalRole: 'USER', createdDaysAgo: 45, lastLoginHoursAgo: 70 },
   { key: 'neha', email: 'neha.kapoor@team.demo.auralead.test', name: 'Neha Kapoor', globalRole: 'EMPLOYEE', createdDaysAgo: 30, lastLoginHoursAgo: 26 },
   { key: 'arjun', email: 'arjun.nair@team.demo.auralead.test', name: 'Arjun Nair', globalRole: 'EMPLOYEE', createdDaysAgo: 3, lastLoginHoursAgo: null },
+  { key: 'client', email: DEMO_PERSONAS.client.email, name: 'Aarav Mehta', globalRole: 'USER', createdDaysAgo: 30, lastLoginHoursAgo: 6 },
 ];
 
 export type MembershipFixture = { user: string; workspace: string; role: 'OWNER' | 'MEMBER'; createdDaysAgo: number };
@@ -40,6 +46,7 @@ export const MEMBERSHIP_FIXTURES: readonly MembershipFixture[] = [
   { user: 'vikram', workspace: 'kesari-crafts', role: 'OWNER', createdDaysAgo: 60 },
   { user: 'pooja', workspace: 'kesari-crafts', role: 'MEMBER', createdDaysAgo: 40 },
   { user: 'siddharth', workspace: 'pixelchai-studio', role: 'OWNER', createdDaysAgo: 45 },
+  { user: 'client', workspace: PRESENTATION_SLUG, role: 'OWNER', createdDaysAgo: 30 },
 ];
 
 export type AssignmentFixture = {
@@ -68,6 +75,9 @@ const OPERATOR: Capability[] = [
   'pipeline.manage',
 ];
 
+/** ADR-126: the presentation operator holds every capability except `consent.import` (OWNER only, ADR-120). */
+export const PRESENTATION_OPERATOR_CAPABILITIES: Capability[] = CAPABILITIES.filter((c) => c !== 'consent.import');
+
 export const ASSIGNMENT_FIXTURES: readonly AssignmentFixture[] = [
   { employee: 'employee', workspace: 'smile-avenue-dental', capabilities: OPERATOR, maxDiscountBps: 1000, active: true, createdDaysAgo: 110 },
   {
@@ -80,6 +90,7 @@ export const ASSIGNMENT_FIXTURES: readonly AssignmentFixture[] = [
   },
   { employee: 'employee', workspace: 'nestkey-realty', capabilities: ['leads.read', 'drafts.generate'], maxDiscountBps: 500, active: false, createdDaysAgo: 70 },
   { employee: 'neha', workspace: 'ironpulse-fitness', capabilities: ['leads.read'], maxDiscountBps: 500, active: true, createdDaysAgo: 30 },
+  { employee: 'employee', workspace: PRESENTATION_SLUG, capabilities: PRESENTATION_OPERATOR_CAPABILITIES, maxDiscountBps: 1000, active: true, createdDaysAgo: 28 },
 ];
 
 /** Who created the assignments (the platform admin). */

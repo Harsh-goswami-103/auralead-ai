@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { checkText } from '@/server/services/ai/output-policy';
-import { classifyReplyIntent, decideAutoReply, FIXED_REPLIES, REPLY_INTENTS, type ReplyFacts } from '@/server/services/ai/reply-guard';
+import { automatedReplyDisclosure, classifyReplyIntent, decideAutoReply, FIXED_REPLIES, REPLY_INTENTS, type ReplyFacts } from '@/server/services/ai/reply-guard';
 
 const FACTS: ReplyFacts = {
   business: 'Smile Avenue Dental Clinic',
@@ -120,5 +120,24 @@ describe('decideAutoReply', () => {
 
   it('is deterministic', () => {
     expect(decideAutoReply('do you offer whitening and aligners', FACTS)).toEqual(decideAutoReply('do you offer whitening and aligners', FACTS));
+  });
+});
+
+describe('web-development questions and the disclosure (ADR-122)', () => {
+  it.each([
+    ['Do you build websites?', 'service_faq'],
+    ['What is included in the e-commerce package?', 'service_faq'],
+    ['Do you do website maintenance and hosting?', 'service_faq'],
+    ['How much is a landing page?', 'quote_request'],
+    ['Who won the cricket match?', 'out_of_scope'],
+  ] as const)('%s -> %s', (text, intent) => {
+    expect(classifyReplyIntent(text, FACTS).intent).toBe(intent);
+  });
+
+  it('the disclosure names the business, offers a person through the HUMAN rule and passes the output policy', () => {
+    const line = automatedReplyDisclosure(' Codecraft Web Studio ');
+    expect(line).toBe("Codecraft Web Studio's automated assistant. Reply HUMAN to talk to a person.");
+    expect(classifyReplyIntent('human', FACTS).intent).toBe('human_request');
+    expect(checkText(line, NO_POLICY_CTX)).toEqual([]);
   });
 });

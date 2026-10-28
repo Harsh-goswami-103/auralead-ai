@@ -6,7 +6,7 @@ export const messagingRules: DocPage = {
   summary:
     'When AuraLead may send a WhatsApp message or an email: consent and its sources, the 24-hour WhatsApp window, templates, Stop and unsubscribe, suppression, every eligibility reason code, and the pauses.',
   appliesTo: ['DEMO', 'LIVE'],
-  checked: '2026-10-20',
+  checked: '2026-10-23',
   sections: [
     {
       id: 'one-check',
@@ -48,7 +48,8 @@ export const messagingRules: DocPage = {
             ['`META_FORM`', 'A Meta lead form answers yes to the mapped consent question; the notice text hash is stored.', '`OPT_IN`'],
             ['`INBOUND_MESSAGE`', 'The customer writes to the business on WhatsApp. It covers the service conversation only.', '`INBOUND_MESSAGE`'],
             ['`START_KEYWORD`', 'The customer sends START after a Stop.', '`OPT_IN`'],
-            ['`MANUAL_EVIDENCE`', 'A person records an opt-in with its channel, purpose, an evidence note and the time it was given (`/api/app/consent/grants`). Such a record may also cite a Sheets or Meta form; a Maps listing is never evidence, and undated evidence is refused.', '`OPT_IN`'],
+            ['`MANUAL_EVIDENCE`', 'A person records an opt-in with its channel, purpose, an evidence note and the time it was given (`/api/app/consent/grants`). For a WhatsApp marketing opt-in the notice the customer saw (it must name the business) and how they agreed are required as well. Such a record may also cite a Sheets or Meta form; a Maps listing is never evidence, and undated evidence is refused. See [Reach out and hand over](/docs/reach-out-and-handoff#record-opt-in).', '`OPT_IN`'],
+            ['`FILE_IMPORT`', 'A workspace owner imports a file with a consent column, from a list the business collected itself, and accepts the attestation; the notice and its hash are stored. It never clears a Stop. See [Import and export leads](/docs/import-and-export#import-consent).', '`OPT_IN`'],
             ['`EMPLOYEE_ATTESTATION`', 'Someone in the workspace attests, with a note, that a business may be emailed. Only when the workspace enables B2B attestation, which is off by default (`/api/app/consent/attestations`).', '`B2B_ATTESTED`'],
           ],
         },
@@ -65,7 +66,7 @@ export const messagingRules: DocPage = {
         {
           kind: 'callout',
           tone: 'warning',
-          text: 'Leads from the Maps extension never carry WhatsApp consent, so a template send to them is refused with `NO_WHATSAPP_OPT_IN` and never attempted.',
+          text: 'Leads from the Maps extension, from a Google Places search ([Lead Finder](/docs/lead-finder)) and from a file import never carry WhatsApp consent of their own (an attested consent column can cover rows of a file). A template send to such a lead is refused with `NO_WHATSAPP_OPT_IN` and never attempted, in a single send and in bulk.',
         },
       ],
     },
@@ -77,7 +78,8 @@ export const messagingRules: DocPage = {
           kind: 'list',
           items: [
             'The window is open while the current time is earlier than the customer\'s last inbound message plus exactly 24 hours, measured from the provider\'s own timestamp. There is no safety margin and no rounding.',
-            'Only valid inbound messages move it: text, media, button and quick replies. Template sends, delivery statuses, quotation link opens, echoes and the business\'s own free-form messages never do, and a late, older inbound message never shortens it.',
+            'Only valid inbound messages move it: text, media, button and quick replies. Template sends, delivery statuses, quotation link opens, echoes and the business\'s own free-form messages never do, and a late, older inbound message never shortens it. A customer who taps a click-to-chat link and writes first opens the window.',
+            'Automatic replies are made only inside the window, in Auto and in Draft alike; once it has closed, no reply or draft is prepared.',
             'The composer shows "Free-form until" with the closing time, and the check runs again at send. A free-form message whose window closed before it was sent is skipped with `WINDOW_CLOSED` and goes back for review or a template; it is never sent as free-form.',
           ],
         },
@@ -90,7 +92,7 @@ export const messagingRules: DocPage = {
         {
           kind: 'list',
           items: [
-            'A template send needs a stored template whose provider status is approved. Status and category are kept exactly as the provider reports them. Otherwise the send is refused with `TEMPLATE_NOT_APPROVED`.',
+            'A template send needs a stored template whose provider status is approved. Status and category are kept exactly as the provider reports them. Otherwise the send is refused with `TEMPLATE_NOT_APPROVED`. A template written in the [template studio](/docs/template-studio) is a Draft until it is submitted and can never be sent before Meta approves it.',
             'Quick replies are recognized by their payload id: `AL_QR_QUOTE_V1` (get the quotation), `AL_QR_CALL_V1` (request a call) and `AL_QR_STOP_V1` (stop). When a provider does not echo the payload, the button text is matched against a fixed list; an unknown payload goes to a person.',
             'Get quote with an approved current quotation queues its PDF as a document reply; without one, the lead\'s draft quotation is flagged as customer requested for approval. Request a call creates exactly one call request per message, even when the message is delivered twice.',
             'Every such reply goes through the outbox as a customer-requested reply, so consent, window, suppression and pauses are checked at send time like any other send.',
@@ -134,7 +136,7 @@ export const messagingRules: DocPage = {
           items: [
             'A suppression belongs to a workspace, a channel and a contact key: an HMAC-SHA256 of the normalized phone number or email address under `SUPPRESSION_PEPPER`. It is not tied to a lead, so merging, re-importing or erasing the lead cannot remove it.',
             'Suppressions are history: there is at most one active row per contact and channel, and rows are never deleted. The reasons are `STOP_BUTTON`, `STOP_KEYWORD`, `UNSUBSCRIBE`, `HARD_BOUNCE`, `COMPLAINT`, `MARKETING_STOPPED` and `MANUAL`.',
-            'Only a new `OPT_IN` consent collected strictly after the latest Stop clears it, for example START sent after the Stop. Older, undated or backfilled evidence never does, so Stop, START, Stop and then a delayed form answer from before the second Stop stays suppressed.',
+            'Only a new `OPT_IN` consent collected strictly after the latest Stop clears it, for example START sent after the Stop. Older, undated or backfilled evidence never does, so Stop, START, Stop and then a delayed form answer from before the second Stop stays suppressed. A file import counts as backfilled evidence whatever its dates say: it never clears a Stop.',
             'Every Stop and every clear is also appended to the suppression journal, a file outside the database (`journal/` in the data folder). A database restore replays it, so an opt-out recorded after the backup is never lost.',
           ],
         },
@@ -186,7 +188,8 @@ export const messagingRules: DocPage = {
             '**Global outbound pause.** Any of three switches holds every provider send at preflight (`GLOBAL_PAUSED`): the admin switch (**Pause all outbound** in Jobs and queue, with a reason and a recent sign-in), an `outbound.lock` file in the data folder (written by a restore, or by an operator), or `OUTBOUND_PAUSED=1`. Sends already `SENDING` complete; ingestion, scoring and drafts carry on. Every panel shows a red banner while it holds.',
             '**Workspace automation pause.** Automated sends of that workspace wait (`WORKSPACE_PAUSED`) and its panels show a warning banner; sends a person makes still go.',
             '**Human takeover.** Taking over a conversation stops its automated replies at once, including replies already queued (`HUMAN_TAKEOVER`); **Resume AI** hands it back, and replies queued before the change stay blocked (`MODE_CHANGED`).',
-            '**Conversation AI mode.** Off, Draft (suggestions wait for a person) or Auto. Auto is available only while workspace auto-send is on (it is off by default) and only to people with `automation.manage`.',
+            '**Conversation AI mode.** Off, Draft (suggestions wait for a person) or Auto. Auto is available only while the workspace\'s **Automatic sending** switch (the auto-send setting) is on, which it is not by default, and only to people with `automation.manage`. What an automatic reply may say, and when it stops, is in [Inbox and automatic replies](/docs/inbox-and-ai-replies).',
+            '**Handed over to the client.** After a lead is handed over, sends to it by operators (the composer, drafts, approvals, quotations, bulk) are refused with 409 `HANDED_OVER`, and automatic replies stop. This guard sits in front of the eligibility check and is not one of its reason codes, so the table above is unchanged. See [Reach out and hand over](/docs/reach-out-and-handoff#after-handoff).',
           ],
         },
         {

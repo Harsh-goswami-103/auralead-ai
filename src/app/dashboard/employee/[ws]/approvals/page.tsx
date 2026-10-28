@@ -16,6 +16,7 @@ import { QueueList } from '@/components/approvals/QueueList';
 import { waitingTier } from '@/components/approvals/approval-vocabulary';
 import { AutoRefresh } from '@/components/inbox/AutoRefresh';
 import { ageHint, formatShortDateTime } from '@/components/inbox/format';
+import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { EmptyState } from '@/components/patterns/EmptyState';
 import { PageHeader } from '@/components/patterns/PageHeader';
 import { StatTile } from '@/components/patterns/StatTile';
@@ -77,6 +78,7 @@ export default async function WorkspaceApprovalsPage({ params }: { params: Promi
           </Link>
         }
       />
+      <WorkspaceSectionNav slug={ws} workspaceName={queue?.workspace.name ?? ws} />
 
       {queue === null ? (
         <EmptyState

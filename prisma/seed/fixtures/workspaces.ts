@@ -4,15 +4,23 @@
  * freelance design studio. Every name, address and contact is invented; contacts use the
  * reserved `.test` / `example.com` domains so nothing is deliverable.
  *
+ * The sixth tenant, `codecraft-web` (Codecraft Web Studio, Indore), is the presentation workspace
+ * of the lead-gen suite (ADR-126): a web-development studio with its own scoring version, a
+ * WhatsApp opt-in notice and automatic sending on. Its finder run, leads, chats and templates are
+ * in fixtures/presentation.ts. The other five tenants are unchanged by it.
+ *
  * Prices are whole rupees stored as BigInt paise (ADR-07). Tax: GST 18% where the business is
  * GST-registered, explicit NONE for the freelancer below the threshold (plan §8, explicit mode).
  */
+import { CODECRAFT_SCORING_V1, PRESENTATION_BUSINESS, PRESENTATION_OPT_IN_NOTICE, PRESENTATION_PRIVACY_CONTACT, PRESENTATION_SLUG } from './presentation';
 
 export const REQUIRED_CITIES = ['Delhi NCR', 'Mumbai', 'Bengaluru'] as const;
-export type City = (typeof REQUIRED_CITIES)[number];
+/** The required cities plus the presentation workspace's city (ADR-126). */
+export type City = (typeof REQUIRED_CITIES)[number] | 'Indore';
 
 export const REQUIRED_CATEGORIES = ['clinic', 'gym', 'property', 'ecommerce', 'freelancer'] as const;
-export type BusinessCategory = (typeof REQUIRED_CATEGORIES)[number];
+/** The required categories plus the presentation web studio (ADR-126). */
+export type BusinessCategory = (typeof REQUIRED_CATEGORIES)[number] | 'web-studio';
 
 export type ServiceFixture = {
   code: string;
@@ -49,11 +57,95 @@ export type WorkspaceFixture = {
     emailFallbackEnabled: boolean;
     internalWaDailyCap: number | null;
     internalEmailDailyCap: number | null;
+    /** ADR-125: the WhatsApp opt-in notice prefilled when an opt-in is recorded (null when absent). */
+    whatsappOptInNotice?: string;
+    /** ADR-125: who to contact about personal data (null when absent). */
+    privacyContact?: string;
   };
   services: ServiceFixture[];
+  /** Scoring config version 1; fixtures/configs.ts SCORING_V1 when not given. */
+  scoring?: Readonly<Record<string, unknown>>;
 };
 
 const GST = { taxMode: 'CONFIGURED', taxLabel: 'GST', taxBps: 1800 } as const;
+
+/** The presentation web studio (ADR-126): GST-registered, automatic sending on (ADR-121). */
+const CODECRAFT_WEB: WorkspaceFixture = {
+  slug: PRESENTATION_SLUG,
+  name: PRESENTATION_BUSINESS,
+  city: 'Indore',
+  locality: 'Vijay Nagar, Indore',
+  category: 'web-studio',
+  planLabel: 'Growth',
+  createdDaysAgo: 30,
+  settings: {
+    ...GST,
+    maxDiscountBps: 1500,
+    quoteValidityDays: 15,
+    brandColor: '#1D4ED8',
+    bookingUrl: 'https://example.com/call/codecraft',
+    autoSendEnabled: true,
+    emailB2bAttestationEnabled: true,
+    emailFallbackEnabled: false,
+    internalWaDailyCap: 250,
+    internalEmailDailyCap: 100,
+    whatsappOptInNotice: PRESENTATION_OPT_IN_NOTICE,
+    privacyContact: PRESENTATION_PRIVACY_CONTACT,
+  },
+  services: [
+    {
+      code: 'WEB-BIZ',
+      name: 'Business website',
+      description: 'A responsive five-page website with a contact form, a WhatsApp chat button and your Google Maps location.',
+      unitLabel: 'website',
+      defaultTimelineDays: 14,
+      maxDiscountBps: 1000,
+      unitPriceRupees: 24000,
+      maxQty: 5,
+    },
+    {
+      code: 'WEB-SHOP',
+      name: 'E-commerce store',
+      description: 'An online store for up to 100 products with UPI and card payments and order emails.',
+      unitLabel: 'store',
+      defaultTimelineDays: 30,
+      maxDiscountBps: 1000,
+      unitPriceRupees: 60000,
+      maxQty: 2,
+    },
+    {
+      code: 'WEB-LAND',
+      name: 'Landing page',
+      description: 'One landing page for an offer or a campaign, with a lead form.',
+      unitLabel: 'page',
+      defaultTimelineDays: 5,
+      maxDiscountBps: 1500,
+      unitPriceRupees: 8000,
+      maxQty: 10,
+    },
+    {
+      code: 'SEO-SETUP',
+      name: 'SEO setup',
+      description: 'Google Business Profile, on-page SEO, a sitemap and Search Console setup.',
+      unitLabel: 'setup',
+      defaultTimelineDays: 10,
+      maxDiscountBps: 1000,
+      unitPriceRupees: 12000,
+      maxQty: 1,
+    },
+    {
+      code: 'WEB-CARE',
+      name: 'Website maintenance',
+      description: 'Monthly content updates, backups, security updates and uptime checks.',
+      unitLabel: 'month',
+      defaultTimelineDays: 30,
+      maxDiscountBps: 500,
+      unitPriceRupees: 2500,
+      maxQty: 24,
+    },
+  ],
+  scoring: CODECRAFT_SCORING_V1,
+};
 
 export const WORKSPACE_FIXTURES: readonly WorkspaceFixture[] = [
   {
@@ -189,6 +281,7 @@ export const WORKSPACE_FIXTURES: readonly WorkspaceFixture[] = [
       { code: 'SOCIAL-M', name: 'Social media creatives', description: 'Twelve post designs per month for Instagram and LinkedIn.', unitLabel: 'month', defaultTimelineDays: 30, maxDiscountBps: 500, unitPriceRupees: 12000, maxQty: 12 },
     ],
   },
+  CODECRAFT_WEB,
 ];
 
 /** Quotation terms shown on quotes; the jurisdiction line names the business's city. */

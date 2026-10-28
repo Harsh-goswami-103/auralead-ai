@@ -1,5 +1,5 @@
 /**
- * Leads CSV export (T26, plan §11 M4, §9 XSS row, ADR-70).
+ * Leads export (T26, plan §11 M4, §9 XSS row, ADR-70), as CSV or an Excel workbook (ADR-120).
  *
  * - `requestLeadExport` (needs `leads.export`): stores a LeadExport with the list filters, enqueues
  *   `leads.export` and audits `lead.export.request`, in one transaction. Idempotent per client
@@ -13,8 +13,11 @@
  *   it is READY and unexpired (410 after), only when the stored sha256 still matches; every
  *   download is audited `lead.export.download`.
  *
- * The file lives at `STORAGE_DIR/exports/<workspaceId>/<exportId>.csv`, outside the repository,
- * written to a temp name and renamed so a reader never sees half a file.
+ * The file lives at `STORAGE_DIR/exports/<workspaceId>/<exportId>.<format>` (`leadExportRelPath`;
+ * csv, or xlsx per ADR-120), outside the repository, written to a temp name and renamed so a reader
+ * never sees half a file. Both formats hold the same header and rows (`LEAD_CSV_HEADER`,
+ * `leadCsvRow`): the CSV escapes formula cells with an apostrophe, the workbook writes every text
+ * cell as an inline string, which a spreadsheet never evaluates (ADR-117).
  *
  * Load and retention (ADR-73): a request with the same filters as one of the requester's exports
  * still preparing or ready reuses it; a workspace holds at most `LEAD_EXPORT_ACTIVE_CAP` active
@@ -29,20 +32,23 @@ import path from 'node:path';
 import type { LeadExport, Prisma, PrismaClient } from '@/generated/prisma/client';
 import { AppError, ConflictError, DomainRuleError, IdempotencyConflictError, NotFoundError } from '@/lib/errors';
 import {
+  LEAD_EXPORT_FORMATS,
   LEAD_EXPORT_ROW_CAP,
   LEAD_EXPORT_TTL_HOURS,
   LeadFilters,
   type LeadExportDto,
+  type LeadExportFormat,
   type LeadExportStatus,
   type LeadFilters as LeadFiltersType,
 } from '@/lib/schemas/leads';
+import { writeXlsx } from '@/lib/spreadsheet';
 import type { AppCtx } from '@/server/auth/context';
 import { requireActor, requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
 import type { TxClient } from '@/server/jobs/types';
 import { recordAudit, type AuditCtx } from '@/server/services/audit/record';
-import { buildCsv, LEAD_CSV_HEADER, leadCsvRow } from './csv';
+import { buildCsv, LEAD_CSV_HEADER, leadCsvRow, type CsvValue } from './csv';
 import { leadFilterWhere, leadsAfter, leadSortOrder } from './list';
 
 export const LEAD_EXPORT_JOB = 'leads.export';
@@ -82,9 +88,25 @@ export class ExportIntegrityError extends AppError {
 
 // ---- Files --------------------------------------------------------------------------------------
 
-export function leadExportRelPath(workspaceId: string, exportId: string): string {
+/** `LeadExport.format` values (ADR-120); the column defaults to csv. */
+export { LEAD_EXPORT_FORMATS, type LeadExportFormat };
+
+/** The stored format, or null for a value this version does not write. */
+export function exportFormatOf(value: string): LeadExportFormat | null {
+  return (LEAD_EXPORT_FORMATS as readonly string[]).includes(value) ? (value as LeadExportFormat) : null;
+}
+
+/** The download's content type per format. */
+export const LEAD_EXPORT_CONTENT_TYPES: Readonly<Record<LeadExportFormat, string>> = {
+  csv: 'text/csv; charset=utf-8',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
+/** `exports/<workspaceId>/<exportId>.<format>`, relative to STORAGE_DIR. */
+export function leadExportRelPath(workspaceId: string, exportId: string, format: LeadExportFormat): string {
   if (!/^[A-Za-z0-9_-]+$/.test(workspaceId) || !/^[A-Za-z0-9_-]+$/.test(exportId)) throw new Error('export ids must be plain identifiers');
-  return `exports/${workspaceId}/${exportId}.csv`;
+  if (!(LEAD_EXPORT_FORMATS as readonly string[]).includes(format)) throw new Error('unknown export format');
+  return `exports/${workspaceId}/${exportId}.${format}`;
 }
 
 function absolute(storageDir: string, relPath: string): string {
@@ -139,7 +161,7 @@ export function withoutSearchText(value: unknown): Prisma.InputJsonValue {
 }
 
 function sameFilters(a: LeadFiltersType, b: LeadFiltersType): boolean {
-  return (a.q ?? null) === (b.q ?? null) && (a.stage ?? null) === (b.stage ?? null) && (a.source ?? null) === (b.source ?? null) && (a.score ?? null) === (b.score ?? null) && a.sort === b.sort;
+  return (a.q ?? null) === (b.q ?? null) && (a.stage ?? null) === (b.stage ?? null) && (a.source ?? null) === (b.source ?? null) && (a.score ?? null) === (b.score ?? null) && (a.handedOver ?? false) === (b.handedOver ?? false) && a.sort === b.sort;
 }
 
 /** QUEUED, or READY and not yet expired at `now`. */
@@ -158,6 +180,7 @@ export function leadExportDto(row: LeadExport, now: Date): LeadExportDto {
   if (effectiveStatus === 'EXPIRED' || effectiveStatus === 'FAILED') delete filters.q;
   return {
     id: row.id,
+    format: exportFormatOf(row.format) ?? 'csv',
     status: row.status,
     effectiveStatus,
     filters,
@@ -173,16 +196,17 @@ export function leadExportDto(row: LeadExport, now: Date): LeadExportDto {
 
 /** What the audit may say about the filters: their names and enum values, never the search text. */
 function auditFilters(filters: LeadFiltersType) {
-  return { stage: filters.stage ?? null, source: filters.source ?? null, score: filters.score ?? null, sort: filters.sort, search: Boolean(filters.q) };
+  return { stage: filters.stage ?? null, source: filters.source ?? null, score: filters.score ?? null, handedOver: filters.handedOver ?? false, sort: filters.sort, search: Boolean(filters.q) };
 }
 
 // ---- Request, list, download --------------------------------------------------------------------
 
-export async function requestLeadExport(ctx: AppCtx, input: { requestKey: string; filters: unknown }): Promise<{ export: LeadExportDto; created: boolean }> {
+export async function requestLeadExport(ctx: AppCtx, input: { requestKey: string; filters: unknown; format?: LeadExportFormat }): Promise<{ export: LeadExportDto; created: boolean }> {
   requireCapability(ctx, 'leads.export');
   const workspaceId = requireWorkspace(ctx);
   const actor = requireActor(ctx);
   const filters = LeadFilters.parse(input.filters ?? {});
+  const format: LeadExportFormat = input.format ?? 'csv';
   const now = ctx.clock.now();
 
   return withTx(ctx.db, async (tx) => {
@@ -195,13 +219,13 @@ export async function requestLeadExport(ctx: AppCtx, input: { requestKey: string
     const inFlight = await tx.leadExport.findMany({ where: { requestedBy: actor.userId, ...activeExportWhere(now) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
     const same = inFlight.find((e) => {
       const stored = exportFiltersOf(e);
-      return stored !== null && sameFilters(stored, filters);
+      return stored !== null && sameFilters(stored, filters) && (exportFormatOf(e.format) ?? 'csv') === format;
     });
     if (same) return { export: leadExportDto(same, now), created: false };
     const active = await tx.leadExport.count({ where: activeExportWhere(now) });
     if (active >= LEAD_EXPORT_ACTIVE_CAP) throw new ExportLimitError({ safeDetails: { limit: LEAD_EXPORT_ACTIVE_CAP } });
     const row = await tx.leadExport.create({
-      data: { workspaceId, requestKey: input.requestKey, filters: filters as unknown as Prisma.InputJsonValue, requestedBy: actor.userId, correlationId: ctx.correlationId, createdAt: now },
+      data: { workspaceId, requestKey: input.requestKey, filters: filters as unknown as Prisma.InputJsonValue, format, requestedBy: actor.userId, correlationId: ctx.correlationId, createdAt: now },
     });
     const { job } = await enqueueJob(tx as unknown as JobStore, ctx.clock, {
       type: LEAD_EXPORT_JOB,
@@ -218,7 +242,7 @@ export async function requestLeadExport(ctx: AppCtx, input: { requestKey: string
       targetType: 'LeadExport',
       targetId: row.id,
       workspaceId,
-      summary: { filters: auditFilters(filters), jobId: job.id },
+      summary: { filters: auditFilters(filters), format, jobId: job.id },
     });
     return { export: leadExportDto(updated, now), created: true };
   });
@@ -237,18 +261,22 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** `leads-<workspace slug>-<yyyymmdd>-<hhmm>.csv`, the time the file was written in the workspace zone. */
-export function leadExportFileName(slug: string, at: Date, timeZone: string): string {
+/** `leads-<workspace slug>-<yyyymmdd>-<hhmm>.<csv|xlsx>`, the time the file was written in the workspace zone. */
+export function leadExportFileName(slug: string, at: Date, timeZone: string, format: LeadExportFormat = 'csv'): string {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       .formatToParts(at)
       .map((p) => [p.type, p.value]),
   ) as Record<string, string>;
   const safeSlug = slug.replace(/[^a-z0-9-]/g, '-');
-  return `leads-${safeSlug}-${parts.year}${parts.month}${parts.day}-${pad(Number(parts.hour) % 24)}${parts.minute}.csv`;
+  return `leads-${safeSlug}-${parts.year}${parts.month}${parts.day}-${pad(Number(parts.hour) % 24)}${parts.minute}.${format}`;
 }
 
-export async function getLeadExportDownload(ctx: AppCtx, exportId: string, deps: { storageDir: string }): Promise<{ bytes: Buffer; fileName: string }> {
+export async function getLeadExportDownload(
+  ctx: AppCtx,
+  exportId: string,
+  deps: { storageDir: string },
+): Promise<{ bytes: Buffer; fileName: string; format: LeadExportFormat; contentType: string }> {
   requireCapability(ctx, 'leads.export');
   const workspaceId = requireWorkspace(ctx);
   const actor = requireActor(ctx);
@@ -266,7 +294,8 @@ export async function getLeadExportDownload(ctx: AppCtx, exportId: string, deps:
     await tx.leadExport.update({ where: { id: row.id }, data: { downloadCount: { increment: 1 }, lastDownloadedAt: now } });
     await recordAudit(tx, ctx, { action: 'lead.export.download', targetType: 'LeadExport', targetId: row.id, workspaceId, summary: { rowCount: row.rowCount, bytes: row.bytes } });
   });
-  return { bytes, fileName: leadExportFileName(workspace.slug, row.completedAt ?? now, workspace.timezone) };
+  const format = exportFormatOf(row.format) ?? 'csv';
+  return { bytes, fileName: leadExportFileName(workspace.slug, row.completedAt ?? now, workspace.timezone, format), format, contentType: LEAD_EXPORT_CONTENT_TYPES[format] };
 }
 
 // ---- Job side -----------------------------------------------------------------------------------
@@ -292,18 +321,18 @@ const CSV_SELECT = {
 } as const satisfies Prisma.LeadSelect;
 
 /**
- * The CSV for a workspace's leads matching `filters`, in the list's order, walked in keyset
+ * The rows of a workspace's leads matching `filters`, in the list's order, walked in keyset
  * batches with the unscoped job client (the workspace is bound explicitly). Stops at `rowCap`.
  */
-export async function buildLeadExportCsv(
+export async function buildLeadExportRows(
   db: Pick<PrismaClient, 'lead'>,
   workspaceId: string,
   filters: LeadFiltersType,
   rowCap: number = LEAD_EXPORT_ROW_CAP,
-): Promise<{ csv: string; rowCount: number; truncated: boolean }> {
+): Promise<{ rows: CsvValue[][]; rowCount: number; truncated: boolean }> {
   const base: Prisma.LeadWhereInput = { AND: [{ workspaceId }, leadFilterWhere(filters)] };
   const order = leadSortOrder(filters.sort);
-  const rows: ReturnType<typeof leadCsvRow>[] = [];
+  const rows: CsvValue[][] = [];
   let after: Prisma.LeadWhereInput | null = null;
   let truncated = false;
   for (;;) {
@@ -319,7 +348,32 @@ export async function buildLeadExportCsv(
     if (truncated || batch.length < take) break;
     after = leadsAfter(filters.sort, batch[batch.length - 1]!);
   }
-  return { csv: buildCsv(LEAD_CSV_HEADER, rows), rowCount: rows.length, truncated };
+  return { rows, rowCount: rows.length, truncated };
+}
+
+/** The CSV of `buildLeadExportRows`. */
+export async function buildLeadExportCsv(
+  db: Pick<PrismaClient, 'lead'>,
+  workspaceId: string,
+  filters: LeadFiltersType,
+  rowCap: number = LEAD_EXPORT_ROW_CAP,
+): Promise<{ csv: string; rowCount: number; truncated: boolean }> {
+  const built = await buildLeadExportRows(db, workspaceId, filters, rowCap);
+  return { csv: buildCsv(LEAD_CSV_HEADER, built.rows), rowCount: built.rowCount, truncated: built.truncated };
+}
+
+/** The export file in `format`: the same header and rows as CSV (with its BOM) or as one Excel sheet "Leads". */
+export async function buildLeadExportFile(
+  db: Pick<PrismaClient, 'lead'>,
+  workspaceId: string,
+  filters: LeadFiltersType,
+  format: LeadExportFormat,
+  rowCap: number = LEAD_EXPORT_ROW_CAP,
+): Promise<{ bytes: Buffer; rowCount: number; truncated: boolean }> {
+  const built = await buildLeadExportRows(db, workspaceId, filters, rowCap);
+  const bytes =
+    format === 'xlsx' ? Buffer.from(writeXlsx({ sheetName: 'Leads', header: LEAD_CSV_HEADER, rows: built.rows })) : Buffer.from(buildCsv(LEAD_CSV_HEADER, built.rows), 'utf8');
+  return { bytes, rowCount: built.rowCount, truncated: built.truncated };
 }
 
 export function exportFiltersOf(row: Pick<LeadExport, 'filters'>): LeadFiltersType | null {

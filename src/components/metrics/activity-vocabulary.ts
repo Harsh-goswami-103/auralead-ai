@@ -49,11 +49,11 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'reply.drafted': 'Suggested reply drafted',
   'reply.superseded': 'Suggested reply replaced',
   'consent.grant': 'Consent recorded',
-  'consent.capture': 'Consent captured from a form',
+  'consent.capture': 'Consent recorded from a form or an attested import',
   'suppression.stop': 'Contact opted out',
   'suppression.stop_repeat': 'Repeat opt-out recorded',
   'suppression.clear': 'Opt-out cleared by newer consent',
-  'suppression.clear_refused': 'Opt-out kept (consent was older)',
+  'suppression.clear_refused': 'Opt-out kept (the consent could not clear it)',
   'suppression.replay': 'Opt-out restored after a backup restore',
   'quick_reply.quote_requested': 'Customer asked for a quotation',
   'quick_reply.review': 'Quick reply needs review',
@@ -87,6 +87,48 @@ export const ACTIVITY_LABELS: Readonly<Record<string, string>> = {
   'invite.redeem': 'Invitation accepted',
   'demo.seed': 'Demo data loaded',
   'demo.refresh': 'Demo dates refreshed',
+  // Lead-gen suite audit actions, each in its slice's block (docs/handoff/lead-gen-suite-plan.md §6).
+  // ---- lead-gen F1 finder ----
+  'finder.run.start': 'Lead finder search started',
+  'finder.run.finish': 'Lead finder search finished',
+  'finder.run.cancel': 'Lead finder search cancelled',
+  'finder.import': 'Lead finder results imported as leads',
+  'finder.export': 'Lead finder results downloaded (Excel)',
+  'finder.results.purge': 'Expired lead finder details removed (24-hour copy)',
+  'finder.results.refresh': 'Lead finder details refreshed',
+  'finder.emails.extract': 'Websites checked for email addresses',
+  'lead.places_expire': 'Unconfirmed Google Places details removed from leads',
+  'lead.contact_confirm': 'Lead contact details confirmed',
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+  'lead.import.upload': 'Lead file uploaded for preview',
+  'lead.import.confirm': 'Lead file import started',
+  'lead.import.complete': 'Lead file import finished',
+  'lead.import.failed': 'Lead file import failed',
+  'lead.import.expire': 'Unconfirmed lead file deleted',
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+  'template.draft.create': 'Template draft saved',
+  'template.draft.update': 'Template draft changed',
+  'template.draft.delete': 'Template draft deleted',
+  'template.delete': 'Rejected template deleted',
+  'template.submit': 'Template submission started',
+  'template.review': 'Template reviewed (simulated)',
+  'media.upload': 'Brochure uploaded',
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+  'lead.handoff': 'Lead handed over to the client',
+  'lead.handoff.summary': 'Handoff summary written',
+  'lead.handoff.acknowledge': 'Handed-over lead acknowledged',
+  'conversation.handoff': 'Conversation passed to the client (AI off)',
+  'workspace.reach_out': 'Opt-in notice or privacy contact changed',
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 };
 
 const FAMILIES: ReadonlyArray<readonly [prefix: string, icon: LucideIcon]> = [

@@ -6,7 +6,7 @@ export const troubleshooting: DocPage = {
   summary:
     'The symptoms you are most likely to meet and their real fixes: start-up refusals, OneDrive warnings, sign-in lockouts, a stopped worker, stuck jobs, paused outbound, refused sends, a busy database and refused restores.',
   appliesTo: ['DEMO', 'LIVE'],
-  checked: '2026-10-20',
+  checked: '2026-10-23',
   sections: [
     {
       id: 'startup-refusals',
@@ -154,11 +154,32 @@ export const troubleshooting: DocPage = {
         {
           kind: 'list',
           items: [
-            '`NO_WHATSAPP_OPT_IN`: there is no WhatsApp opt-in on record. Maps extension leads never have one; record real evidence or use another channel.',
+            '`NO_WHATSAPP_OPT_IN`: there is no WhatsApp opt-in on record. Leads from the Maps extension, a Google Places search or a file import never have one of their own; record real evidence on the lead\'s reach-out panel, share your click-to-chat link so the customer writes first, or use another channel.',
+            '`HANDED_OVER`: the lead was handed over to the client, so operators can no longer message it or change its conversations. The client continues; see [Reach out and hand over](/docs/reach-out-and-handoff#after-handoff).',
             '`WINDOW_CLOSED`: the 24-hour window is closed. Send an approved template or save the reply for review.',
             '`SUPPRESSED`: the contact said Stop or unsubscribed. Only a new opt-in collected after the Stop clears it.',
             '`APPROVAL_STALE`: something in the message changed after it was approved. Approve the current version again.',
             '`NOT_CONFIGURED` (LIVE): the channel has no connected integration.',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'lead-generation',
+      title: 'The finder, an import, a template or an automatic reply does not work',
+      blocks: [
+        {
+          kind: 'list',
+          items: [
+            '**A search ends with an error code.** `PLACES_AUTH`: Google rejected the key, so save a valid one on the Google Places integration page. `PLACES_PERMISSION`: switch on the Places API (New) and billing for the key\'s project, or lift the key\'s restrictions. `PLACES_RATE_LIMITED`, `PLACES_UNAVAILABLE` and `PLACES_UNREACHABLE`: Google throttled or did not answer, some searches were skipped and the run reads "Finished with gaps"; search again later. [Lead Finder](/docs/lead-finder#google-places) has the rest.',
+            '**A new search is refused.** `FINDER_RUN_LIMIT` (409): two searches are already running in the workspace; cancel one or wait. A 429 means the limit of 10 new searches an hour was reached.',
+            '**Results say "Details expired".** Google content is a 24-hour copy. **Refresh details** fetches it again (a paid request, up to 10 results at a time, `finder.run` needed); imported leads keep their own copy for 30 days.',
+            '**An import is refused with 422.** The reason code says why: a file that is too large or has too many rows or columns, the wrong type, no header or no data. The list is in [Import and export leads](/docs/import-and-export#import). A consent column that is ignored or refused is explained on the confirmation; a row without consent has its reason in the result.',
+            '**An import stays on Importing.** The background worker is not running (see [Nothing happens after an action](#worker-not-running)). A job that died without reporting is ended as failed (`IMPORT_STALLED`) by the cleanup 24 hours after the upload.',
+            '**A template stays on "Submitting to Meta".** The submission job or the follow-up sync has not run; check the worker. If Meta never received it, the sync returns the template to Draft after a minute (`NOT_FOUND_AFTER_SUBMIT`) and you submit again. A template with a PDF header is refused with `INTEGRATION_NOT_CONFIGURED` until the Meta app ID is saved on the WhatsApp integration.',
+            '**A template was rejected.** The reason is shown on the template. Change the wording or the category, save it as a new template with a new name, and delete the rejected one (that also frees its name at Meta).',
+            '**No automatic reply came.** Check, in order: the conversation is in Auto, **Automatic sending** is on for the workspace, a person has not taken the thread over, the lead was not handed over, the 24-hour window is open (`WINDOW_CLOSED`), the contact has not opted out, fewer than four automatic replies went out in a row (`REPLY_CAP`), and the message was a service question. Prices, calls, complaints and requests for a person always wait for a person; see [Inbox and automatic replies](/docs/inbox-and-ai-replies#what-ai-answers).',
+            '**A hand-over is refused.** `ALREADY_HANDED_OVER`: it was done already. `LEAD_LOST` and `LEAD_MERGED`: move a lost lead back to an open stage, or hand over the lead it was merged into. `STAGE_VERSION_CONFLICT` and `MODE_VERSION_CONFLICT`: someone changed the lead or a conversation at the same moment; reload and try again, nothing was changed.',
           ],
         },
       ],

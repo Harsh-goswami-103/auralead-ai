@@ -6,7 +6,7 @@ export const limitations: DocPage = {
   summary:
     'What AuraLead AI does not do, what it cannot prove, and the limits of a single-machine deployment, stated plainly so nothing is assumed.',
   appliesTo: ['DEMO', 'LIVE'],
-  checked: '2026-10-20',
+  checked: '2026-10-23',
   sections: [
     {
       id: 'providers-not-live-verified',
@@ -22,6 +22,7 @@ export const limitations: DocPage = {
             'WhatsApp provider error codes and their meaning are kept in one dated table and treated as unverified until checked against live behavior.',
             'Things only the provider decides cannot be shown here: template approval, quality ratings, messaging limits and marketing message caps.',
             'Whether WhatsApp echoes quick-reply payload ids is unverified; when it does not, the button text is matched instead.',
+            'The Google Places requests of the [Lead Finder](/docs/lead-finder) follow Google\'s published reference as read on 23 Oct 2026 and are tested against documented-shape fixtures only. The calls that create and delete WhatsApp templates and upload a sample document for the [template studio](/docs/template-studio) are in the same state, and so is the `rejected_reason` field of the template list.',
           ],
         },
       ],
@@ -83,8 +84,25 @@ export const limitations: DocPage = {
           items: [
             'Payments and tax invoices: a quotation says "Quotation, not a tax invoice", and confirmed revenue is not tracked.',
             'More than one tax line (no split into CGST and SGST).',
-            'Creating ads, writing WhatsApp templates in the app, calendars and billing.',
-            'Automated cold outreach to leads from the Maps extension. Maps leads carry no consent: they can be emailed only by a manual single send after an enabled B2B attestation, and receive WhatsApp templates only after real opt-in evidence is recorded.',
+            'Creating ads, calendars and billing.',
+            'Automated cold outreach to leads from the Maps extension, a Google Places search or an unattested file import. Such leads carry no consent: they can be emailed only by a manual single send after an enabled B2B attestation, and receive WhatsApp templates only after real opt-in evidence is recorded or they write first.',
+            'Open-ended AI conversation. Automatic replies answer service questions from the workspace\'s service list and nothing else; prices, calls, complaints and requests for a person always go to a person.',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'lead-generation-limits',
+      title: 'Lead generation limits',
+      blocks: [
+        {
+          kind: 'list',
+          items: [
+            '**Lead Finder.** At most 10 keywords and 10 locations, 20 to 60 results per search, two searches at once and 10 new searches an hour per workspace. Google content is a 24-hour working copy, and the Excel file in LIVE holds place IDs, Maps links, your own columns and website emails only. The email search reads the home page and at most two contact pages of a website, skips any site whose robots.txt disallows the bot, and finds only addresses published as text.',
+            '**Places fields on leads** are removed 30 days after the import unless the contact is confirmed. Three things confirm a contact: a recorded WhatsApp opt-in, an operator pressing Confirm details, or the customer writing from the number (not a Stop). The data model also names "the email matches the business\'s own website", which nothing sets. A lead that was handed over, has a quotation or has written in is not swept either.',
+            '**Import.** At most 2,000 rows and 5 MB per file, .xlsx or .csv only, the first sheet only. Column suggestions work from English headers. Opt-in dates are day-first, ISO or Excel dates; a date written with a month name is not read and the row gets no consent. The import page is in the Operator panel; the Client panel has none. The consent column needs `consent.import`, which a workspace owner holds by default, so today an administrator has to grant it to the operator who imports.',
+            '**Template studio.** Marketing and Utility templates with a text or PDF header, a body, a footer and up to three buttons. Not built: image and video headers, header variables filled at send time, link buttons with a variable, authentication templates, editing an approved template, and deleting a brochure.',
+            '**Hand-over.** The guard blocks sends and conversation controls for operators, not edits: an operator can still change a handed-over lead\'s stage or fields. A background step that was already running at the moment of a handoff could still queue one automated message for that lead.',
           ],
         },
       ],

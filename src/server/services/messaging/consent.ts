@@ -17,6 +17,13 @@
  *
  * Callers pass the transaction that creates or matches the lead, so consent commits with it.
  *
+ * File import (ADR-120, slice F2): FILE_IMPORT is a capture source only for an import whose owner
+ * attested its consent column (`LeadImport.consentAttested`, an own data source, the notice hash
+ * of the mapping), checked here again from the import row named by `mapping.formId`; the evidence
+ * is `{responseId, importId, row, attestedBy, noticeHash}`. It is a backfilled source: it never
+ * clears a suppression. A contact with an active suppression gets no consent (`SUPPRESSED_CONTACT`,
+ * the refusal audited `suppression.clear_refused` with `BACKFILLED_SOURCE`).
+ *
  * T18 adds the other writers: manual grants with evidence (OPT_IN), the employee B2B email
  * attestation (M2 / ADR-14, user decision D4: only while the workspace enables it; never an opt-in,
  * so it never clears a suppression), the START keyword (OPT_IN, re-opt-in) and inbound-message
@@ -25,9 +32,12 @@
 import { createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import type { ConsentSource, LeadSource, Prisma } from '@/generated/prisma/client';
+import type { ContactConfirmedVia } from '@/lib/domain/lead-gen';
 import { DomainRuleError, NotFoundError, PermissionDeniedError, ValidationError } from '@/lib/errors';
 import { B2bAttestationBody, ManualConsentBody } from '@/lib/schemas/consent';
+import { noticeNamesBusiness } from '@/lib/schemas/reach-out';
 import type { ConsentMapping } from '@/lib/schemas/ingest';
+import { isOwnDataSource, parseFileImportExternalId } from '@/lib/schemas/lead-import';
 import type { AppCtx } from '@/server/auth/context';
 import { requireActor, requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { withTx } from '@/server/db/tx';
@@ -47,7 +57,11 @@ export type ConsentCaptureNoneReason =
   | 'NOT_CAPTURED'
   /** The record went to merge review; there is no lead to attach evidence to. */
   | 'PENDING_REVIEW'
-  | 'REJECTED';
+  | 'REJECTED'
+  /** A file import whose consent column was not attested by the owner (ADR-120). */
+  | 'NOT_ATTESTED'
+  /** A backfilled source and an active suppression: no consent, the Stop stays (ADR-120). */
+  | 'SUPPRESSED_CONTACT';
 
 export type ConsentCaptureResult = { outcome: 'CREATED'; consentRecordId: string } | { outcome: 'NONE'; reason: ConsentCaptureNoneReason };
 
@@ -55,7 +69,16 @@ export type ConsentCaptureResult = { outcome: 'CREATED'; consentRecordId: string
 const CAPTURE_SOURCES: Partial<Record<LeadSource, ConsentSource>> = {
   GOOGLE_SHEETS: 'SHEETS_FORM',
   META_ADS: 'META_FORM',
+  // Lead-gen F2 (ADR-120): only an import whose owner attested it; see captureIngestionConsent.
+  FILE_IMPORT: 'FILE_IMPORT',
 };
+
+/** Capture sources whose consent is backfilled: it never clears a suppression (ADR-120). */
+const BACKFILLED_SOURCES: ReadonlySet<LeadSource> = new Set<LeadSource>(['FILE_IMPORT']);
+
+export function isBackfilledSource(source: LeadSource): boolean {
+  return BACKFILLED_SOURCES.has(source);
+}
 
 export function consentSourceFor(source: LeadSource): ConsentSource | null {
   return CAPTURE_SOURCES[source] ?? null;
@@ -92,7 +115,28 @@ export type ConsentCaptureInput = {
   simulated: boolean;
 };
 
-type ConsentDb = Pick<Prisma.TransactionClient, 'consentRecord' | 'auditEvent' | 'suppression' | 'job'>;
+type ConsentDb = Pick<Prisma.TransactionClient, 'consentRecord' | 'auditEvent' | 'suppression' | 'job' | 'leadImport'>;
+
+type FileImportEvidence = { importId: string; row: number; attestedBy: string; noticeHash: string };
+
+/**
+ * The attested import behind a FILE_IMPORT record, or null when it does not qualify: the import
+ * named by `mapping.formId` (the record id must name it too) has its consent attested by a person,
+ * an own data source and the notice hash of the mapping's notice text (ADR-120).
+ */
+async function attestedImport(tx: ConsentDb, workspaceId: string, input: ConsentCaptureInput, mapping: ConsentMapping): Promise<FileImportEvidence | null> {
+  const importId = input.mapping?.formId;
+  const ref = parseFileImportExternalId(input.responseId);
+  if (importId === undefined || ref === null || ref.importId !== importId) return null;
+  const row = await tx.leadImport.findFirst({
+    where: { workspaceId, id: importId },
+    select: { consentAttested: true, consentAttestedBy: true, consentNoticeHash: true, dataSource: true },
+  });
+  if (!row || !row.consentAttested || row.consentAttestedBy === null || !isOwnDataSource(row.dataSource)) return null;
+  const hash = noticeTextHash(mapping.noticeText);
+  if (row.consentNoticeHash !== hash) return null;
+  return { importId, row: ref.row, attestedBy: row.consentAttestedBy, noticeHash: hash };
+}
 
 export type ConsentCtx = AuditCtx & { workspaceId: string | null };
 
@@ -110,12 +154,32 @@ export async function captureIngestionConsent(tx: ConsentDb, ctx: ConsentCtx, in
   if (contact === null) return { outcome: 'NONE', reason: 'NO_CONTACT_FOR_CHANNEL' };
   const key = contactKey(pepper, mapping.channel === 'WHATSAPP' ? 'phone' : 'email', contact);
 
-  const evidence: Record<string, string | number> = { responseId: input.responseId, questionKey: mapping.column };
-  if (input.mapping?.formId !== undefined) evidence.formId = input.mapping.formId;
-  if (input.mapping?.version !== undefined) evidence.mappingVersion = input.mapping.version;
-
   const workspaceId = ctx.workspaceId;
   if (workspaceId === null) throw new Error('captureIngestionConsent needs a workspace-scoped context');
+
+  const backfilled = isBackfilledSource(input.source);
+  let evidence: Record<string, string | number> = { responseId: input.responseId, questionKey: mapping.column };
+  let recordedBy = ctx.actor?.userId ?? null;
+  if (input.source === 'FILE_IMPORT') {
+    const attested = await attestedImport(tx, workspaceId, input, mapping);
+    if (attested === null) return { outcome: 'NONE', reason: 'NOT_ATTESTED' };
+    evidence = { responseId: input.responseId, importId: attested.importId, row: attested.row, attestedBy: attested.attestedBy, noticeHash: attested.noticeHash };
+    recordedBy = attested.attestedBy;
+  } else {
+    if (input.mapping?.formId !== undefined) evidence.formId = input.mapping.formId;
+    if (input.mapping?.version !== undefined) evidence.mappingVersion = input.mapping.version;
+  }
+  if (backfilled) {
+    // Checked before anything is recorded: a contact that said Stop gets no consent at all.
+    const check = await clearSuppressionForConsent(
+      tx as Prisma.TransactionClient,
+      ctx,
+      'enqueue-reconcile',
+      { id: null, channel: mapping.channel, contactKey: key, basis: 'OPT_IN', collectedAt: input.submittedAt },
+      { simulated: input.simulated, backfilled: true },
+    );
+    if (check === 'BACKFILLED_SOURCE') return { outcome: 'NONE', reason: 'SUPPRESSED_CONTACT' };
+  }
   const record = await tx.consentRecord.create({
     data: {
       workspaceId,
@@ -130,7 +194,7 @@ export async function captureIngestionConsent(tx: ConsentDb, ctx: ConsentCtx, in
       noticeVersion: mapping.noticeVersion ?? null,
       collectedAt: input.submittedAt,
       recordedAt: ctx.clock.now(),
-      recordedBy: ctx.actor?.userId ?? null,
+      recordedBy,
     },
     select: { id: true },
   });
@@ -146,7 +210,7 @@ export async function captureIngestionConsent(tx: ConsentDb, ctx: ConsentCtx, in
     ctx,
     'enqueue-reconcile',
     { id: record.id, channel: mapping.channel, contactKey: key, basis: 'OPT_IN', collectedAt: input.submittedAt },
-    { simulated: input.simulated },
+    { simulated: input.simulated, backfilled },
   );
   return { outcome: 'CREATED', consentRecordId: record.id };
 }
@@ -203,6 +267,12 @@ export type ManualGrantResult = { consentId: string; reoptIn: ReoptInOutcome; jo
  * A person records an opt-in they hold evidence for (purpose, evidence source, evidence time and a
  * note; plan §7). OPT_IN basis; it clears an active suppression only when its evidence time is
  * strictly newer than the latest Stop. Needs `leads.write`.
+ *
+ * A WhatsApp MARKETING opt-in (ADR-125) also needs the notice the person agreed to, which must name
+ * the business (422 NOTICE_REQUIRED, NOTICE_MISSING_BUSINESS_NAME), and how it was obtained
+ * (`evidence.method`, 422 EVIDENCE_METHOD_REQUIRED). The notice is kept verbatim in the evidence
+ * with its sha256, and the lead's contact counts as confirmed first-party from then on
+ * (`Lead.contactConfirmedVia` RECORDED_OPT_IN, ADR-118 (d)) unless it was confirmed before.
  */
 export async function grantManualConsent(ctx: AppCtx, raw: unknown, deps: SuppressionDeps): Promise<ManualGrantResult> {
   requireCapability(ctx, 'leads.write');
@@ -210,13 +280,17 @@ export async function grantManualConsent(ctx: AppCtx, raw: unknown, deps: Suppre
   const input = parseBody(ManualConsentBody, raw);
   const collectedAt = new Date(input.collectedAt);
   if (collectedAt.getTime() > ctx.clock.now().getTime()) throw rule('EVIDENCE_IN_FUTURE', 'The evidence time cannot be in the future.');
+  const whatsAppOptIn = input.channel === 'WHATSAPP' && input.purpose === 'MARKETING';
 
   const { value, journal } = await runSuppressionTx(ctx, deps, async (tx, batch) => {
     const lead = await loadLeadContact(tx, workspaceId, input.leadId);
+    if (whatsAppOptIn) await assertOptInNotice(tx, workspaceId, input);
     const key = leadContactKey(deps.contactKeyPepper, input.channel, lead);
     if (key === null) throw rule('NO_CONTACT_FOR_CHANNEL', `This lead has no ${input.channel === 'WHATSAPP' ? 'WhatsApp number' : 'email address'}.`);
     const evidence: Record<string, string> = { note: input.evidence.note };
     if (input.evidence.reference !== undefined) evidence.reference = input.evidence.reference;
+    if (input.evidence.method !== undefined) evidence.method = input.evidence.method;
+    if (whatsAppOptIn && input.noticeText !== undefined) evidence.noticeText = input.noticeText;
     const record = await tx.consentRecord.create({
       data: {
         workspaceId,
@@ -234,17 +308,34 @@ export async function grantManualConsent(ctx: AppCtx, raw: unknown, deps: Suppre
       },
       select: { id: true },
     });
+    // ADR-118 (d): a recorded WhatsApp opt-in makes the number the business's own data.
+    if (input.channel === 'WHATSAPP') {
+      await tx.lead.updateMany({ where: { workspaceId, id: lead.id, contactConfirmedAt: null }, data: { contactConfirmedAt: ctx.clock.now(), contactConfirmedVia: RECORDED_OPT_IN } });
+    }
+    const fields = ['evidence.note', ...(input.evidence.method !== undefined ? ['evidence.method'] : []), ...(input.noticeText !== undefined ? ['noticeText'] : [])];
     await recordAudit(tx, ctx, {
       action: 'consent.grant',
       targetType: 'ConsentRecord',
       targetId: record.id,
       simulated: lead.simulated,
-      summary: { leadId: lead.id, channel: input.channel, purpose: input.purpose, basis: 'OPT_IN', source: input.source, fields: ['evidence.note'] },
+      summary: { leadId: lead.id, channel: input.channel, purpose: input.purpose, basis: 'OPT_IN', source: input.source, method: input.evidence.method ?? null, fields },
     });
     const reoptIn = await clearSuppressionForConsent(tx, ctx, batch, { id: record.id, channel: input.channel, contactKey: key, basis: 'OPT_IN', collectedAt }, { simulated: lead.simulated });
     return { consentId: record.id, reoptIn };
   });
   return { ...value, journal };
+}
+
+const RECORDED_OPT_IN: ContactConfirmedVia = 'RECORDED_OPT_IN';
+
+/** ADR-125: a WhatsApp MARKETING opt-in names how it was obtained and the notice, which names the business. */
+async function assertOptInNotice(tx: Tx, workspaceId: string, input: ManualConsentBody): Promise<void> {
+  if (input.evidence.method === undefined) throw rule('EVIDENCE_METHOD_REQUIRED', 'Say how the customer gave this WhatsApp opt-in.');
+  if (input.noticeText === undefined) throw rule('NOTICE_REQUIRED', 'Add the notice the customer agreed to. A WhatsApp opt-in must name the business.');
+  const workspace = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true } });
+  if (!noticeNamesBusiness(input.noticeText, workspace.name)) {
+    throw rule('NOTICE_MISSING_BUSINESS_NAME', `The notice must name the business ("${workspace.name}"), so the customer knows who will message them.`);
+  }
 }
 
 /**

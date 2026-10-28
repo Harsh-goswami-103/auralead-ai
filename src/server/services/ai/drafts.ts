@@ -6,14 +6,15 @@
  *
  * `generateLeadDraft(ctx, request, deps)` runs outside any transaction (it may call a provider):
  * 1. Load the lead's context from the workspace (./context-builder.ts) and build the prompt.
- * 2. Pick the generator (adapters/ai/registry.ts): local in DEMO or for the explicit local
- *    action; in LIVE the workspace's AI integration, or nothing (AI_NOT_CONFIGURED). LIVE never
- *    switches to the local generator by itself.
- * 3. Call it. A retryable provider failure (429, 5xx, timeout) is rethrown so the job retries,
- *    except on the job's final attempt, where it becomes a NEEDS_REVIEW draft. Auth failures,
- *    rejections and refusals go to NEEDS_REVIEW at once.
- * 4. Validate (./proposal.ts). Malformed, empty or truncated output gets exactly one repair call
- *    carrying the validation issues (max tokens x1.5 after a truncation), then NEEDS_REVIEW.
+ * 2. Pick the generator (`selectWorkspaceAi`, ./run-task.ts): local in DEMO or for the explicit
+ *    local action; in LIVE the workspace's AI integration, or nothing (AI_NOT_CONFIGURED). LIVE
+ *    never switches to the local generator by itself.
+ * 3. Call it (`runStructuredTask`, ./run-task.ts). A retryable provider failure (429, 5xx,
+ *    timeout) is rethrown so the job retries, except on the job's final attempt, where it becomes a
+ *    NEEDS_REVIEW draft. Auth failures, rejections and refusals go to NEEDS_REVIEW at once.
+ * 4. Validate (./proposal.ts, as the task's evaluator). Malformed, empty or truncated output gets
+ *    exactly one repair call carrying the validation issues (max tokens x1.5 after a truncation),
+ *    then NEEDS_REVIEW.
  * 5. Price the surviving proposal items with `computeQuoteTotals` (server prices only).
  * The result is READY only with no flags, no policy violations, no review reasons and no error.
  *
@@ -24,35 +25,32 @@
  * "Generate with local template": it enqueues an `ai.draft` job (drafts.generate capability).
  */
 import type { AiDraftTrigger, Prisma } from '@/generated/prisma/client';
-import { AiEmptyOutputError, AiMalformedOutputError, AiTruncatedOutputError, AppError, PricingMissingError } from '@/lib/errors';
+import { AppError, PricingMissingError } from '@/lib/errors';
 import { idempotencyKey } from '@/lib/ids';
 import { serializePaise } from '@/lib/money';
 import { redactText } from '@/lib/redact';
-import { selectAiPort, type AiIntegrationInput, type AiIntegrationKind } from '@/server/adapters/ai/registry';
-import type { AiPort, AiRequest, AiResponse, AiTransport, GeneratorLabel } from '@/server/adapters/ai/port';
+import type { GeneratorLabel } from '@/server/adapters/ai/port';
 import type { AppCtx } from '@/server/auth/context';
 import { requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { assertSameWorkspace } from '@/server/db/scoped';
 import { withTx } from '@/server/db/tx';
 import { enqueueJob } from '@/server/jobs/queue';
 import type { TxClient } from '@/server/jobs/types';
-import { credentialAad, decryptSecretString, type KeyRing } from '@/server/security/secrets';
 import { recordAudit } from '@/server/services/audit/record';
 import { computeQuoteTotals, type ComputedQuote, type ReviewReason as PricingReviewReason } from '@/server/services/pricing/compute-totals';
-import { buildDraftPrompt, loadDraftContext, type UntrustedInput } from './context-builder';
-import { evaluateDraftOutput, type DraftReviewReason, type PolicyFlag, type ProposalItem } from './proposal';
+import { buildDraftPrompt, loadDraftContext, type DraftFacts, type UntrustedInput } from './context-builder';
+import { isLeadTemplateVariableSource, resolveLeadTemplateVariables } from '@/lib/domain/whatsapp-templates';
+import { evaluateDraftOutput, type DraftEvaluation, type DraftReviewReason, type PolicyFlag, type ProposalItem } from './proposal';
 import type { PolicyViolation } from './output-policy';
+import { runStructuredTask, selectWorkspaceAi, type AiDeps } from './run-task';
 
 export const AI_DRAFT_JOB = 'ai.draft';
 export const AI_DRAFT_PAYLOAD_VERSION = 1;
 export const DRAFT_MAX_TOKENS = 16_000;
 const ERROR_TEXT_MAX = 500;
 
-export type DraftDeps = {
-  /** The credentials key ring (config.secrets.credentials); null means no stored key is usable. */
-  keyRing: KeyRing | null;
-  transport?: AiTransport;
-};
+/** The AI dependencies (./run-task.ts): the credentials key ring and an optional transport override. */
+export type DraftDeps = AiDeps;
 
 export type DraftRequest = {
   leadId: string;
@@ -113,43 +111,6 @@ export type GeneratedDraft = {
   simulated: boolean;
 };
 
-const AI_KINDS: readonly AiIntegrationKind[] = ['AI_ANTHROPIC', 'AI_OPENAI'];
-
-const isOutputError = (e: unknown) => e instanceof AiMalformedOutputError || e instanceof AiEmptyOutputError || e instanceof AiTruncatedOutputError;
-
-type Loaded = { integrations: AiIntegrationInput[]; decryptFailed: boolean };
-
-async function loadAiIntegrations(ctx: AppCtx, keyRing: KeyRing | null): Promise<Loaded> {
-  const rows = await ctx.db.integration.findMany({ where: { kind: { in: [...AI_KINDS] } } });
-  let decryptFailed = false;
-  const integrations = rows.map((row): AiIntegrationInput => {
-    const config = (row.config ?? {}) as { modelId?: unknown };
-    const envelope = (row.secrets as { apiKey?: unknown } | null)?.apiKey;
-    let apiKey: string | null = null;
-    if (keyRing && typeof envelope === 'string') {
-      try {
-        apiKey = decryptSecretString(keyRing, envelope, credentialAad({ workspaceId: row.workspaceId, integrationId: row.id, field: 'apiKey' }));
-      } catch {
-        decryptFailed = true;
-      }
-    }
-    return { kind: row.kind as AiIntegrationKind, status: row.status, modelId: typeof config.modelId === 'string' ? config.modelId : null, apiKey };
-  });
-  return { integrations, decryptFailed };
-}
-
-type CallResult = { response: AiResponse; error?: undefined } | { response?: undefined; error: AppError };
-
-async function callPort(port: AiPort, request: AiRequest, finalAttempt: boolean): Promise<CallResult> {
-  try {
-    return { response: await port.generate(request) };
-  } catch (error) {
-    if (!(error instanceof AppError)) throw error;
-    if (error.retryable && !isOutputError(error) && !finalAttempt) throw error;
-    return { error };
-  }
-}
-
 function previewOf(q: ComputedQuote): PricingPreview {
   return {
     pricingVersionId: q.pricingVersion.id,
@@ -166,11 +127,24 @@ function previewOf(q: ComputedQuote): PricingPreview {
   };
 }
 
+/**
+ * The generator only knows how many body variables the template has, so its values are positional
+ * guesses (first name, then the service). A position the template maps to a lead or workspace fact
+ * (customer name, business name, city, category) gets that fact; manual and unmapped positions, and
+ * facts the lead does not have, keep the generator's value. Never an empty string.
+ */
+export function applyMappedTemplateSources(values: readonly string[], facts: Pick<DraftFacts, 'lead' | 'workspace' | 'template'>): string[] {
+  const sources = facts.template.variableSources ?? {};
+  const positions = values.map((_, i) => String(i + 1)).filter((p) => sources[p] !== undefined && isLeadTemplateVariableSource(sources[p]!));
+  if (positions.length === 0) return [...values];
+  const resolved = resolveLeadTemplateVariables({ positions, sources }, { displayName: facts.lead.displayName, city: facts.lead.city, category: facts.lead.category }, { name: facts.workspace.name });
+  return values.map((value, i) => resolved.values[String(i + 1)] ?? value);
+}
+
 export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps: DraftDeps): Promise<GeneratedDraft> {
   requireWorkspace(ctx);
   const context = await loadDraftContext(ctx, request.leadId, request.untrusted);
   const prompt = buildDraftPrompt(context.facts, context.untrusted);
-  const workspace = await ctx.db.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId! }, select: { mode: true } });
   const forceLocal = request.trigger === 'LOCAL_EXPLICIT';
 
   const base = {
@@ -194,10 +168,8 @@ export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps
     escalated: false,
   };
 
-  const loaded: Loaded = ctx.mode === 'live' && !forceLocal ? await loadAiIntegrations(ctx, deps.keyRing) : { integrations: [], decryptFailed: false };
-  const selection = selectAiPort({ mode: ctx.mode, workspaceMode: workspace.mode, forceLocal, integrations: loaded.integrations, transport: deps.transport });
+  const selection = await selectWorkspaceAi(ctx, deps, { forceLocal });
   if (!selection.ok) {
-    const code = selection.code === 'AI_NOT_CONFIGURED' && loaded.decryptFailed ? 'CREDENTIAL_DECRYPT_FAILED' : selection.code;
     return {
       ...base,
       ...empty,
@@ -205,7 +177,7 @@ export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps
       generatorLabel: selection.label,
       modelId: selection.modelId,
       reviewReasons: [{ code: selection.code, localGeneratorAvailable: selection.code === 'AI_NOT_CONFIGURED' }],
-      errorCode: code,
+      errorCode: selection.errorCode,
       errorRedacted: null,
     };
   }
@@ -222,25 +194,21 @@ export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps
     errorRedacted: redactText(error.message).slice(0, ERROR_TEXT_MAX),
   });
 
-  const firstRequest: AiRequest = { system: prompt.system, user: prompt.user, jsonSchema: prompt.jsonSchema, maxTokens: DRAFT_MAX_TOKENS };
-  const first = await callPort(port, firstRequest, request.finalAttempt);
-  if (first.error && !isOutputError(first.error)) return failed(first.error);
-
-  let response = first.response ?? null;
-  let evaluation = response ? evaluateDraftOutput(response.text, { catalog: context.facts.catalog, policy: context.policy }) : null;
-  if (!evaluation?.ok) {
-    const issues = evaluation && !evaluation.ok ? evaluation.issues : 'The previous output was empty or cut off. Return the complete JSON object, keeping every text short.';
-    const truncated = first.error instanceof AiTruncatedOutputError;
-    const second = await callPort(
-      port,
-      { ...firstRequest, maxTokens: truncated ? Math.round(DRAFT_MAX_TOKENS * 1.5) : DRAFT_MAX_TOKENS, repair: { previousOutput: response?.text ?? null, issues } },
-      request.finalAttempt,
-    );
-    if (second.error) return failed(second.error);
-    response = second.response;
-    evaluation = evaluateDraftOutput(response.text, { catalog: context.facts.catalog, policy: context.policy });
-    if (!evaluation.ok) return failed(new AiMalformedOutputError({ message: `output failed validation after one repair: ${evaluation.issues}` }));
-  }
+  const run = await runStructuredTask<Extract<DraftEvaluation, { ok: true }>>({
+    port,
+    task: 'lead_draft',
+    system: prompt.system,
+    user: prompt.user,
+    jsonSchema: prompt.jsonSchema,
+    maxTokens: DRAFT_MAX_TOKENS,
+    finalAttempt: request.finalAttempt,
+    evaluate: (raw) => {
+      const evaluation = evaluateDraftOutput(raw, { catalog: context.facts.catalog, policy: context.policy });
+      return evaluation.ok ? { ok: true, value: evaluation } : { ok: false, issues: evaluation.issues };
+    },
+  });
+  if (!run.ok) return failed(run.error);
+  const evaluation = run.value;
 
   const reviewReasons: AnyReviewReason[] = [...evaluation.reviewReasons];
   let pricingPreview: PricingPreview | null = null;
@@ -261,7 +229,7 @@ export async function generateLeadDraft(ctx: AppCtx, request: DraftRequest, deps
     status,
     generatorLabel: port.label,
     modelId: port.modelId,
-    templateVariables: { templateId: context.facts.template.templateId, values: evaluation.draft.templateVariables },
+    templateVariables: { templateId: context.facts.template.templateId, values: applyMappedTemplateSources(evaluation.draft.templateVariables, context.facts) },
     followUpText: evaluation.draft.followUpText,
     emailSubject: evaluation.draft.emailSubject,
     emailBody: evaluation.draft.emailBody,

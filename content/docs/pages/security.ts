@@ -6,7 +6,7 @@ export const security: DocPage = {
   summary:
     'How accounts, sessions and requests are protected: password hashing, lockout, re-authentication, invite and reset links, CSRF, the Content Security Policy, tenant isolation, rate limits, webhook checks, encryption at rest, logging, and the stated limitations.',
   appliesTo: ['DEMO', 'LIVE'],
-  checked: '2026-10-20',
+  checked: '2026-10-23',
   sections: [
     {
       id: 'sign-in',
@@ -139,6 +139,11 @@ export const security: DocPage = {
             ['Invites and resets (`inviteReset`)', '10', '1 hour', 'Client IP'],
             ['Public quotation (`publicQuote`)', '30', '1 minute', 'Client IP'],
             ['AI drafts (`aiDraft`)', '30', '1 minute', 'Workspace'],
+            ['Lead Finder searches (`finderRun`)', '10', '1 hour', 'Workspace; only a new search counts, a repeated request does not'],
+            ['Lead file imports (`leadImport`)', '10', '1 minute', 'Person; uploads and confirmations'],
+            ['Template submissions (`templateSubmit`)', '20', '1 hour', 'Workspace'],
+            ['PDF brochure uploads (`mediaUpload`)', '10', '1 minute', 'Person'],
+            ['Lead handovers (`handoff`)', '30', '1 minute', 'Person'],
           ],
         },
         {
@@ -173,6 +178,21 @@ export const security: DocPage = {
             'Every ciphertext is bound to where it belongs (its event id, or its workspace, integration and field), so a value copied to another row or tenant fails to decrypt.',
             'Provider API keys are never environment variables: they belong to a workspace\'s integration and are stored encrypted with this key ring.',
             'Webhook processing copies are deleted once they are no longer needed; see [Retention](/docs/data-and-privacy#retention).',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'uploads',
+      title: 'Uploaded files and website reads',
+      blocks: [
+        {
+          kind: 'list',
+          items: [
+            'A spreadsheet upload is at most 5 MB, and a workbook may not inflate beyond 40 MB (a zip-bomb guard). Cells are read as text; the app never evaluates a formula and never writes one (see [Import and export leads](/docs/import-and-export)). Its parsed rows live in a file in the storage folder for at most 24 hours, never in the database.',
+            'A PDF brochure must be `application/pdf`, carry the %PDF- signature and be at most 5 MB; its size and sha256 are checked again every time it is read.',
+            'The crawler that reads business websites goes through the same fetch guard as the website check: public addresses only, every redirect re-checked, 8 seconds and 1 MB per page, and robots.txt honoured for the email search. [AuraLeadBot](/docs/bot) lists its rules.',
+            'A workspace\'s Google Places key is stored encrypted like every provider credential, sent only in a request header, and scrubbed from every error text the Places client returns.',
           ],
         },
       ],

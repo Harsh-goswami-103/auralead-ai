@@ -7,7 +7,8 @@
  *    classifies every selected row as ELIGIBLE, SKIPPED or FAILED, so eligible + skipped + failed
  *    == selected. Eligibility is the shared dispatch eligibility function (`checkDispatchEligibility`)
  *    with sendIntent BULK, the same function the dispatch preflight re-runs at send time. A row the
- *    action cannot apply to at all (lead gone or merged, no contact on the channel) is FAILED. A row
+ *    action cannot apply to at all (lead gone or merged, no contact on the channel, or, in an
+ *    operator's run, handed over to the client: HANDED_OVER, ADR-124) is FAILED. A row
  *    whose only reasons are deferrable (pauses, internal cap) is ELIGIBLE and marked `deferred`: its
  *    dispatch waits instead of being dropped.
  *  - `requestBulkRun` (approvals.decide + dispatch.send: confirming a bulk send approves and sends)
@@ -18,6 +19,12 @@
  *    `queueOutboundMessage` (sendIntent BULK, initiatedBy the confirming user, one dispatch per
  *    run and lead), and its result is persisted in the same transaction. A restart resumes after the
  *    last committed chunk; a replayed row is never queued twice (the dispatch dedupe key).
+ *  - Per-lead variables (ADR-123, slice F4): a WhatsApp template's body positions mapped to a lead
+ *    or business source (`lead.firstName`, `lead.displayName`, `lead.city`, `lead.category`,
+ *    `workspace.name`) are filled for each lead by `resolveLeadTemplateVariables`; the typed values
+ *    fill only the positions mapped to `manual` (or computed ones). A row whose values cannot all be
+ *    filled is FAILED with TEMPLATE_VARIABLE_MISSING (never sent with a gap or a stand-in). The run
+ *    keeps the typed values as its params, so a repeated request compares the same params.
  *  - D4: B2B-attested email (Maps leads) is manual-single only, so bulk email skips it with
  *    ATTESTED_MANUAL_ONLY; Maps leads never carry WhatsApp opt-in (NO_WHATSAPP_OPT_IN). Both come
  *    from the eligibility function; nothing here relaxes it.
@@ -26,6 +33,7 @@ import type { BulkRun, Channel, Prisma } from '@/generated/prisma/client';
 import { Prisma as PrismaNs } from '@/generated/prisma/client';
 import { IdempotencyConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import { idempotencyKey } from '@/lib/ids';
+import { parseTemplateMapping, resolveLeadTemplateVariables, templateShape } from '@/lib/domain/whatsapp-templates';
 import {
   BulkActionInput,
   BulkRunRequest,
@@ -43,6 +51,7 @@ import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
 import type { JobHandlerContext } from '@/server/jobs/types';
 import { recordAudit } from '@/server/services/audit/record';
+import { isEmployeeActor } from '@/server/services/leads/handoff-guard';
 import { queueOutboundMessage } from '@/server/services/messaging/dispatch';
 import { checkDispatchEligibility, REASON_LABELS, type DispatchKind } from '@/server/services/messaging/eligibility';
 
@@ -59,6 +68,10 @@ export const BULK_FAILURE_LABELS = {
   LEAD_NOT_FOUND: 'The lead no longer exists',
   LEAD_MERGED: 'The lead was merged into another lead',
   CONTACT_MISSING: 'No contact for this channel',
+  /** ADR-124: an operator's bulk send leaves out leads handed over to the client. */
+  HANDED_OVER: 'Handed over to the client',
+  /** ADR-123: a mapped variable has no value for this lead (or a typed value is missing or too long). */
+  TEMPLATE_VARIABLE_MISSING: 'A template variable has no value for this lead',
 } as const;
 
 export function bulkReasonLabel(code: string): string {
@@ -67,7 +80,30 @@ export function bulkReasonLabel(code: string): string {
 
 type Params = { action: 'SEND_WHATSAPP_TEMPLATE'; templateId: string; variables: Record<string, string> } | { action: 'SEND_EMAIL'; subject: string; body: string };
 
-type Classified = { leadId: string; leadName: string | null; outcome: 'ELIGIBLE' | 'SKIPPED' | 'FAILED'; reasons: string[]; deferred: boolean };
+type Classified = {
+  leadId: string;
+  leadName: string | null;
+  outcome: 'ELIGIBLE' | 'SKIPPED' | 'FAILED';
+  reasons: string[];
+  deferred: boolean;
+  /** WhatsApp template rows: this lead's body values (per-lead sources resolved, typed values for the rest). */
+  variables?: Record<string, string>;
+};
+
+type VariableResolver = (lead: { displayName: string | null; city: string | null; category: string | null }) => { ok: boolean; values: Record<string, string> };
+
+/**
+ * The per-lead variable resolver of a template send (ADR-123): the template's body positions and
+ * their mapped sources, with the typed values as literals. Null for an email action.
+ */
+async function variableResolver(db: ReadDb, ctx: AppCtx, params: Params): Promise<VariableResolver | null> {
+  if (params.action !== 'SEND_WHATSAPP_TEMPLATE') return null;
+  const template = await db.whatsAppTemplate.findFirst({ where: { id: params.templateId }, select: { components: true, variableMap: true } });
+  const workspace = await db.workspace.findUnique({ where: { id: requireWorkspace(ctx) }, select: { name: true } });
+  const positions = template ? templateShape(template.components).bodyVariables : [];
+  const sources = template ? parseTemplateMapping(template.variableMap).body : {};
+  return (lead) => resolveLeadTemplateVariables({ positions, sources, literals: params.variables }, lead, { name: workspace?.name ?? null });
+}
 
 type StoredRow = { leadId: string; outcome: 'QUEUED' | 'SKIPPED' | 'FAILED'; reasons: string[]; deferred: boolean; messageId: string | null; attemptId: string | null };
 
@@ -90,12 +126,16 @@ function parseInput<T>(schema: { safeParse(input: unknown): { success: true; dat
   throw new ValidationError({ code: 'BULK_INPUT_INVALID', message, userMessage: message });
 }
 
-/** Classifies each lead, in selection order, for the action (read only). */
-async function classifyRows(db: ReadDb, ctx: AppCtx, leadIds: readonly string[], params: Params, deps: BulkDeps): Promise<Classified[]> {
+/**
+ * Classifies each lead, in selection order, for the action (read only). `byEmployee`: the run is an
+ * operator's, so a lead handed over to the client is a FAILED row (ADR-124; not an eligibility reason).
+ */
+async function classifyRows(db: ReadDb, ctx: AppCtx, leadIds: readonly string[], params: Params, deps: BulkDeps, byEmployee: boolean): Promise<Classified[]> {
   const leads = await db.lead.findMany({
     where: { id: { in: [...leadIds] } },
-    select: { id: true, displayName: true, phoneE164: true, emailNormalized: true, mergedIntoLeadId: true },
+    select: { id: true, displayName: true, city: true, category: true, phoneE164: true, emailNormalized: true, mergedIntoLeadId: true, handedOverAt: true },
   });
+  const resolve = await variableResolver(db, ctx, params);
   const byId = new Map(leads.map((l) => [l.id, l]));
   const { channel, kind } = channelOf(params);
   const out: Classified[] = [];
@@ -110,18 +150,28 @@ async function classifyRows(db: ReadDb, ctx: AppCtx, leadIds: readonly string[],
       out.push(failed('LEAD_MERGED'));
       continue;
     }
+    if (byEmployee && lead.handedOverAt !== null) {
+      out.push(failed('HANDED_OVER'));
+      continue;
+    }
     if ((channel === 'WHATSAPP' ? lead.phoneE164 : lead.emailNormalized) === null) {
       out.push(failed('CONTACT_MISSING'));
       continue;
     }
+    const resolved = resolve ? resolve(lead) : null;
+    if (resolved && !resolved.ok) {
+      out.push(failed('TEMPLATE_VARIABLE_MISSING'));
+      continue;
+    }
+    const variables = resolved ? { variables: resolved.values } : {};
     const result = await checkDispatchEligibility(
       db,
       ctx,
       { leadId, channel, kind, sendIntent: 'BULK', templateId: params.action === 'SEND_WHATSAPP_TEMPLATE' ? params.templateId : null },
       { contactKeyPepper: deps.contactKeyPepper },
     );
-    if (result.eligible) out.push({ leadId, leadName: lead.displayName, outcome: 'ELIGIBLE', reasons: [], deferred: false });
-    else if (result.deferrable) out.push({ leadId, leadName: lead.displayName, outcome: 'ELIGIBLE', reasons: result.reasons, deferred: true });
+    if (result.eligible) out.push({ leadId, leadName: lead.displayName, outcome: 'ELIGIBLE', reasons: [], deferred: false, ...variables });
+    else if (result.deferrable) out.push({ leadId, leadName: lead.displayName, outcome: 'ELIGIBLE', reasons: result.reasons, deferred: true, ...variables });
     else out.push({ leadId, leadName: lead.displayName, outcome: 'SKIPPED', reasons: result.reasons, deferred: false });
   }
   return out;
@@ -150,7 +200,7 @@ export async function previewBulkAction(ctx: AppCtx, input: BulkActionInput, dep
   const parsed = parseInput<BulkActionInput>(BulkActionInput, input);
   const params = paramsOf(parsed);
   await assertSameWorkspace(ctx.db, ctx, { leadId: parsed.leadIds, templateId: params.action === 'SEND_WHATSAPP_TEMPLATE' ? params.templateId : null });
-  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps);
+  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps, await isEmployeeActor(ctx.db, ctx));
   const counts = preflightCounts(rows);
   return {
     selected: rows.length,
@@ -199,7 +249,7 @@ export async function requestBulkRun(ctx: AppCtx, input: BulkRunRequest, deps: B
   if (earlier) return earlier;
 
   await assertSameWorkspace(ctx.db, ctx, { leadId: parsed.leadIds, templateId: params.action === 'SEND_WHATSAPP_TEMPLATE' ? params.templateId : null });
-  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps);
+  const rows = await classifyRows(ctx.db, ctx, parsed.leadIds, params, deps, await isEmployeeActor(ctx.db, ctx));
   const preflight = preflightCounts(rows);
   const requestedBy = ctx.actor?.userId ?? `system:${ctx.kind}`;
   try {
@@ -356,7 +406,8 @@ export async function processBulkRun(job: JobHandlerContext, ctx: AppCtx, runId:
 
       const params = run.params as unknown as Params;
       const { channel } = channelOf(params);
-      const classified = await classifyRows(tx, ctx, chunk, params, deps);
+      // The job has no actor: the person who confirmed the run decides whether the handoff guard applies.
+      const classified = await classifyRows(tx, ctx, chunk, params, deps, await isEmployeeActor(tx, ctx, run.requestedBy));
       const added: StoredRow[] = [];
       for (const row of classified) {
         if (row.outcome !== 'ELIGIBLE') {
@@ -365,7 +416,7 @@ export async function processBulkRun(job: JobHandlerContext, ctx: AppCtx, runId:
         }
         const content =
           params.action === 'SEND_WHATSAPP_TEMPLATE'
-            ? { kind: 'TEMPLATE' as const, templateId: params.templateId, variables: params.variables }
+            ? { kind: 'TEMPLATE' as const, templateId: params.templateId, variables: row.variables ?? {} }
             : { kind: 'EMAIL' as const, subject: params.subject, body: params.body };
         const queued = await queueOutboundMessage(
           tx,

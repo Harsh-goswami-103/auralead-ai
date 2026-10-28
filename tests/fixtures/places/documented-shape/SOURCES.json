@@ -1,0 +1,76 @@
+{
+  "_about": "Documented-shape fixtures for the Google Places API (New) adapter (ADR-118, slice F1), derived from Google's published REST references for places:searchText and places.get and from the google.rpc.Status error model, as read through web-search results on 2026-10-23 (PLACES_CHECKED_ON in src/server/adapters/places/google-places.ts). Business names, phone numbers, place IDs, project numbers and URLs are fictitious. None of these is recorded live traffic; every shape is UNVERIFIED until a user-authorized live check (docs/integrations.md).",
+  "checked": "2026-10-23",
+  "files": {
+    "response.search-page-1.json": {
+      "source": "https://developers.google.com/maps/documentation/places/web-service/text-search (Place fields: id, displayName, primaryTypeDisplayName, nationalPhoneNumber, internationalPhoneNumber, websiteUri, rating, userRatingCount, formattedAddress, addressComponents, googleMapsUri, attributions; nextPageToken)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.search-last-page.json": {
+      "source": "https://developers.google.com/maps/documentation/places/web-service/text-search (a last page carries no nextPageToken)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.search-empty.json": {
+      "source": "https://developers.google.com/maps/documentation/places/web-service/text-search (no match: an empty object)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "response.place-details.json": {
+      "source": "https://developers.google.com/maps/documentation/places/web-service/place-details (GET /v1/places/{id} with X-Goog-FieldMask)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 200
+    },
+    "error.400-api-key-invalid.json": {
+      "source": "https://cloud.google.com/apis/design/errors (google.rpc.Status with ErrorInfo reason API_KEY_INVALID); message from community reports",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.400-invalid-argument.json": {
+      "source": "https://cloud.google.com/apis/design/errors (INVALID_ARGUMENT)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 400
+    },
+    "error.403-permission-denied.json": {
+      "source": "https://cloud.google.com/apis/design/errors (PERMISSION_DENIED with ErrorInfo reason SERVICE_DISABLED); message from community reports",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 403
+    },
+    "error.404-not-found.json": {
+      "source": "https://cloud.google.com/apis/design/errors (NOT_FOUND)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 404
+    },
+    "error.429-resource-exhausted.json": {
+      "source": "https://cloud.google.com/apis/design/errors (RESOURCE_EXHAUSTED); quota message from community reports",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 429
+    },
+    "error.503-unavailable.json": {
+      "source": "https://cloud.google.com/apis/design/errors (UNAVAILABLE)",
+      "kind": "documented-shape, not recorded live traffic",
+      "checked": "2026-10-23 (search results only, page not read first-hand)",
+      "verified": false,
+      "httpStatus": 503
+    }
+  }
+}

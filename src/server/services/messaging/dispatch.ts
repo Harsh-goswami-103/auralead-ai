@@ -10,6 +10,9 @@
  *  - `createMessageDraft` + `approveAndSendMessage`: the same for a message without a quote.
  *  - `queueOutboundMessage`: automated or bulk callers (T21, T23) inside their own transaction.
  *  `sendIntent` and `initiatedBy` are persisted on the Message and the attempt and never change (E4).
+ *  Each of them refuses an EMPLOYEE actor (or a job running an EMPLOYEE's send) for a lead handed
+ *  over to the client with 409 HANDED_OVER (`assertNotHandedOver`, ADR-124); not an eligibility
+ *  reason, so the preflight below is unchanged.
  *
  * Worker side (the handler in jobs/handlers/dispatch-run.ts), three short transactions:
  *  1. `preflightDispatch` (fenced): attempt still QUEUED; quote version still current and live;
@@ -30,11 +33,13 @@ import { requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { assertSameWorkspace, type ScopedTx } from '@/server/db/scoped';
 import { withTx } from '@/server/db/tx';
 import { enqueueJob, type JobStore } from '@/server/jobs/queue';
+import { templateShape } from '@/lib/domain/whatsapp-templates';
 import { pdfFileName } from '@/server/pdf/artifacts';
 import { hmacSha256, safeEqual } from '@/server/security/hmac';
 import { approveQuoteVersionApproval } from '@/server/services/approvals/quote-approvals';
 import { destinationKeyFor, messagePayloadHash, type PayloadReadDb } from '@/server/services/approvals/payload-hash';
 import { recordAudit } from '@/server/services/audit/record';
+import { assertNotHandedOver, newConversationMode } from '@/server/services/leads/handoff-guard';
 import { nextQuoteStatus } from '@/server/services/quotes/state-machine';
 import { effectiveQuoteStatus } from '@/server/services/quotes/versioning';
 import { projectSent, projectUnsent } from './delivery-state';
@@ -157,7 +162,7 @@ type MessageContent = {
 async function ensureConversation(tx: ScopedTx, ctx: AppCtx, leadId: string, channel: Channel, contactKey: string): Promise<{ id: string }> {
   const open = await tx.conversation.findFirst({ where: { leadId, channel, closedAt: null }, select: { id: true } });
   if (open) return open;
-  return tx.conversation.create({ data: { workspaceId: requireWorkspace(ctx), leadId, channel, contactKey, createdAt: ctx.clock.now() }, select: { id: true } });
+  return tx.conversation.create({ data: { workspaceId: requireWorkspace(ctx), leadId, channel, contactKey, createdAt: ctx.clock.now(), ...(await newConversationMode(tx, leadId)) }, select: { id: true } });
 }
 
 async function createOutboundMessage(
@@ -273,6 +278,8 @@ export async function queueOutboundMessage(tx: ScopedTx, ctx: AppCtx, input: Que
     const message = await tx.message.findFirstOrThrow({ where: { id: existing.messageId }, select: { conversationId: true } });
     return { conversationId: message.conversationId, messageId: existing.messageId, attemptId: existing.attemptId, jobId: existing.jobId, created: false };
   }
+  // ADR-124: an operator (or a job running an operator's send) never queues to a handed-over lead.
+  await assertNotHandedOver(tx, ctx, input.leadId, { initiatedBy: input.initiatedBy });
   const { messageId, conversationId } = await createOutboundMessage(tx, ctx, { ...input, status: 'PENDING' }, deps);
   const queued = await queueFirstAttempt(tx, ctx, {
     messageId,
@@ -324,6 +331,7 @@ export async function approveAndSendQuote(ctx: AppCtx, input: ApproveAndSendQuot
     const jobKey = idempotencyKey('dispatch', 'quote', versionId, input.channel);
     const existing = await existingDispatch(tx, jobKey);
     if (existing) return { ...existing, created: false };
+    await assertNotHandedOver(tx, ctx, quote.leadId);
 
     const now = ctx.clock.now();
     const version = await tx.quoteVersion.findFirstOrThrow({ where: { id: versionId } });
@@ -358,6 +366,12 @@ export async function approveAndSendQuote(ctx: AppCtx, input: ApproveAndSendQuot
     let content: MessageContent;
     if (input.channel === 'WHATSAPP') {
       if (!input.templateId) throw new ValidationError({ code: 'TEMPLATE_REQUIRED', message: 'a WhatsApp quotation needs a template', userMessage: 'Choose the WhatsApp template that carries the quotation.' });
+      // ADR-123/131: a template with its own brochure has one document header and it holds the brochure,
+      // so the quotation could not travel with it (the quote would be marked sent without being delivered).
+      const own = await tx.whatsAppTemplate.findFirst({ where: { id: input.templateId }, select: { headerMediaId: true } });
+      if (own?.headerMediaId) {
+        throw new DomainRuleError({ code: 'TEMPLATE_HAS_OWN_DOCUMENT', userMessage: 'This template carries its own PDF brochure as its header, so it cannot carry the quotation. Choose a template without a brochure.' });
+      }
       content = { kind: 'TEMPLATE', templateId: input.templateId, variables: input.variables ?? {}, quoteVersionId: versionId };
     } else {
       const ws = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true, timezone: true } });
@@ -459,6 +473,7 @@ export async function createMessageDraft(ctx: AppCtx, input: MessageDraftInput, 
   const workspaceId = requireWorkspace(ctx);
   return withTx(ctx.db, async (tx) => {
     await assertSameWorkspace(tx, ctx, { leadId: input.leadId, templateId: input.templateId ?? null });
+    await assertNotHandedOver(tx, ctx, input.leadId);
     const { messageId, conversationId } = await createOutboundMessage(tx, ctx, { ...input, status: 'DRAFT', sendIntent: null, initiatedBy: null }, deps);
     const approval = await tx.approval.create({
       data: { workspaceId, kind: 'OUTBOUND_MESSAGE', status: 'PENDING', messageId, flags: [], requestedAt: ctx.clock.now() },
@@ -483,6 +498,8 @@ export async function approveAndSendMessage(ctx: AppCtx, input: { messageId: str
     const existing = await existingDispatch(tx, jobKey);
     if (existing) return { ...existing, created: false };
     if (message.status !== 'DRAFT') throw new InvalidTransitionError({ message: `message is ${message.status}, not DRAFT` });
+    const conversation = await tx.conversation.findFirstOrThrow({ where: { id: message.conversationId }, select: { leadId: true } });
+    await assertNotHandedOver(tx, ctx, conversation.leadId);
 
     const now = ctx.clock.now();
     const payloadHash = await messagePayloadHash(tx as unknown as PayloadReadDb, { workspaceId, messageId: message.id }, deps.contactKeyPepper);
@@ -542,6 +559,12 @@ export type SendPlan = {
   body: string | null;
   subject: string | null;
   artifact: { path: string; sha256: string; bytes: number; filename: string } | null;
+  /**
+   * ADR-123 (slice F4): the template's own PDF brochure for its DOCUMENT header (`headerMediaId`),
+   * uploaded per send like the quote PDF; null when the template has none (a DOCUMENT header then
+   * carries the quote PDF, `artifact`).
+   */
+  headerDocument: { path: string; sha256: string; bytes: number; filename: string } | null;
   workspace: { name: string; slug: string };
 };
 
@@ -696,7 +719,17 @@ export async function preflightDispatch(tx: ScopedTx, ctx: AppCtx, ref: { messag
     await closeAttempt(tx, ctx, attempt, 'SKIPPED', ['CONTACT_MISSING']);
     return { kind: 'skipped', reasons: ['CONTACT_MISSING'], attemptId: attempt.id };
   }
-  const template = message.templateId ? await tx.whatsAppTemplate.findFirst({ where: { id: message.templateId }, select: { name: true, language: true, components: true, variableMap: true } }) : null;
+  const template = message.templateId ? await tx.whatsAppTemplate.findFirst({ where: { id: message.templateId }, select: { name: true, language: true, components: true, variableMap: true, headerMediaId: true } }) : null;
+  // ADR-123: a template with its own brochure sends that document as its header (not the quote PDF).
+  let headerDocument: SendPlan['headerDocument'] = null;
+  if (template?.headerMediaId && templateShape(template.components, null, { headerMediaId: template.headerMediaId }).documentSource === 'media') {
+    const asset = await tx.mediaAsset.findFirst({ where: { id: template.headerMediaId }, select: { storagePath: true, sha256: true, byteSize: true, fileName: true } });
+    if (!asset) {
+      await closeAttempt(tx, ctx, attempt, 'SKIPPED', ['MEDIA_MISSING']);
+      return { kind: 'skipped', reasons: ['MEDIA_MISSING'], attemptId: attempt.id };
+    }
+    headerDocument = { path: asset.storagePath, sha256: asset.sha256, bytes: asset.byteSize, filename: asset.fileName };
+  }
 
   const moved = await tx.dispatchAttempt.updateMany({ where: { id: attempt.id, state: 'QUEUED' }, data: { state: 'SENDING', updatedAt: now } });
   if (moved.count !== 1) return { kind: 'done' };
@@ -723,6 +756,7 @@ export async function preflightDispatch(tx: ScopedTx, ctx: AppCtx, ref: { messag
       body: message.body,
       subject: message.subject,
       artifact,
+      headerDocument,
       workspace: { name: workspace.name, slug: workspace.slug },
     },
   };

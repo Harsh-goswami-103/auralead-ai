@@ -52,6 +52,8 @@ const EXTRA_REASON_LABELS: Readonly<Record<string, string>> = {
   CONTACT_MISSING: 'The lead has no contact on this channel',
   NEWER_INBOUND: 'Superseded by a newer customer message',
   SUPPRESSED: 'The contact opted out on this channel',
+  // Lead-gen F5 (ADR-132): a queued send the lead's handoff to the client cancelled.
+  LEAD_HANDED_OVER: 'The lead was handed over to the client',
 };
 
 export function dispatchReasonLabel(code: string | null): string | null {
@@ -358,8 +360,9 @@ async function channelOption(
   deps: QueueDeps,
 ): Promise<ChannelOption> {
   const templates = input.quoteTemplates
-    ? (await ctx.db.whatsAppTemplate.findMany({ orderBy: [{ name: 'asc' }, { language: 'asc' }], select: { id: true, name: true, language: true, category: true, status: true } }))
-        .filter((t) => t.status.trim().toUpperCase() === 'APPROVED')
+    ? (await ctx.db.whatsAppTemplate.findMany({ orderBy: [{ name: 'asc' }, { language: 'asc' }], select: { id: true, name: true, language: true, category: true, status: true, headerMediaId: true } }))
+        // A template with its own brochure has one document header and it holds the brochure: it cannot carry the quotation (ADR-131).
+        .filter((t) => t.status.trim().toUpperCase() === 'APPROVED' && t.headerMediaId === null)
         .map(({ id, name, language, category }) => ({ id, name, language, category }))
     : [];
   if (input.contact === null) {
@@ -368,7 +371,7 @@ async function channelOption(
   if (input.quoteTemplates && templates.length === 0) {
     return {
       channel: input.channel,
-      gate: { category: 'configuration', reason: 'No approved WhatsApp template is synced for this workspace. Templates come from WhatsApp Manager once WhatsApp is connected.' },
+      gate: { category: 'configuration', reason: 'No approved WhatsApp template is available for this workspace. Ask your operator to write and submit one in the template studio, or sync one from WhatsApp Manager.' },
       eligibility: null,
       templates,
     };

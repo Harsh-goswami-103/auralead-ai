@@ -1,15 +1,15 @@
 /**
  * Automated reply guard (T21; PRD "automated replies constrained to approved services/facts,
- * escalate uncertainty, complaints and human requests"; L-2, R21, plan §9 "Auto-reply guard intents").
+ * escalate uncertainty, complaints and human requests"; L-2, R21, plan §9 "Auto-reply guard intents";
+ * ADR-63, amended by ADR-122).
  *
  * Meta's 2026 terms forbid general-purpose assistants on WhatsApp, so an automated reply may only
- * ever say something the business already approved. The guard therefore never asks a model for
- * free text and never echoes the customer's words:
+ * ever say something the business already approved, and the customer's words are never echoed:
  *
  *  1. `classifyReplyIntent` puts one inbound text into exactly one of the seven intents with fixed,
  *     conservative rules (stop > complaint > human_request > call_request > quote_request >
  *     service_faq > out_of_scope). Anything the rules do not recognize is `out_of_scope`, so
- *     uncertainty escalates instead of being answered.
+ *     uncertainty escalates instead of being answered. It is the pre-gate of every automated reply.
  *  2. `decideAutoReply` maps the intent to a reply:
  *     - complaint, human_request, out_of_scope: a fixed deflection, and the thread escalates to a
  *       person (`escalate: true`);
@@ -22,6 +22,12 @@
  *       output policy (business-entered text can carry amounts or links); any hit turns the reply
  *       into the fixed handoff with escalation (`OUTPUT_POLICY`). A workspace with no catalog cannot
  *       answer (`NO_APPROVED_FACTS`).
+ *
+ * ADR-122 supersedes this module's earlier rule that a FAQ answer never comes from a model: only a
+ * `service_faq` message may go to the `conversation_reply` model task (./conversation-reply.ts,
+ * catalog facts only, the output policy on its text), and every other intent keeps the fixed texts
+ * here. The guard's own catalog answer stays the reply in LIVE when the workspace has no AI
+ * integration (label `reply-guard`), never a silent switch to another generator.
  *
  * Pure apart from `loadReplyFacts`, which reads the current workspace's catalog through the
  * tenant-scoped client. Untrusted inbound text is capped and stripped of control characters first.
@@ -44,6 +50,14 @@ export const FIXED_REPLIES = {
   handoff: 'Thank you for your message. A member of our team will reply to you here.',
 } as const;
 
+/**
+ * The line that opens the first automated reply of each 24-hour window (ADR-122). "HUMAN" matches
+ * the human_request rule, so the customer's answer reaches a person.
+ */
+export function automatedReplyDisclosure(business: string): string {
+  return `${business.trim()}'s automated assistant. Reply HUMAN to talk to a person.`;
+}
+
 export type ReplyFacts = {
   business: string;
   /** Only an absolute https URL without credentials is ever used (P4). */
@@ -54,7 +68,13 @@ export type ReplyFacts = {
 export type IntentClassification = { intent: ReplyIntent; matchedServiceIds: string[] };
 
 export type ReplyAction = 'NONE' | 'ANSWER' | 'DEFLECT';
-export type EscalationReason = ReplyIntent | 'OUTPUT_POLICY' | 'NO_APPROVED_FACTS';
+/**
+ * Why a reply escalated: the guard's intent; catalog or model text that broke the output policy; no
+ * catalog; the model's own escalation or a non-FAQ intent it reported (MODEL_ESCALATED); a model
+ * call that failed after its retries (AI_FAILED); the cap on consecutive automated replies
+ * (REPLY_CAP).
+ */
+export type EscalationReason = ReplyIntent | 'OUTPUT_POLICY' | 'NO_APPROVED_FACTS' | 'MODEL_ESCALATED' | 'AI_FAILED' | 'REPLY_CAP';
 export type ReplyDecision = {
   intent: ReplyIntent;
   action: ReplyAction;
@@ -82,7 +102,7 @@ const CALL_HI = ['कॉल', 'फोन करें', 'फ़ोन करे�
 const QUOTE = /\b(?:quote|quotes|quotation|quotations|estimate|estimates|price|prices|pricing|cost|costs|how much|rate|rates|charge|charges|fee|fees|budget|tariff)\b/;
 const QUOTE_HI = ['कितना', 'कोटेशन', 'दाम', 'कीमत', 'रेट'];
 const FAQ_GENERIC =
-  /\b(?:services?|what do you (?:do|offer|provide)|do you (?:do|offer|provide|have|make|treat)|available|availability|how long|timeline|duration|turnaround|treatments?|procedures?|appointments?|opening hours|timings?)\b/;
+  /\b(?:services?|what do you (?:do|offer|provide|make|build)|do you (?:do|offer|provide|have|make|treat|build|design|develop|create)|available|availability|how long|timeline|duration|turnaround|treatments?|procedures?|appointments?|opening hours|timings?|includ(?:e|es|ed|ing)|features?|what do i get|websites?|web design|landing pages?|e-?commerce|online store|hosting|portfolio|maintenance)\b/;
 const GREETING = /^(?:hi+|hello+|hey+|hii+|namaste|namaskar|good (?:morning|afternoon|evening)|नमस्ते)\W*$/u;
 
 /** Words of a service name that say nothing about which service is meant. */

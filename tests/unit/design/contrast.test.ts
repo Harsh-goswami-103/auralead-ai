@@ -94,6 +94,30 @@ describe('Aurora palette contrast (WCAG 2 AA)', () => {
     }
   });
 
+  it('chat: message text (text-1, text-2) reads on both bubbles', () => {
+    for (const text of ['text-1', 'text-2']) {
+      for (const bubble of ['chat-bubble-in', 'chat-bubble-out']) expectPair(hexToken(text), hexToken(bubble), TEXT, `${text} on ${bubble}`);
+    }
+  });
+
+  it('chat: meta text (time, tick labels) reads on both bubbles, the wallpaper and the thread list surfaces', () => {
+    for (const bg of ['chat-bubble-in', 'chat-bubble-out', 'chat-wallpaper', 'bg-1', 'bg-2']) expectPair(hexToken('chat-meta'), hexToken(bg), TEXT, `chat-meta on ${bg}`);
+  });
+
+  it('chat: the read tick reads on an outgoing bubble and in the thread list, even as a text label', () => {
+    for (const bg of ['chat-bubble-out', 'chat-wallpaper', 'bg-1', 'bg-2']) expectPair(hexToken('chat-tick-read'), hexToken(bg), TEXT, `chat-tick-read on ${bg}`);
+  });
+
+  it('chat: links (aura) read on both bubbles; day separators and system notes read on the wallpaper', () => {
+    for (const bubble of ['chat-bubble-in', 'chat-bubble-out']) expectPair(hexToken('aura'), hexToken(bubble), TEXT, `aura link on ${bubble}`);
+    for (const text of ['text-1', 'text-2']) expectPair(hexToken(text), hexToken('chat-wallpaper'), TEXT, `${text} on chat-wallpaper`);
+  });
+
+  it('chat: ink reads on the chat accent fill, and the accent reads as text on the wallpaper, an incoming bubble and bg-1/bg-2', () => {
+    expectPair(hexToken('accent-fg'), hexToken('chat-accent'), TEXT, 'accent-fg on chat-accent');
+    for (const bg of ['chat-wallpaper', 'chat-bubble-in', 'bg-1', 'bg-2']) expectPair(hexToken('chat-accent'), hexToken(bg), TEXT, `chat-accent on ${bg}`);
+  });
+
   it('text-1 and text-2 read on glass even over white content', () => {
     const glass = /^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/.exec(resolveToken('glass-bg'));
     expect(glass, 'glass-bg is rgb(r g b / a)').not.toBeNull();

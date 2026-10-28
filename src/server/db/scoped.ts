@@ -68,6 +68,11 @@ export const REQUIRED_TENANT_MODELS = [
   'LeadExport',
   'MetaLeadBackfill',
   'SheetSyncRun',
+  'LeadFinderRun',
+  'LeadFinderResult',
+  'LeadImport',
+  'LeadHandoff',
+  'MediaAsset',
 ] as const satisfies readonly Prisma.ModelName[];
 
 /** Tenant models whose workspaceId is nullable (system rows). Scoped access still filters by workspace. */
@@ -210,6 +215,11 @@ const REF_MODELS = {
   integrationId: 'integration',
   approvalId: 'approval',
   campaignId: 'campaign',
+  runId: 'leadFinderRun',
+  finderResultId: 'leadFinderResult',
+  importId: 'leadImport',
+  mediaAssetId: 'mediaAsset',
+  handoffId: 'leadHandoff',
 } as const;
 
 export type WorkspaceRefKey = keyof typeof REF_MODELS;

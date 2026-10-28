@@ -14,10 +14,50 @@ import { describe, expect, it } from 'vitest';
 import { FixedClock } from '@/lib/clock';
 import { IntegrationStatus } from '@/lib/domain/enums';
 import { CHECKABLE_STATUSES, metaLeadsClient, metaMarketingClient, resendApiClient, resolveEmailTransport, resolveWhatsAppTransport, sheetsReadClient, smtpConnectionCheck, whatsAppGraphClient, aiConnectionCheck, type CredentialState, type IntegrationUse } from '@/server/adapters/registry';
+// Lead-gen suite resolvers under test (docs/handoff/lead-gen-suite-plan.md §6), each in its slice's block.
+// ---- lead-gen F1 finder ----
+import { placesCheckClient, resolvePlacesProvider } from '@/server/adapters/registry';
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+import { whatsAppTemplateAdmin } from '@/server/adapters/registry';
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const REGISTRY = 'src/server/adapters/registry.ts';
-const DEMO_MODULES = ['src/server/adapters/whatsapp/demo.ts', 'src/server/adapters/email/demo.ts'];
+const DEMO_MODULES = [
+  'src/server/adapters/whatsapp/demo.ts',
+  'src/server/adapters/email/demo.ts',
+  // ---- lead-gen F1 finder ----
+  'src/server/adapters/places/demo.ts',
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+  'src/server/adapters/whatsapp/template-admin-demo.ts',
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
+];
 const LIVE_MODULES = [
   'src/server/adapters/whatsapp/cloud-api.ts',
   'src/server/adapters/whatsapp/media.ts',
@@ -30,6 +70,58 @@ const LIVE_MODULES = [
   'src/server/adapters/meta/graph.ts',
   // T34
   'src/server/adapters/sheets/google.ts',
+  // ---- lead-gen F1 finder ----
+  'src/server/adapters/places/google-places.ts',
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+  'src/server/adapters/whatsapp/template-admin.ts',
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
+];
+/** Every `live*` function of the registry (the LIVE branches); a slice lists the ones it adds in its block. */
+const LIVE_FUNCTIONS = [
+  'liveAiCheck',
+  'liveCloudApiOptions',
+  'liveEmailTransport',
+  'liveGraphClient',
+  'liveMetaLeadsClient',
+  'liveMetaMarketingClient',
+  'liveMetaToken',
+  'liveResendClient',
+  'liveResendOptions',
+  'liveSmtpCheck',
+  'liveSheetsClient',
+  'liveSmtpOptions',
+  'liveWhatsAppTransport',
+  // ---- lead-gen F1 finder ----
+  'livePlacesClient',
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+  'liveTemplateAdmin',
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 ];
 
 function resolve(from: string, spec: string): string | null {
@@ -80,9 +172,7 @@ describe('LIVE never imports the demo transport in the registry path (static)', 
     expect(demoNames.size).toBeGreaterThan(0); // the DEMO branch does use them
     const sf = source(REGISTRY);
     const liveFns = sf.statements.filter((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && (s.name?.text ?? '').startsWith('live'));
-    expect(liveFns.map((f) => f.name!.text).sort()).toEqual(
-      ['liveAiCheck', 'liveCloudApiOptions', 'liveEmailTransport', 'liveGraphClient', 'liveMetaLeadsClient', 'liveMetaMarketingClient', 'liveMetaToken', 'liveResendClient', 'liveResendOptions', 'liveSmtpCheck', 'liveSheetsClient', 'liveSmtpOptions', 'liveWhatsAppTransport'].sort(),
-    );
+    expect(liveFns.map((f) => f.name!.text).sort()).toEqual([...LIVE_FUNCTIONS].sort());
     const used: string[] = [];
     for (const fn of liveFns) {
       const visit = (n: ts.Node) => {
@@ -218,3 +308,86 @@ describe('LIVE resolution never yields a demo transport (runtime)', () => {
     }
   });
 });
+
+// Lead-gen suite runtime cases (every status x credential state for a new resolver), each in its slice block.
+// ---- lead-gen F1 finder ----
+describe('Google Places (ADR-118): LIVE gets the Places client or a typed problem, never the simulated directory', () => {
+  const clock = new FixedClock('2026-10-23T06:00:00.000Z');
+  const placesCreds: CredentialState[] = [{ state: 'ok', values: { apiKey: 'AIzaSyArchTestKey000000000000000000000' } }, { state: 'ok', values: { apiKey: '  ' } }, { state: 'missing', fields: ['apiKey'] }, { state: 'unreadable', field: 'apiKey' }];
+  const use = (status: (typeof IntegrationStatus)[number], credentials: CredentialState): IntegrationUse => ({ id: 'gp_1', kind: 'GOOGLE_PLACES', status, config: {}, credentials });
+
+  it('every status x credential state', () => {
+    for (const status of IntegrationStatus) {
+      for (const credentials of placesCreds) {
+        for (const r of [resolvePlacesProvider({ mode: 'live', workspaceMode: 'LIVE', integration: use(status, credentials), clock }), placesCheckClient({ mode: 'live', integration: use(status, credentials), clock })]) {
+          if (r.ok) {
+            expect(r.value).toMatchObject({ label: 'google-places', simulated: false });
+            expect(CHECKABLE_STATUSES.has(status)).toBe(true);
+            expect(credentials.state === 'ok' && credentials.values.apiKey!.trim() !== '').toBe(true);
+          } else expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
+        }
+      }
+    }
+    expect(resolvePlacesProvider({ mode: 'live', workspaceMode: 'LIVE', integration: null, clock })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+    expect(resolvePlacesProvider({ mode: 'live', workspaceMode: 'DEMO', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(resolvePlacesProvider({ mode: 'live', workspaceMode: 'LIVE', integration: { ...use('CONNECTED', placesCreds[0]!), kind: 'GOOGLE_SHEETS' }, clock })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+  });
+
+  it('DEMO gets the simulated directory and never a Places client', () => {
+    const demo = resolvePlacesProvider({ mode: 'demo', workspaceMode: 'DEMO', integration: use('CONNECTED', placesCreds[0]!), clock });
+    expect(demo.ok && demo.value).toMatchObject({ label: 'demo-places', simulated: true });
+    expect(resolvePlacesProvider({ mode: 'demo', workspaceMode: 'LIVE', integration: null, clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(placesCheckClient({ mode: 'demo', integration: use('CONNECTED', placesCreds[0]!), clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+  });
+});
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+describe('template admin (ADR-123, slice F4)', () => {
+  const clock = new FixedClock('2026-10-23T06:00:00.000Z');
+  const creds: CredentialState[] = [
+    { state: 'ok', values: { accessToken: 'EAAGarchtesttoken000000000000000' } },
+    { state: 'missing', fields: ['accessToken'] },
+    { state: 'unreadable', field: 'accessToken' },
+  ];
+
+  it('DEMO gets the simulated WhatsApp Manager whatever is stored; a workspace of the other mode is refused', () => {
+    const demo = whatsAppTemplateAdmin({ mode: 'demo', workspaceMode: 'DEMO', integration: null, graphVersion: null, clock });
+    expect(demo.ok && demo.value).toMatchObject({ label: 'demo', simulated: true });
+    expect(whatsAppTemplateAdmin({ mode: 'demo', workspaceMode: 'LIVE', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+    expect(whatsAppTemplateAdmin({ mode: 'live', workspaceMode: 'DEMO', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'MODE_MISMATCH' });
+  });
+
+  it('LIVE: every status x credential state x graph version x WABA ID answers the Graph admin or a typed problem, never the demo admin', () => {
+    for (const status of IntegrationStatus) {
+      for (const credentials of creds) {
+        for (const graphVersion of ['v24.0', null]) {
+          for (const wabaId of ['209876543210987', null]) {
+            const config: Record<string, string> = { phoneNumberId: '109876543210987', appId: '309876543210987', ...(wabaId ? { wabaId } : {}) };
+            const r = whatsAppTemplateAdmin({ mode: 'live', workspaceMode: 'LIVE', integration: { id: 'int_1', kind: 'WHATSAPP_CLOUD', status, config, credentials }, graphVersion, clock });
+            if (r.ok) {
+              expect(r.value).toMatchObject({ label: 'graph', simulated: false, wabaId: '209876543210987' });
+              expect(['CONNECTED', 'DEGRADED']).toContain(status);
+              expect([credentials.state, graphVersion, wabaId]).toEqual(['ok', 'v24.0', '209876543210987']);
+            } else {
+              expect(['INTEGRATION_NOT_CONFIGURED', 'CREDENTIAL_UNREADABLE']).toContain(r.code);
+            }
+          }
+        }
+      }
+    }
+    expect(whatsAppTemplateAdmin({ mode: 'live', workspaceMode: 'LIVE', integration: null, graphVersion: 'v24.0', clock })).toMatchObject({ ok: false, code: 'INTEGRATION_NOT_CONFIGURED' });
+  });
+});
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----

@@ -9,6 +9,14 @@
  * T26 completes it with the lead's stage control ("Move to stage", compare-and-set on the version
  * shown), consent per channel (matched by the contact HMAC, as eligibility) and the source records.
  *
+ * Lead-gen F1 (ADR-118): a lead found through Google Places shows the Places attribution and "Confirm
+ * details" (which keeps the Places-sourced fields past their 30-day expiry) under its contact facts.
+ *
+ * Lead-gen F5 (ADR-124, ADR-125): "Hand over to client" (the dialog says what will happen; gated on
+ * leads.handoff) or, once handed over, the handoff card and the read-only state; and the reach-out
+ * panel (WhatsApp consent state, record an opt-in with its notice and method, the click-to-chat link,
+ * the workspace notice).
+ *
  * Look (design spec §6): PageHeader with the source and stage chips and the score meter; the score
  * as a ring gauge with a bar per reason; the pipeline as a stepper rail with plain-language reasons;
  * the draft as message previews; quotations as cards. Status is icon + label everywhere, money is
@@ -17,8 +25,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowLeft, Bot, CircleCheck, CircleHelp, Cog, Contact, Download, FileText, Gauge, Globe, Inbox, Loader2, Mail, MapPin, MessageCircle, PenLine, Phone, ShieldCheck, Sparkles, Star, Tag, TriangleAlert, Users, Wand2, Waypoints, Workflow, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Bot, CircleCheck, CircleHelp, Cog, Contact, Download, FileText, Gauge, Globe, Handshake, Inbox, Loader2, Mail, MapPin, MessageCircle, PenLine, Phone, Send, ShieldCheck, Sparkles, Star, Tag, TriangleAlert, Users, Wand2, Waypoints, Workflow, type LucideIcon } from 'lucide-react';
+import { OperatorHandoff } from '@/components/handoff/HandoffSection';
+import { HANDOFF_STATUS_CHIPS } from '@/components/handoff/handoff-vocabulary';
+import { ReachOutPanel } from '@/components/reach-out/ReachOutPanel';
+import { ToneChip } from '@/components/leads/ToneChip';
 import { ConsentChips } from '@/components/leads/ConsentChips';
+import { LeadPlacesNotice } from '@/components/leads/LeadPlacesNotice';
 import { SourceRecords } from '@/components/leads/SourceRecords';
 import { StageMoveMenu } from '@/components/leads/StageMoveMenu';
 import { GatedAction } from '@/components/patterns/GatedAction';
@@ -45,7 +58,10 @@ import { generatorInfo, leadQuotePdfHref, type GeneratorKind } from '@/lib/schem
 import { SCORE_CAPTION } from '@/lib/schemas/scoring';
 import { getPageContext } from '@/server/auth/page-context';
 import { getRuntime } from '@/server/boot';
+import { loadLeadHandoff, type LeadHandoffView } from '@/server/services/leads/handoff';
 import { leadProfileDeps, loadLeadProfile, type LeadProfileDto } from '@/server/services/leads/profile';
+import { loadReachOut } from '@/server/services/leads/reach-out';
+import type { ReachOutDto } from '@/lib/schemas/reach-out';
 import { loadLeadDetail, type DraftView, type LeadDetail, type LeadQuoteView } from '@/server/services/leads/console';
 import { QuoteStatusBadge } from '../../../../user/quotations/quote-status';
 import { AutoRefresh, DraftActions, QuoteApproveAction } from './lead-actions';
@@ -231,8 +247,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
 
   let detail: LeadDetail;
   let profile: LeadProfileDto;
+  let handoff: LeadHandoffView;
+  let reachOut: ReachOutDto;
   try {
-    [detail, profile] = await Promise.all([loadLeadDetail(page.ctx, leadId), loadLeadProfile(page.ctx, leadId, leadProfileDeps(getRuntime().config))]);
+    const config = getRuntime().config;
+    [detail, profile, handoff, reachOut] = await Promise.all([
+      loadLeadDetail(page.ctx, leadId),
+      loadLeadProfile(page.ctx, leadId, leadProfileDeps(config)),
+      loadLeadHandoff(page.ctx, leadId, { keyRing: config.secrets.credentials }),
+      loadReachOut(page.ctx),
+    ]);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     if (error instanceof PermissionDeniedError) {
@@ -272,6 +296,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
             <SourceChip source={lead.firstSource} withIcon />
             <StageChip stage={lead.salesStage} />
             {lead.simulated ? <ModeChip simulated /> : null}
+            {handoff.handoff ? <ToneChip tone={HANDOFF_STATUS_CHIPS[handoff.handoff.status].tone} icon={HANDOFF_STATUS_CHIPS[handoff.handoff.status].icon} label={HANDOFF_STATUS_CHIPS[handoff.handoff.status].label} /> : null}
             <span className="text-fg-2">Added {formatDateTime(lead.createdAt, tz)}</span>
           </span>
         }
@@ -378,6 +403,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
                 )}
               </Fact>
             </dl>
+            <LeadPlacesNotice leadId={lead.id} places={profile.places} simulated={lead.simulated} timeZone={tz} workspaceSlug={workspace.slug} />
           </SectionCard>
         </StaggerItem>
       </Stagger>
@@ -401,6 +427,25 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
         </SectionCard>
         <SectionCard title={<ChipTitle icon={<Inbox aria-hidden="true" />}>Source</ChipTitle>} className="flex-1">
           <SourceRecords records={profile.sources} timeZone={tz} />
+        </SectionCard>
+      </Reveal>
+
+      <Reveal delay={0.12} className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <SectionCard
+          title={<ChipTitle icon={<Handshake aria-hidden="true" />} hue="volt">Hand over to the client</ChipTitle>}
+          meta="The client's team closes the deal through the quote flow."
+          className="flex-1"
+        >
+          <OperatorHandoff view={handoff} timeZone={tz} />
+        </SectionCard>
+        <SectionCard title={<ChipTitle icon={<Send aria-hidden="true" />} hue="ice">Reach out</ChipTitle>} meta="How to start a WhatsApp conversation this lead agreed to." className="flex-1">
+          <ReachOutPanel
+            reachOut={reachOut}
+            whatsapp={profile.consent.find((c) => c.channel === 'WHATSAPP') ?? { channel: 'WHATSAPP', state: 'NO_CONTACT', since: null, source: null }}
+            leadId={lead.id}
+            handedOver={handoff.handoff !== null}
+            integrationsHref={`/dashboard/employee/${workspace.slug}/integrations`}
+          />
         </SectionCard>
       </Reveal>
 

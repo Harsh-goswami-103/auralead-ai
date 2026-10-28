@@ -6,7 +6,7 @@ export const goingLive: DocPage = {
   summary:
     'Deploy AuraLead AI for real use: configure LIVE mode, keep the generated secrets safe, serve it over HTTPS, create the database and the first administrator, and keep the web app and the worker running.',
   appliesTo: ['LIVE'],
-  checked: '2026-10-20',
+  checked: '2026-10-23',
   sections: [
     {
       id: 'before-you-start',
@@ -242,7 +242,7 @@ export const goingLive: DocPage = {
           head: ['Path', 'What it holds'],
           rows: [
             ['`app.db`', 'The SQLite database (with its `-wal` and `-shm` files while running).'],
-            ['`storage/`', 'Quotation PDFs, unless `STORAGE_DIR` points elsewhere.'],
+            ['`storage/`', 'Quotation PDFs, lead export files, the rows of a file import in progress and uploaded PDF brochures, unless `STORAGE_DIR` points elsewhere.'],
             ['`backups/`', 'Database backups, unless `BACKUP_DIR` points elsewhere.'],
             ['`journal/`', 'The suppression journal: every Stop and opt-in clear, kept outside the database so a restore cannot lose it.'],
             ['`outbound.lock`', 'Present only while outbound is paused by a restore or by an operator.'],
@@ -251,6 +251,31 @@ export const goingLive: DocPage = {
         {
           kind: 'paragraph',
           text: 'Back up the database with `npm run db:backup` on a schedule, and copy the storage folder and the journal with it. [Data and privacy](/docs/data-and-privacy#backups) covers backups and restores.',
+        },
+      ],
+    },
+    {
+      id: 'lead-generation-setup',
+      title: 'Set up the lead-generation tools',
+      blocks: [
+        {
+          kind: 'paragraph',
+          text: 'Provider keys belong to each workspace, not to the server: an operator whose assignment includes `integrations.manage` saves them on the workspace\'s integration pages in the Operator panel, and they are stored encrypted. The lead-generation tools need these, in this order of usefulness:',
+        },
+        {
+          kind: 'ordered',
+          items: [
+            '**Google Places** for the [Lead Finder](/docs/lead-finder). In Google Cloud create a project with billing, switch on the Places API (New), create an API key restricted to it and save it on the Google Places integration page. Every search page and every refresh is a paid request on that key.',
+            '**WhatsApp Cloud API** for templates, the inbox and the click-to-chat link. Connect it as usual, then add the display phone number (for the link) and, if you will submit templates with a PDF header, the Meta app ID. Receiving customers\' messages needs the public HTTPS address described under [HTTPS](#https).',
+            '**An AI integration** (Anthropic or OpenAI) for automatic replies to service questions, AI-written template copy and hand-over summaries. Without one, LIVE keeps the fixed catalog answers, the copy button is unavailable and a hand-over has no summary; nothing is faked.',
+            '**The opt-in notice and privacy contact** of each workspace (a person with `automation.manage`, on the reach-out panel of a lead). Recording an opt-in prefills the notice and requires it to name the business.',
+            '**Automatic sending** stays off until a person with `automation.manage` switches it on in the inbox. See [Inbox and automatic replies](/docs/inbox-and-ai-replies#automatic-sending).',
+          ],
+        },
+        {
+          kind: 'callout',
+          tone: 'note',
+          text: 'Until a provider is connected its screens say what is missing and offer the integration page. Nothing is searched, sent or written on the provider\'s behalf in the meantime.',
         },
       ],
     },

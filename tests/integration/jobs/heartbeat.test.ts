@@ -28,26 +28,33 @@ describe('lease extension and worker heartbeat', () => {
     await waitReady(a);
     await a.waitForLine((l) => l.startsWith(`START ${jobId}`), 30_000);
 
+    // Both facts below exist only while the 6 s job runs (the heartbeat names the job from claim to
+    // finish; the extended lease needs status RUNNING). Start observing them before B is spawned:
+    // spawning a second worker can take seconds on a loaded host and would otherwise eat the window.
+    const firstLease = (await db.job.findUniqueOrThrow({ where: { id: jobId } })).leaseUntil!;
+    const observed = Promise.all([
+      waitFor(
+        async () => (await db.workerHeartbeat.findMany()).find((h) => h.currentJobId === jobId) ?? null,
+        10_000,
+        'heartbeat row naming the running job',
+      ),
+      waitFor(
+        async () => {
+          const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+          return job.status === 'RUNNING' && job.leaseUntil !== null && job.leaseUntil.getTime() > firstLease.getTime() + 1_000;
+        },
+        10_000,
+        'lease extended',
+      ),
+    ]);
+    observed.catch(() => undefined); // awaited below; this only prevents an unhandled rejection while B spawns
+
     const b = spawnJobWorker(testDb.url, { name: 'B', tuning: { leaseMs: 2_000, leaseExtendEveryMs: 500, idlePollMs: 50 } });
     await waitReady(b);
 
-    const firstLease = (await db.job.findUniqueOrThrow({ where: { id: jobId } })).leaseUntil!;
-    const beatA = await waitFor(
-      async () => (await db.workerHeartbeat.findMany()).find((h) => h.currentJobId === jobId) ?? null,
-      10_000,
-      'heartbeat row naming the running job',
-    );
+    const [beatA] = await observed;
     expect(beatA.pid).toBe(a.pid);
     expect(beatA.mode).toBe('DEMO');
-
-    await waitFor(
-      async () => {
-        const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
-        return job.status === 'RUNNING' && job.leaseUntil !== null && job.leaseUntil.getTime() > firstLease.getTime() + 1_000;
-      },
-      10_000,
-      'lease extended',
-    );
 
     await waitFor(async () => (await db.job.findUniqueOrThrow({ where: { id: jobId } })).status === 'SUCCEEDED', 30_000, 'job done');
     const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });

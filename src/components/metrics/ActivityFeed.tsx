@@ -27,6 +27,8 @@ export type ActivityEntry = {
 function targetHref(entry: ActivityEntry): string | null {
   if (entry.targetType === 'Quote') return `/dashboard/user/quotations/${encodeURIComponent(entry.targetId)}`;
   if (entry.targetType === 'Conversation') return `/dashboard/user/inbox/${encodeURIComponent(entry.targetId)}`;
+  // The handoff audits (lead.handoff, .summary, .acknowledge) target the Lead (lead-gen F5).
+  if (entry.targetType === 'Lead') return `/dashboard/user/leads/${encodeURIComponent(entry.targetId)}`;
   return null;
 }
 

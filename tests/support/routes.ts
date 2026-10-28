@@ -134,6 +134,30 @@ export const MATRIX_FIXTURES: Readonly<Record<string, string>> = {
   'leads.unknownExportId': 'exportmatrixprobe00000000',
   /** T36: a well-formed extension token id that does not exist. */
   'extension.unknownTokenId': 'exttokenmatrixprobe000000',
+  // Lead-gen suite fixture keys: well-formed unknown-id probes, never seeded rows; each in its slice's block.
+  // ---- lead-gen F1 finder ----
+  /** F1 (ADR-118): well-formed finder run, finder result and lead ids that do not exist. */
+  'finder.unknownRunId': 'finderrunmatrixprobe00000',
+  'finder.unknownResultId': 'finderresultmatrixprobe00',
+  'finder.unknownLeadId': 'finderleadmatrixprobe0000',
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+  /** T41: a well-formed lead import id that does not exist. */
+  'imports.unknownImportId': 'importmatrixprobe00000000',
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+  'templates.unknownTemplateId': 'templatematrixprobe0000000',
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+  /** T44: a well-formed lead handoff id that does not exist. */
+  'handoffs.unknownId': 'handoffmatrixprobe0000000',
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 };
 
 export function resolveFixtures<T extends FixtureValue | undefined>(value: T): unknown {

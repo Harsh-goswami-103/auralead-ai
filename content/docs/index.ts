@@ -7,24 +7,36 @@
  * helpers see every page (the content tests).
  */
 import type { DocMode, DocPage } from './format';
+import { bot } from './pages/bot';
 import { dataAndPrivacy } from './pages/data-and-privacy';
 import { gettingStarted } from './pages/getting-started';
 import { goingLive } from './pages/going-live';
+import { importAndExport } from './pages/import-and-export';
+import { inboxAndAiReplies } from './pages/inbox-and-ai-replies';
+import { leadFinder } from './pages/lead-finder';
 import { leadToQuoteWorkflow } from './pages/lead-to-quote-workflow';
 import { limitations } from './pages/limitations';
 import { messagingRules } from './pages/messaging-rules';
+import { reachOutAndHandoff } from './pages/reach-out-and-handoff';
 import { rolesAndPanels } from './pages/roles-and-panels';
 import { security } from './pages/security';
+import { templateStudio } from './pages/template-studio';
 import { troubleshooting } from './pages/troubleshooting';
 
 export const DOC_PAGES: readonly DocPage[] = [
   gettingStarted,
   goingLive,
   rolesAndPanels,
+  leadFinder,
+  importAndExport,
+  inboxAndAiReplies,
+  templateStudio,
+  reachOutAndHandoff,
   leadToQuoteWorkflow,
   messagingRules,
   security,
   dataAndPrivacy,
+  bot,
   troubleshooting,
   limitations,
 ];

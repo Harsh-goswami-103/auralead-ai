@@ -18,6 +18,7 @@ import { serializePaise } from '@/lib/money';
 import type { AppCtx } from '@/server/auth/context';
 import { hasCapability, requireCapability, requireWorkspace } from '@/server/auth/guards';
 import { contactKey, ContactKeyError } from '@/server/security/contact-key';
+import { attributionList } from '@/server/services/lead-finder/runs';
 import { effectiveQuoteStatus } from '@/server/services/quotes/versioning';
 
 export type LeadProfileDeps = { contactKeyPepper: string };
@@ -81,7 +82,7 @@ export async function loadLeadProfile(ctx: AppCtx, leadId: string, deps: LeadPro
   if (!lead) throw new NotFoundError();
   const now = ctx.clock.now();
 
-  const [workspace, scoreConfig, sources, quotes, conversations, whatsapp, email] = await Promise.all([
+  const [workspace, scoreConfig, sources, quotes, conversations, whatsapp, email, placeResult] = await Promise.all([
     ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { id: true, slug: true, name: true, timezone: true } }),
     lead.scoreConfigVersionId ? ctx.db.scoringConfigVersion.findFirst({ where: { id: lead.scoreConfigVersionId }, select: { version: true } }) : Promise.resolve(null),
     ctx.db.leadSourceRecord.findMany({ where: { leadId }, orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }], take: 20, include: { importBatch: { select: { externalBatchId: true, simulated: true } } } }),
@@ -89,6 +90,8 @@ export async function loadLeadProfile(ctx: AppCtx, leadId: string, deps: LeadPro
     ctx.db.conversation.findMany({ where: { leadId, closedAt: null }, orderBy: { createdAt: 'asc' }, select: { id: true, channel: true, lastInboundProviderAt: true } }),
     consentFor(ctx, 'WHATSAPP', keyOf(deps.contactKeyPepper, 'WHATSAPP', lead.phoneE164), now),
     consentFor(ctx, 'EMAIL', keyOf(deps.contactKeyPepper, 'EMAIL', lead.emailNormalized), now),
+    // The attributions Google returned with this place, while the finder still holds them (the 24 h purge removes them).
+    lead.placeId === null ? Promise.resolve(null) : ctx.db.leadFinderResult.findFirst({ where: { placeId: lead.placeId, simulated: lead.simulated }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { attributions: true } }),
   ]);
 
   return {
@@ -144,6 +147,16 @@ export async function loadLeadProfile(ctx: AppCtx, leadId: string, deps: LeadPro
       validUntil: q.validUntil?.toISOString() ?? null,
     })),
     conversations: conversations.map((c) => ({ id: c.id, channel: c.channel, lastInboundProviderAt: c.lastInboundProviderAt?.toISOString() ?? null })),
+    places:
+      lead.placeId === null
+        ? null
+        : {
+            expiresAt: lead.placesContentExpiresAt?.toISOString() ?? null,
+            confirmedAt: lead.contactConfirmedAt?.toISOString() ?? null,
+            confirmedVia: lead.contactConfirmedVia,
+            attributions: placeResult && !lead.simulated ? attributionList(placeResult.attributions) : [],
+            canConfirm: hasCapability(ctx, 'leads.write') && lead.mergedIntoLeadId === null,
+          },
     permissions: { canMoveStage: hasCapability(ctx, 'leads.write') && lead.mergedIntoLeadId === null },
   };
 }

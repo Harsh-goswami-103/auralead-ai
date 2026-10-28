@@ -28,6 +28,29 @@ import { metaLeadBackfillJob, metaLeadFetchJob } from './handlers/meta-lead-fetc
 import { campaignActionJob, campaignReadBackJob } from './handlers/campaign-action';
 import { campaignMetricsSyncJob } from './handlers/campaign-metrics-sync';
 import { sheetsSyncJob } from './handlers/sheets-sync';
+// Lead-gen suite handlers (docs/handoff/lead-gen-suite-plan.md §6): each slice imports only inside its block.
+// ---- lead-gen F1 finder ----
+import { leadFinderSearchJob } from './handlers/lead-finder-search';
+import { leadFinderPurgeJob } from './handlers/lead-finder-purge';
+import { leadFinderEmailsJob } from './handlers/lead-finder-emails';
+import { leadsPlacesExpireJob } from './handlers/leads-places-expire';
+// ---- end F1 ----
+// ---- lead-gen F2 import ----
+import { leadImportJob, leadImportPurgeJob } from './handlers/lead-import';
+// ---- end F2 ----
+// ---- lead-gen F3 chat ----
+import { waDemoStatusJob } from './handlers/wa-demo-status';
+// ---- end F3 ----
+// ---- lead-gen F4 templates ----
+import { templateReviewJob } from './handlers/template-review';
+import { templateSubmitJob } from './handlers/template-submit';
+// ---- end F4 ----
+// ---- lead-gen F5 handoff ----
+import { handoffSummaryJob } from './handlers/handoff-summary';
+// ---- end F5 ----
+// ---- lead-gen F6 presentation ----
+
+// ---- end F6 ----
 import type { JobDefinition } from './types';
 
 export class JobRegistry {
@@ -81,6 +104,30 @@ export const JOB_DEFINITIONS: readonly JobDefinition[] = [
   campaignActionJob,
   campaignReadBackJob,
   sheetsSyncJob,
+  // Lead-gen suite job types (LEAD_GEN_JOB_TYPES in src/lib/domain/lead-gen.ts), each in its slice's block.
+  // ---- lead-gen F1 finder ----
+  leadFinderSearchJob,
+  leadFinderPurgeJob,
+  leadFinderEmailsJob,
+  leadsPlacesExpireJob,
+  // ---- end F1 ----
+  // ---- lead-gen F2 import ----
+  leadImportJob,
+  leadImportPurgeJob,
+  // ---- end F2 ----
+  // ---- lead-gen F3 chat ----
+  waDemoStatusJob,
+  // ---- end F3 ----
+  // ---- lead-gen F4 templates ----
+  templateSubmitJob,
+  templateReviewJob,
+  // ---- end F4 ----
+  // ---- lead-gen F5 handoff ----
+  handoffSummaryJob,
+  // ---- end F5 ----
+  // ---- lead-gen F6 presentation ----
+
+  // ---- end F6 ----
 ];
 
 export function buildJobRegistry(defs: readonly JobDefinition[] = JOB_DEFINITIONS): JobRegistry {

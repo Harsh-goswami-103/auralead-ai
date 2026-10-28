@@ -160,7 +160,7 @@ describe('CapabilityPicker', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Read leads/ }));
     expect(value).toEqual(['dispatch.send']);
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
-    expect(value).toHaveLength(15);
+    expect(value).toHaveLength(20);
     fireEvent.click(screen.getByRole('button', { name: 'None' }));
     expect(value).toEqual([]);
   });

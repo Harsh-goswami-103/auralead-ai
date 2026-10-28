@@ -74,7 +74,8 @@ export type TemplateView = {
   status: string;
   intent: string | null;
   variables: string[];
-  syncedAt: Date;
+  /** Null for a template written here that was never synced (ADR-123): "Not synced yet". */
+  syncedAt: Date | null;
   /** T32 mapping (P12): what each body variable holds, the quick-reply buttons and their intents. */
   sources: Record<string, TemplateVariableSource>;
   quickReplies: Array<{ index: number; text: string; intent: QuickReplyIntentValue | null }>;
@@ -248,7 +249,7 @@ function variableNames(schema: unknown): string[] {
     .slice(0, 20);
 }
 
-function templateView(t: { id: string; name: string; language: string; category: string; status: string; intent: string | null; variableSchema: unknown; variableMap: unknown; components: unknown; syncedAt: Date }): TemplateView {
+function templateView(t: { id: string; name: string; language: string; category: string; status: string; intent: string | null; variableSchema: unknown; variableMap: unknown; components: unknown; syncedAt: Date | null }): TemplateView {
   const shape = templateShape(t.components);
   const mapping = parseTemplateMapping(t.variableMap);
   const fromSchema = variableNames(t.variableSchema);

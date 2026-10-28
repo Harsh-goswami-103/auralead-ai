@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SourceSimulator } from '@/components/integrations/SourceSimulator';
 import { TemplateSyncButton } from '@/components/integrations/TemplateSyncButton';
 import { templateSyncGate, simulationGateOf } from '@/components/integrations/vocabulary';
+import { WORKSPACE_SECTIONS } from '@/components/integrations/sections';
 import { WorkspaceSectionNav } from '@/components/integrations/WorkspaceSectionNav';
 import { CsrfProvider } from '@/components/patterns/csrf';
 
@@ -96,7 +97,10 @@ describe('WorkspaceSectionNav', () => {
     render(<WorkspaceSectionNav slug="smile-avenue-dental" workspaceName="Smile Avenue Dental Clinic" />);
     const nav = screen.getByRole('navigation', { name: 'Smile Avenue Dental Clinic sections' });
     const links = nav.querySelectorAll('a');
-    expect([...links].map((a) => a.textContent)).toEqual(['Leads', 'Approvals', 'Integrations', 'Pipeline', 'Sheets', 'Meta', 'Extension']);
+    // The story order (Lead finder, Leads, Inbox, Templates, Approvals), then the setup sections; the
+    // nav shows exactly WORKSPACE_SECTIONS, so a section added later cannot be missing from it.
+    expect([...links].map((a) => a.textContent)).toEqual(['Lead finder', 'Leads', 'Inbox', 'Templates', 'Approvals', 'Integrations', 'Pipeline', 'Sheets', 'Meta', 'Extension']);
+    expect([...links].map((a) => a.textContent)).toEqual(WORKSPACE_SECTIONS.map((s) => s.label));
     expect(screen.getByRole('link', { name: 'Sheets' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: 'Leads' }).getAttribute('aria-current')).toBeNull();
   });

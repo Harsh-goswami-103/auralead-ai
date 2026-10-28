@@ -115,6 +115,17 @@ describe('Composer', () => {
     expect(screen.getByRole('status').textContent).toContain('Saved for review');
   });
 
+  it('a refusal for another reason does not blame the window (an opt-out says so, and no template is suggested)', async () => {
+    fetchMock.mockResolvedValueOnce(json(422, { code: 'SEND_REFUSED', message: 'Not sent: The contact has opted out.', reference: 'req_2', details: { reasons: ['SUPPRESSED'], next: 'NONE' } }));
+    renderComposer();
+    await type('Hello again.');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send' })));
+    const line = document.querySelector('[data-composer-eligibility]')!.textContent ?? '';
+    expect(line).not.toMatch(/Free-form window closed/);
+    expect(line).toContain('The contact has opted out.');
+    expect(screen.getByRole('alert').textContent).not.toContain('Send an approved template instead');
+  });
+
   it('a closed window renders the review path from the start (server said WINDOW_CLOSED)', () => {
     renderComposer({ freeform: { eligible: false, deferrable: false, reasons: ['WINDOW_CLOSED'], labels: ['The 24-hour reply window is closed'], windowEndsAt: null } });
     expect(screen.getByText(/Free-form window closed/)).toBeTruthy();

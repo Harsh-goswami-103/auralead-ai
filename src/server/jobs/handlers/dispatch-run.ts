@@ -52,6 +52,7 @@ import {
 } from '@/server/services/messaging/dispatch';
 import { pausePoint } from '@/server/testing/pause';
 import type { JobDefinition, JobHandlerContext, JobResult } from '../types';
+import { queueDemoStatus } from './wa-demo-status';
 import { jobCtx, parseWorkspacePayload } from './lead-job-support';
 
 const payloadSchema = z.object({ messageId: z.string().min(1).max(64) });
@@ -137,10 +138,12 @@ function scopedFencedTx<R>(job: JobHandlerContext, db: { $transaction: unknown }
 
 async function sendPlan(channel: Channel, plan: SendPlan, deps: DispatchRuntimeDeps, wa: WhatsAppTransport | null, email: EmailTransport | null): Promise<SendOutcome> {
   let document = null;
-  if (plan.artifact) {
+  // ADR-123: a WhatsApp template with its own brochure carries it as the header; otherwise the quote PDF.
+  const file = channel === 'WHATSAPP' && plan.headerDocument ? plan.headerDocument : plan.artifact;
+  if (file) {
     try {
-      const bytes = readArtifactFile(deps.storageDir, plan.artifact);
-      document = { filename: plan.artifact.filename, bytes, sha256: plan.artifact.sha256 };
+      const bytes = readArtifactFile(deps.storageDir, file);
+      document = { filename: file.filename, bytes, sha256: file.sha256 };
     } catch (error) {
       // Missing or altered file: definitely not sent, and retrying cannot fix it.
       return {
@@ -258,7 +261,8 @@ export function createDispatchJob(channel: Channel, options: DispatchJobOptions 
 
       switch (outcome.status) {
         case 'sent':
-          return { outcome: 'succeeded', finalTx: (tx) => settleSent(tx, ctx, plan, outcome) };
+          // lead-gen F3 (ADR-121): a DEMO WhatsApp send queues its simulated delivered/read statuses.
+          return { outcome: 'succeeded', finalTx: (tx) => settleSent(tx, ctx, plan, outcome).then(() => queueDemoStatus(tx, { mode: m, clock: job.clock, correlationId: job.correlationId }, plan, outcome)) };
         case 'ambiguous':
           return {
             outcome: 'dead',

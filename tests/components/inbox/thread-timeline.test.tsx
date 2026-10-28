@@ -5,7 +5,7 @@
  * exactly as the Approvals page's GeneratorChip calls the same message; a person's own draft and a
  * sent message carry no marker.
  */
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ThreadTimeline } from '@/components/inbox/ThreadTimeline';
 import type { ThreadMessage } from '@/server/services/messaging/inbox';
@@ -22,6 +22,7 @@ function message(id: string, over: Partial<ThreadMessage>): ThreadMessage {
     body: `Reply ${id}`,
     subject: null,
     templateName: null,
+    template: null,
     quote: null,
     quickReply: null,
     quickReplyLabel: null,
@@ -84,5 +85,30 @@ describe('ThreadTimeline draft provenance', () => {
     );
     expect(document.querySelectorAll('[data-draft-marker]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain('AI suggestion');
+  });
+});
+
+describe('ThreadTimeline reading (adversarial review)', () => {
+  it('announces new messages politely to screen readers (the page refreshes every few seconds)', () => {
+    render(<ThreadTimeline messages={[message('m_1', { status: 'SENT', statusLabel: 'Sent' })]} events={[]} timeZone="Asia/Kolkata" draftActions={() => null} />);
+    const log = screen.getByRole('log', { name: 'Conversation' });
+    expect(log.getAttribute('aria-live')).toBe('polite');
+    expect(log.getAttribute('aria-relevant')).toBe('additions');
+  });
+
+  it('does not fade a failed or not-sent bubble: its time and status keep the full contrast', () => {
+    render(
+      <ThreadTimeline
+        messages={[message('m_failed', { status: 'FAILED', statusLabel: 'Failed', generatorLabel: null }), message('m_notsent', { status: 'NOT_SENT', statusLabel: 'Not sent', generatorLabel: null })]}
+        events={[]}
+        timeZone="Asia/Kolkata"
+        draftActions={() => null}
+      />,
+    );
+    for (const id of ['m_failed', 'm_notsent']) {
+      const bubble = document.querySelector(`[data-message="${id}"] [data-bubble]`)!;
+      expect(bubble.className).not.toMatch(/opacity-/);
+      expect(bubble.className).toContain('border-dashed');
+    }
   });
 });
