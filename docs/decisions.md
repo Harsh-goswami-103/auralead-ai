@@ -1216,3 +1216,15 @@ E11 (task ordering) changes no contract and has no ADR; it is applied in the pla
 - **Why:** The owner asked for the product to present and run as a production product; a fresh install opened the demo with seeded sample businesses. The plan (ADR-04, E12) made DEMO the default, so this is a deviation.
 - **Covered by:** `tests/unit/config/env.test.ts`, `tests/unit/config/env-load.test.ts`, `tests/unit/landing/landing-page.test.ts`, `tests/unit/docs/docs-render.test.ts`, `tests/unit/docs/content.test.ts`.
 - **Reversibility:** 5 (defaults and copy only; DEMO is one env line away).
+
+### ADR-117 "Record opt-in" screen for manual consent grants (owner request, 2026-10-28)
+- **Decision:**
+  - A "Record opt-in" dialog sits under the consent chips on the operator lead page and in `LeadDetailBody` (client panel lead page and sheet). It posts to the existing `POST /api/app/consent/grants` (T18): the route, service, schema and rules are unchanged. The dialog offers only the channels the lead has a contact for, the purpose (marketing or service conversation), the evidence source (`MANUAL_EVIDENCE`, `SHEETS_FORM`, `META_FORM`), when the opt-in was given (a `datetime-local` read in the device's time zone, as the Meta backfill form does), a note, and an optional reference and agreed wording (stored as a hash only).
+  - The purpose is asked for WhatsApp only (a template needs MARKETING). Email always records MARKETING and says that an email opt-in covers every email: eligibility counts any email OPT_IN for every send intent (plan §7, ADR-73), so offering a narrower email purpose would promise a limit nothing enforces.
+  - The dialog states that a Google Maps listing or a public phone number is not an opt-in (ADR-15). A lifted or kept opt-out (`CLEARED` / `EVIDENCE_NOT_NEWER`) is said in plain words.
+  - `LeadProfileDto.permissions` gains `canRecordConsent` (leads.write, the route's capability). Without it the control is a permission gate; a lead with no phone and no email gets an eligibility gate.
+  - Nothing is sent from the dialog. Sends still go through the approval queue, and eligibility is checked again at dispatch.
+- **Why:** The route existed with no screen calling it, so an operator could not record real opt-in evidence for a lead that arrived without consent (every Google Maps lead), and the AI draft for such a lead could never be approved and sent.
+- **Not changed:** the B2B email attestation stays off in LIVE (no toggle); an APPROVAL item already built for one channel keeps that channel.
+- **Covered by:** `tests/components/leads/record-opt-in.test.tsx`, `tests/integration/leads/lead-profile.test.ts`.
+- **Reversibility:** 5 (UI and one DTO flag).

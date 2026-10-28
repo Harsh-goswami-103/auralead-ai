@@ -13,7 +13,9 @@ import { z } from 'zod';
 import { workspaceSlugField } from './lead-console';
 
 const id = z.string().min(1).max(64);
-const note = z.string().trim().min(5).max(500);
+export const CONSENT_NOTE_MIN = 5;
+export const CONSENT_NOTE_MAX = 500;
+const note = z.string().trim().min(CONSENT_NOTE_MIN).max(CONSENT_NOTE_MAX);
 
 export const MANUAL_CONSENT_SOURCES = ['MANUAL_EVIDENCE', 'SHEETS_FORM', 'META_FORM'] as const;
 
@@ -30,6 +32,9 @@ export const ManualConsentBody = z.object({
   noticeText: z.string().trim().min(1).max(2000).optional(),
 });
 export type ManualConsentBody = z.output<typeof ManualConsentBody>;
+
+/** The answer of POST /api/app/consent/grants: whether the opt-in lifted an active opt-out (O2, E3). */
+export type ManualConsentAnswer = { consentId: string; reoptIn: 'CLEARED' | 'NOT_SUPPRESSED' | 'EVIDENCE_NOT_NEWER' | 'NOT_OPT_IN' };
 
 export const B2bAttestationBody = z.object({
   workspaceSlug: workspaceSlugField.optional(),

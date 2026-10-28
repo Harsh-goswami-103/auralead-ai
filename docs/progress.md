@@ -126,6 +126,10 @@ Gate, run 2026-10-20 (Linux container):
 - `prisma.config.ts` resolves only the data paths, so `prisma generate` in `npm ci` no longer needs the secrets.
 - README quick start is the LIVE install; DEMO moved under "Development mode".
 
+## Record opt-in screen (owner request, 2026-10-28; ADR-117)
+
+- Lead pages (operator console and client panel) have a "Record opt-in" dialog under the consent chips that posts to the existing `POST /api/app/consent/grants`. It is how a Google Maps lead with real opt-in evidence becomes eligible for its AI-drafted message in the approval queue.
+
 ## Unresolved / carried forward
 
 - `npm run test:e2e`: specs exist for smoke, the panel flows and `visual/webgl-fallback`; the rest of the visual projects (responsive, a11y, states) get specs in T31. In this Linux container Playwright 1.64's own browser build is not installed; the run above used the preinstalled Chromium through a throwaway config with `launchOptions.executablePath`.

@@ -144,6 +144,6 @@ export async function loadLeadProfile(ctx: AppCtx, leadId: string, deps: LeadPro
       validUntil: q.validUntil?.toISOString() ?? null,
     })),
     conversations: conversations.map((c) => ({ id: c.id, channel: c.channel, lastInboundProviderAt: c.lastInboundProviderAt?.toISOString() ?? null })),
-    permissions: { canMoveStage: hasCapability(ctx, 'leads.write') && lead.mergedIntoLeadId === null },
+    permissions: { canMoveStage: hasCapability(ctx, 'leads.write') && lead.mergedIntoLeadId === null, canRecordConsent: hasCapability(ctx, 'leads.write') },
   };
 }

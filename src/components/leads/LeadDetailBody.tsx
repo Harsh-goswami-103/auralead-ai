@@ -17,6 +17,7 @@ import { formatDate, formatDateTime } from '@/lib/format/date';
 import { formatINR } from '@/lib/money';
 import type { LeadProfileDto } from '@/lib/schemas/leads';
 import { ConsentChips } from './ConsentChips';
+import { RecordOptIn } from './RecordOptIn';
 import { WEBSITE_LABELS } from './lead-vocabulary';
 import { ScoreBreakdown } from './ScoreBreakdown';
 import { SourceRecords } from './SourceRecords';
@@ -105,6 +106,15 @@ export function LeadDetailBody(props: {
 
       <Section title={<ChipTitle icon={<ShieldCheck aria-hidden="true" />} hue="ice">Consent</ChipTitle>}>
         <ConsentChips consent={props.profile.consent} timeZone={tz} />
+        <RecordOptIn
+          leadId={lead.id}
+          displayName={lead.displayName}
+          consent={props.profile.consent}
+          phoneE164={lead.phoneE164}
+          emailNormalized={lead.emailNormalized}
+          canRecord={props.profile.permissions.canRecordConsent}
+          workspaceSlug={props.workspaceSlug}
+        />
       </Section>
 
       <Section title={<ChipTitle icon={<Inbox aria-hidden="true" />}>Source</ChipTitle>}>
