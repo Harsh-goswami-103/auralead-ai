@@ -24,6 +24,7 @@ import { StageMoveMenu } from '@/components/leads/StageMoveMenu';
 import { GatedAction } from '@/components/patterns/GatedAction';
 import { ChipTitle } from '@/components/patterns/IconChip';
 import { PipelineRail } from '@/components/leads/PipelineRail';
+import { RecordOptIn } from '@/components/leads/RecordOptIn';
 import { ScoreMeter } from '@/components/leads/ScoreMeter';
 import { ScoreRing } from '@/components/leads/ScoreRing';
 import { StageChip } from '@/components/leads/StageChip';
@@ -397,6 +398,15 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ ws:
               Consent by channel
             </h3>
             <ConsentChips consent={profile.consent} timeZone={tz} />
+            <RecordOptIn
+              leadId={lead.id}
+              displayName={lead.displayName}
+              consent={profile.consent}
+              phoneE164={profile.lead.phoneE164}
+              emailNormalized={profile.lead.emailNormalized}
+              canRecord={profile.permissions.canRecordConsent}
+              workspaceSlug={workspace.slug}
+            />
           </div>
         </SectionCard>
         <SectionCard title={<ChipTitle icon={<Inbox aria-hidden="true" />}>Source</ChipTitle>} className="flex-1">

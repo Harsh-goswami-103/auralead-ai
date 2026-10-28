@@ -57,6 +57,7 @@ describe('loadLeadProfile', () => {
     expect(pc.consent.map((x) => x.state)).toEqual(['NONE', 'NO_CONTACT']);
     expect(pc.lead).toMatchObject({ displayName: 'Profile No Email', stageVersion: 0, salesStage: 'NEW', merged: false });
     expect(pc.permissions.canMoveStage).toBe(true);
+    expect(pc.permissions.canRecordConsent).toBe(true);
   });
 
   it('lists the source records with attribution and batch, and the stored score breakdown', async () => {
@@ -154,11 +155,12 @@ describe('loadLeadProfile', () => {
     }
   });
 
-  it('another workspace is 404; leads.read only can read but not move stages', async () => {
+  it('another workspace is 404; leads.read only can read but not move stages or record consent', async () => {
     const [foreign] = await makeLeads(h.db, WS_B, [{ name: 'Profile Foreign' }]);
     await expect(loadLeadProfile(await ownerCtx(h), foreign!.id, deps)).rejects.toMatchObject({ status: 404 });
     const neha = await userCtx(h.db, h.clock, 'neha', 'ironpulse-fitness');
     const profile = await loadLeadProfile(neha, foreign!.id, deps);
     expect(profile.permissions.canMoveStage).toBe(false);
+    expect(profile.permissions.canRecordConsent).toBe(false);
   });
 });

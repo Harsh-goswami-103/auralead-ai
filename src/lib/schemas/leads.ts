@@ -308,5 +308,6 @@ export type LeadProfileDto = {
   sources: SourceRecordDto[];
   quotes: Array<{ id: string; number: string; status: string; currentVersionNo: number; totalPaise: string | null; validUntil: string | null }>;
   conversations: Array<{ id: string; channel: 'WHATSAPP' | 'EMAIL'; lastInboundProviderAt: string | null }>;
-  permissions: { canMoveStage: boolean };
+  /** canRecordConsent: leads.write, which POST /api/app/consent/grants needs (ADR-117). */
+  permissions: { canMoveStage: boolean; canRecordConsent: boolean };
 };
