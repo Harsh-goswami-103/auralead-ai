@@ -30,7 +30,19 @@ export async function postJson<T = unknown>(url: string, body: unknown, csrfToke
   };
 }
 
-/** Follows a server-chosen same-origin path only (never an absolute or protocol-relative URL). */
+/**
+ * Accept only same-origin absolute paths. URL parsing ignores ASCII tabs/newlines,
+ * so checking just the first two characters is not enough: "/\\t/evil.example"
+ * (with a literal tab) resolves as a protocol-relative external URL in browsers.
+ */
 export function isSafeRedirect(path: unknown): path is string {
-  return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) {
+    return false;
+  }
+  try {
+    const origin = 'https://redirect-check.invalid';
+    return new URL(path, origin).origin === origin;
+  } catch {
+    return false;
+  }
 }
